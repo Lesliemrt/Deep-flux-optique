@@ -16,7 +16,7 @@ from torch import nn
 import voxelmorph as vxm
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))  # noqa: PTH100, PTH118, PTH120
-from src.utils import configs
+from scripts.utils import configs
 
 
 class VxmPairwise(nn.Module):
@@ -60,7 +60,7 @@ class VxmPairwise(nn.Module):
         target images.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         ndim: int,
         source_channels: int,

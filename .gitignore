@@ -42,4 +42,5 @@ uv.lock
 .coverage
 pyrightconfig.json
 .vscode
-TODO/
+TODO
+output/

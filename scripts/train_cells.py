@@ -10,7 +10,6 @@ import os
 import sys
 from collections.abc import Sequence  # noqa: TC003
 from pathlib import Path
-from typing import Callable
 
 import neurite as ne
 
@@ -18,15 +17,16 @@ import neurite as ne
 import numpy as np
 import tifffile as tiff
 import torch
-from torch import nn
+from torch import nn  # noqa: TC002
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from tqdm import tqdm
 
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # noqa: PTH100, PTH118, PTH120
-import voxelmorph_folder.voxelmorph as vxm
 from utils.configs import DATA, device
+
+import voxelmorph_folder.voxelmorph as vxm
 
 
 class VxmVideoDataset(Dataset):
@@ -68,7 +68,6 @@ class VxmVideoDataset(Dataset):
 
     def get_transforms(self, n):
         """Get global min and global max from n frames and return normalisation and transformation functions."""
-        print("self.frames_path_list : ", str(self.frames_path_list[0]))
         global_min = np.min(tiff.imread(str(self.frames_path_list[0])))
         global_max = np.max(tiff.imread(str(self.frames_path_list[0])))
 
@@ -107,7 +106,7 @@ def train_epoch(
     image_loss_fn: nn.Module,
     grad_loss_fn: nn.Module,
     loss_weights: Sequence[float],
-    steps_per_epoch: int,
+    # steps_per_epoch: int,
 ) -> float:
     """Train for one epoch.
 
@@ -158,16 +157,14 @@ def main():
     """Create the dataloader, create the model, train and save."""
     parser = argparse.ArgumentParser(description="Train VoxelMorph")
     parser.add_argument("--output-dir", type=str, default="output", help="Output directory")
-    parser.add_argument("--epochs", type=int, default=100, help="Number of epochs")
+    parser.add_argument("--epochs", type=int, default=300, help="Number of epochs")
     parser.add_argument("--workers", type=int, default=0, help="Number of workers")
     parser.add_argument("--steps-per-epoch", type=int, default=100, help="Steps per epoch")
     parser.add_argument("--batch-size", type=int, default=4, help="Batch size")
-    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
+    parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument("--lambda", type=float, dest="lambda_param", default=0.01)
     parser.add_argument("--gpu", type=str, default="0", help="GPU ID")
-    parser.add_argument(
-        "--save-every", type=int, default=10, help="ChecDevice to place tensors onkpoint every N epochs"
-    )
+    parser.add_argument("--save-every", type=int, default=10, help="Checkpoint every N epochs")
     args = parser.parse_args()
 
     # Set device
@@ -201,7 +198,7 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Training loop
-    print(f"Training for {args.epochs} epochs...")
+    print(f"Training for {args.epochs} epochs...")  # noqa: T201
     best_loss = float("inf")
     for epoch in tqdm(range(args.epochs), desc="Epochs"):
         # Train for one epoch
@@ -212,18 +209,17 @@ def main():
             image_loss_fn=image_loss_fn,
             grad_loss_fn=grad_loss_fn,
             loss_weights=loss_weights,
-            steps_per_epoch=args.steps_per_epoch,
         )
 
         # Print progress
-        if (epoch + 1) % 10 == 0:
-            print(f"Epoch {epoch + 1}/{args.epochs}, Loss: {avg_loss:.6f}")
+        # if (epoch + 1) % 10 == 0:
+        print(f"Epoch {epoch + 1}/{args.epochs}, Loss: {avg_loss:.6f}")  # noqa: T201
 
         # Save periodic checkpoints
         if (epoch + 1) % args.save_every == 0:
             checkpoint_path = output_dir / f"checkpoint_epoch{epoch + 1}.pt"
             torch.save(model.state_dict(), checkpoint_path)
-            print(f"Checkpoint saved to {checkpoint_path}")
+            print(f"Checkpoint saved to {checkpoint_path}")  # noqa: T201
 
         # Save best model
         if avg_loss < best_loss:
@@ -234,9 +230,8 @@ def main():
     # Save final model
     final_path = output_dir / "final.pt"
     torch.save(model.state_dict(), final_path)
-    print(f"Final model saved to {final_path}")
+    print(f"Final model saved to {final_path}")  # noqa: T201
 
 
 if __name__ == "__main__":
-    print(device)
     main()
