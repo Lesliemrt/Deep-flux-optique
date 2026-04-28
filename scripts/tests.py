@@ -6,7 +6,7 @@ import tifffile as tiff
 img_path = "data/train_data/Fluo-N2DH-GOWT1_train/01/t000.tif"
 seg_path = "data/train_data/Fluo-N2DH-GOWT1_train/01_GT/SEG/man_seg012.tif"  # ground truth or gold truth for segmentation annotations  # noqa: E501
 tra_path = "data/train_data/Fluo-N2DH-GOWT1_train/01_GT/TRA/man_track000.tif"  # gt for tracking annotations
-err_seg_path = "data/train_data/Fluo-N2DH-GOWT1_train/01_ERR_SEG/mask000.tif"  # gt for segmentation
+err_seg_path = "data/train_data/Fluo-N2DH-GOWT1_train/01_ERR_SEG/mask000.tif"  # segmentation to use
 st_path = "data/train_data/Fluo-N2DH-GOWT1_train/01_ST/SEG/man_seg000.tif"  # silver truth
 
 img = tiff.imread(img_path)

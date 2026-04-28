@@ -46,29 +46,23 @@ os.environ["VXM_BACKEND"] = "pytorch"
 
 # Local imports
 import voxelmorph as vxm  # nopep8
+from utils.configs import device
 
 # parse commandline args
 parser = argparse.ArgumentParser()
-parser.add_argument("--moving", required=True, help="moving image (source) filename")
+parser.add_argument(
+    "--moving", required=True, default="output", help="moving image (source) filename"
+)  # TODO default à mettre partout
 parser.add_argument("--fixed", required=True, help="fixed image (target) filename")
 parser.add_argument("--moved", required=True, help="warped image output filename")
 parser.add_argument("--model", required=True, help="pytorch model for nonlinear registration")
 parser.add_argument("--warp", help="output warp deformation filename")
-parser.add_argument("-g", "--gpu", help="GPU number(s) - if not supplied, CPU is used")
 parser.add_argument(
     "--multichannel",
     action="store_true",
     help="specify that data has multiple channels",
 )
 args = parser.parse_args()
-
-# device handling
-if args.gpu and (args.gpu != "-1"):
-    device = "cuda"
-    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
-else:
-    device = "cpu"
-    os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 # load moving and fixed images
 add_feat_axis = not args.multichannel
