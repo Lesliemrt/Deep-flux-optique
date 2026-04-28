@@ -6,8 +6,11 @@ pp 1788-1800. 2019.
 
 # Core library imports
 import argparse
+import os
+import sys
 from collections.abc import Sequence  # noqa: TC003
 from pathlib import Path
+from typing import Callable
 
 import neurite as ne
 
@@ -15,15 +18,15 @@ import neurite as ne
 import numpy as np
 import tifffile as tiff
 import torch
-
-# Local imports
-import voxelmorph as vxm
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from tqdm import tqdm
 
-from utils.config import device
+# Local imports
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # noqa: PTH100, PTH118, PTH120
+import voxelmorph_folder.voxelmorph as vxm
+from utils.configs import DATA, device
 
 
 class VxmVideoDataset(Dataset):
@@ -35,12 +38,12 @@ class VxmVideoDataset(Dataset):
         augment : bool
             Apply augmentations if True.
         """
-        self.video_path = Path("../data/train_data/Fluo-N2DH-GOWT1_train/01")
+        self.video_path = Path(DATA)
         self.get_frames_path_list()
         self.augment = augment
-        self.transform = self.get_transforms
+        self.transform = self.get_transforms(n=len(self))
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx):  # TODO: get item ou get_iter ?
         """Normalize video and generate pairs of frame from a single video.
 
         dict
@@ -65,12 +68,13 @@ class VxmVideoDataset(Dataset):
 
     def get_transforms(self, n):
         """Get global min and global max from n frames and return normalisation and transformation functions."""
-        global_min = np.min(tiff.imread(self.frames_path_list[0]))
-        global_max = np.max(tiff.imread(self.frames_path_list[0]))
+        print("self.frames_path_list : ", str(self.frames_path_list[0]))
+        global_min = np.min(tiff.imread(str(self.frames_path_list[0])))
+        global_max = np.max(tiff.imread(str(self.frames_path_list[0])))
 
         for i in range(1, n):
-            current_min = np.min(tiff.imread(self.frames_path_list[i]))
-            current_max = np.max(tiff.imread(self.frames_path_list[i]))
+            current_min = np.min(tiff.imread(str(self.frames_path_list[i])))
+            current_max = np.max(tiff.imread(str(self.frames_path_list[i])))
 
             if current_min < global_min:
                 global_min = min
@@ -86,6 +90,10 @@ class VxmVideoDataset(Dataset):
             base_transforms += [transforms.RandomApply(transforms.ColorJitter, 0.3)]
 
         return transforms.Compose(base_transforms)
+
+    def __len__(self):
+        """Return len dataset."""
+        return len(self.frames_path_list) - 1  # to avoid out of index error when selecting pairs of frames
 
     def get_frames_path_list(self):
         """Create a list with all the frame's path."""
@@ -122,13 +130,15 @@ def train_epoch(
     model.train()
     total_loss = 0.0
 
-    for _ in range(steps_per_epoch):
-        batch = next(dataloader)
+    # Si get_iter dans dataset : for _ in range(steps_per_epoch): puis batch = next(dataloader)
+    for batch in tqdm(dataloader, total=len(dataloader), desc="Training"):
         optimizer.zero_grad()
 
         # Move to device in training loop (not dataloader/dataset!)
-        source = batch["source"].to(device)
-        target = batch["target"].to(device)
+        source = batch["source"]
+        target = batch["target"]
+        source = source.float().to(device).unsqueeze(1)  # Add channel dimension
+        target = target.float().to(device).unsqueeze(1)  # Add channel dimension
 
         # Get the displacement and the warped source image from the model
         displacement, warped_source = model(source, target, return_warped_source=True, return_field_type="displacement")
@@ -141,13 +151,14 @@ def train_epoch(
         optimizer.step()
         total_loss += loss.item()
 
-    return total_loss / steps_per_epoch
+    return total_loss / len(dataloader)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train 3D VoxelMorph on OASIS data")
+    """Create the dataloader, create the model, train and save."""
+    parser = argparse.ArgumentParser(description="Train VoxelMorph")
     parser.add_argument("--output-dir", type=str, default="output", help="Output directory")
-    parser.add_argument("--epochs", type=int, default=100_000, help="Number of epochs")
+    parser.add_argument("--epochs", type=int, default=100, help="Number of epochs")
     parser.add_argument("--workers", type=int, default=0, help="Number of workers")
     parser.add_argument("--steps-per-epoch", type=int, default=100, help="Steps per epoch")
     parser.add_argument("--batch-size", type=int, default=4, help="Batch size")
@@ -160,12 +171,11 @@ def main():
     args = parser.parse_args()
 
     # Set device
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Using device: {device}")
+    print(f"Using device: {device}")  # noqa: T201
 
     # Create model
     model = vxm.nn.models.VxmPairwise(
-        ndim=3,
+        ndim=2,
         source_channels=1,
         target_channels=1,
         nb_features=[16, 16, 16, 16, 16],
@@ -180,12 +190,10 @@ def main():
 
     # Create dataloader
     train_dataset = VxmVideoDataset()
-    train_loader = iter(
-        DataLoader(
-            train_dataset,
-            batch_size=args.batch_size,
-            num_workers=args.workers,
-        )
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=args.batch_size,
+        num_workers=args.workers,
     )
 
     # Create output directory
@@ -230,4 +238,5 @@ def main():
 
 
 if __name__ == "__main__":
+    print(device)
     main()
