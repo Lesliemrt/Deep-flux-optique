@@ -1,6 +1,4 @@
-"""
-Neural network building blocks for VoxelMorph.
-"""
+"""Neural network building blocks for VoxelMorph."""
 
 # Core library imports
 from typing import Union, Optional
@@ -16,8 +14,7 @@ import voxelmorph as vxm
 
 
 class SpatialTransformer(nn.Module):
-    """
-    N-D Spatial transformation according to a deformation field.
+    """N-D Spatial transformation according to a deformation field.
 
     Wrapper around voxelmorph.nn.functional.spatial_transform that maintains the
     nn.Module interface for composability in neural network architectures.
@@ -37,8 +34,7 @@ class SpatialTransformer(nn.Module):
         align_corners: bool = True,
         device: Optional[Union[str, torch.device]] = None,
     ):
-        """
-        Initialize `SpatialTransformer`.
+        """Initialize `SpatialTransformer`.
 
         Parameters
         ----------
@@ -54,13 +50,8 @@ class SpatialTransformer(nn.Module):
         self.interpolation_mode = interpolation_mode
         self.align_corners = align_corners
 
-    def forward(
-        self,
-        moving_image: torch.Tensor,
-        deformation_field: torch.Tensor
-    ) -> torch.Tensor:
-        """
-        Forward pass of `SpatialTransformer`.
+    def forward(self, moving_image: torch.Tensor, deformation_field: torch.Tensor) -> torch.Tensor:
+        """Forward pass of `SpatialTransformer`.
 
         Parameters
         ----------
@@ -83,21 +74,16 @@ class SpatialTransformer(nn.Module):
         - Processes each batch element independently since vxm.spatial_transform
           expects displacement fields without batch dimension
         """
-        assert moving_image.dim() >= 4, (
-            f"moving_image must have >=4 dims (B,C,*spatial), got {moving_image.shape}"
-        )
+        assert moving_image.dim() >= 4, f"moving_image must have >=4 dims (B,C,*spatial), got {moving_image.shape}"
         assert deformation_field.dim() == moving_image.dim(), (
             f"dim mismatch: moving={moving_image.dim()}, field={deformation_field.dim()}"
         )
 
         # Allocate or reallocate meshgrid if spatial shape changed
         spatial_shape = moving_image.shape[2:]
-        if not hasattr(self, 'meshgrid') or self.meshgrid.shape[1:] != spatial_shape:
+        if not hasattr(self, "meshgrid") or self.meshgrid.shape[1:] != spatial_shape:
             self.meshgrid = ne.volshape_to_ndgrid(
-                size=spatial_shape,
-                device=moving_image.device,
-                dtype=moving_image.dtype,
-                stack=True
+                size=spatial_shape, device=moving_image.device, dtype=moving_image.dtype, stack=True
             )
 
         return vxm.spatial_transform(
@@ -108,13 +94,12 @@ class SpatialTransformer(nn.Module):
             meshgrid=self.meshgrid,
             non_spatial_dims=(0, 1),
             align_corners=self.align_corners,
-            padding_mode='zeros'
+            padding_mode="zeros",
         )
 
 
 class IntegrateVelocityField(nn.Module):
-    """
-    Integrates a velocity field over multiple steps using the scaling and squaring method.
+    """Integrates a velocity field over multiple steps using the scaling and squaring method.
 
     This module ensures that transformations caused by a velocity field is diffeomorphic by
     compounding small, intermediate transformations (by recursive scaling and squaring). This
@@ -129,7 +114,7 @@ class IntegrateVelocityField(nn.Module):
     transformer : nn.Module
         A spatial transformer module used to iteratively warp the vector field.
 
-    Examples
+    Examples:
     -------
     ### Integrate a 2D velocity field over multiple steps:
     >>> integrator = IntegrateVelocityField(steps=256)
@@ -152,10 +137,9 @@ class IntegrateVelocityField(nn.Module):
         steps: int = 1,
         interpolation_mode: str = "linear",
         align_corners: bool = True,
-        device: Optional[str] = None
+        device: Optional[str] = None,
     ):
-        """
-        Initialize `IntegrateVelocityField`
+        """Initialize `IntegrateVelocityField`.
 
         Parameters
         ----------
@@ -171,23 +155,18 @@ class IntegrateVelocityField(nn.Module):
         device : str or None, optional
             Deprecated. No longer used. Kept for backward compatibility.
         """
-
         super().__init__()
 
         assert steps >= 0, f"steps must be >= 0, got {steps}"
 
         self.steps = steps
-        self.scale = 1.0 / (2 ** self.steps)  # Initial downscaling factor
+        self.scale = 1.0 / (2**self.steps)  # Initial downscaling factor
 
         # Make the transformer which will perform the warping operation
-        self.transformer = SpatialTransformer(
-            interpolation_mode=interpolation_mode,
-            align_corners=align_corners
-        )
+        self.transformer = SpatialTransformer(interpolation_mode=interpolation_mode, align_corners=align_corners)
 
     def forward(self, velocity_field: torch.Tensor) -> torch.Tensor:
-        """
-        Integrates the input velocity field using scaling and squaring.
+        """Integrates the input velocity field using scaling and squaring.
 
         Parameters
         ----------
@@ -196,18 +175,16 @@ class IntegrateVelocityField(nn.Module):
             C is the number of vector components (typically spatial dimensions),
             and `spatial_dims` represent the grid dimensions.
 
-        Returns
+        Returns:
         -------
         torch.Tensor
             The integrated displacement field with the same shape as the input.
         """
-
         # Apply initial scaling to the velocity field
         velocity_field = velocity_field * self.scale
 
         # Integration loop
         for _ in range(self.steps):
-
             # Recursive integration step
             velocity_field = velocity_field + self.transformer(velocity_field, velocity_field)
 
@@ -215,12 +192,11 @@ class IntegrateVelocityField(nn.Module):
 
 
 class ResizeDisplacementField(nn.Module):
-    """
-    Resize and rescale a displacement field.
+    """Resize and rescale a displacement field.
 
     Resizd a displacement field both spatially (via interpolation) and in magnitude (via scaling).
 
-    Examples
+    Examples:
     -------
     ### Resize a 2D displacement field
     >>> resize_field = ResizeDisplacementField(scale_factor=2.0, interpolation_mode="bilinear")
@@ -236,8 +212,7 @@ class ResizeDisplacementField(nn.Module):
         interpolation_mode: str = "linear",
         align_corners: bool = True,
     ):
-        """
-        Instantiate the `ResizeDisplacementField` module.
+        """Instantiate the `ResizeDisplacementField` module.
 
         Parameters
         ----------
@@ -257,8 +232,7 @@ class ResizeDisplacementField(nn.Module):
         self.scale_factor = scale_factor
 
     def forward(self, disp: torch.Tensor) -> torch.Tensor:
-        """
-        Resize and rescale the displacement field.
+        """Resize and rescale the displacement field.
 
         Parameters
         ----------
@@ -266,14 +240,14 @@ class ResizeDisplacementField(nn.Module):
             Vector field of shape (B, C, *spatial) representing a displacement field, where C
             represents each spatial component of the vector field.
 
-        Returns
+        Returns:
         -------
         torch.Tensor
             Resized displacement field.
         """
         # Infer PyTorch interpolation mode from spatial dimensions
         mode = self.interpolation_mode
-        if mode == 'linear':
+        if mode == "linear":
             num_spatial = disp.ndim - 2  # Subtract batch and channel dims
             mode = ne.utils.infer_linear_interpolation_mode(num_spatial)
 

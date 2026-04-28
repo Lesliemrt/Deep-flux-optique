@@ -1,23 +1,26 @@
-"""
-Core VoxelMorph models for unsupervised and supervised learning.
-"""
+"""Core VoxelMorph models for unsupervised and supervised learning."""
 
 # Core library imports
-from typing import List, Literal, Sequence, Union, Callable, Tuple, Dict
+import os
+import sys
+from collections.abc import Callable, Sequence  # noqa: TC003
+from typing import Literal
+
+import neurite as ne
 
 # Third-party imports
 import torch
-import torch.nn as nn
-import neurite as ne
+from torch import nn
 
 # Local imports
 import voxelmorph as vxm
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))  # noqa: PTH100, PTH118, PTH120
+from src.utils import configs
+
 
 class VxmPairwise(nn.Module):
-    """
-    A network architecture built on `BasicUNet` to perform nD image registration using a flow
-    field.
+    """A network architecture built on `BasicUNet` to perform nD image registration using a flow field.
 
     Parameters
     ----------
@@ -43,13 +46,13 @@ class VxmPairwise(nn.Module):
     unet_kwargs : dict or None, optional
         Additional keyword arguments passed to the `BasicUNet` constructor.
 
-    Attributes
+    Attributes:
     ----------
     flow_layer : nn.Module
         A custom convolutional block used to generate the flow field
         from the combined source and target features.
 
-    Methods
+    Methods:
     -------
     forward(source, target, return_warped_source, return_warped_target, return_field_type)
         Combines source and target images, processes them through the UNet and the flow layer,
@@ -63,16 +66,15 @@ class VxmPairwise(nn.Module):
         source_channels: int,
         target_channels: int,
         nb_features: Sequence[int] = (16, 16, 16, 16, 16),
-        activations: Union[List[Union[Callable, str]], Callable, str, None] = nn.ReLU,
-        final_activation: Union[str, nn.Module, None] = None,
+        activations: list[Callable | str] | Callable | str | None = nn.ReLU,
+        final_activation: str | nn.Module | None = None,
         flow_initializer: float = 1e-5,
         integration_steps: int = 5,
         resize_integrated_fields: bool = False,
-        device: str = "cpu",
-        unet_kwargs: Union[Dict, None] = None,
+        device: str = configs.device,
+        unet_kwargs: dict | None = None,
     ):
-        """
-        Initialize the `VxmPairwise`.
+        """Initialize the `VxmPairwise`.
 
         Parameters
         ----------
@@ -112,16 +114,16 @@ class VxmPairwise(nn.Module):
             activations=activations,
             final_activation=final_activation,
             **unet_kwargs,
-        )
+        ).to(self.device)
 
         # Initialize the velocity field integrator
         if self.integration_steps > 0:
-            self.velocity_field_integrator = vxm.nn.modules.IntegrateVelocityField(
-                steps=self.integration_steps
+            self.velocity_field_integrator = vxm.nn.modules.IntegrateVelocityField(steps=self.integration_steps).to(
+                self.device
             )
 
         # Initialize the spatial transformer
-        self.spatial_transformer = vxm.nn.modules.SpatialTransformer()
+        self.spatial_transformer = vxm.nn.modules.SpatialTransformer().to(self.device)
 
     def forward(
         self,
@@ -129,10 +131,9 @@ class VxmPairwise(nn.Module):
         target: torch.Tensor,
         return_warped_source: bool = False,
         return_warped_target: bool = False,
-        return_field_type: Literal['displacement', 'velocity', 'svf'] = 'displacement',
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, ...]]:
-        """
-        Forward pass of `VxmPairwise`.
+        return_field_type: Literal["displacement", "velocity", "svf"] = "displacement",
+    ) -> torch.Tensor | tuple[torch.Tensor, ...]:
+        """Forward pass of `VxmPairwise`.
 
         This forward pass concatenates the `source` and `target` images, processes them with a
         `BasicUNet` backbone, and uses a flow layer to predict a velocity field (source -> target).
@@ -162,7 +163,7 @@ class VxmPairwise(nn.Module):
             - 'velocity' or 'svf': Return the velocity (stationary velocity field).
             Default is 'displacement'.
 
-        Returns
+        Returns:
         -------
         Union[torch.Tensor, Tuple[torch.Tensor, ...]]
             Return values depend on the flags that are set:
@@ -177,7 +178,7 @@ class VxmPairwise(nn.Module):
             - warped_source shape (B, C_source, *spatial_dims)
             - warped_target shape (B, C_target, *spatial_dims)
 
-        Raises
+        Raises:
         ------
         ValueError
             If `return_warped_target=True` but `integration_steps=0`. Returning the warped
@@ -185,47 +186,37 @@ class VxmPairwise(nn.Module):
         ValueError
             If `return_field_type` is not one of {'velocity', 'svf', 'displacement'}.
         """
-        valid_field_types = {'velocity', 'svf', 'displacement'}
+        valid_field_types = {"velocity", "svf", "displacement"}
         if return_field_type not in valid_field_types:
-            raise ValueError(
-                f"return_field_type must be one of {valid_field_types}, got '{return_field_type}'"
-            )
+            raise ValueError(f"return_field_type must be one of {valid_field_types}, got '{return_field_type}'")
 
-        if self.integration_steps == 0:
-            if return_warped_target:
-                raise ValueError("Cannot return warped target image when integration_steps=0.")
+        if self.integration_steps == 0 and return_warped_target:
+            raise ValueError("Cannot return warped target image when integration_steps=0.")
 
         # Pass combined features through the model's backbone & flow layer
         combined_features = torch.cat([source, target], dim=1)
         combined_features = self.model(combined_features)
-        velocity = self.flow_layer(combined_features)   # Positive velocity: (source -> target)
+        velocity = self.flow_layer(combined_features)  # Positive velocity: (source -> target)
 
         if self.integration_steps > 0:
             self.velocity = velocity
 
         # Early return if no warped images requested and returning velocity
-        if not return_warped_source and not return_warped_target:
-            if return_field_type in {'velocity', 'svf'}:
-                return velocity
+        if not return_warped_source and not return_warped_target and return_field_type in {"velocity", "svf"}:
+            return velocity
 
         pos_displacement = velocity
         neg_displacement = None
 
-        if return_warped_source or return_field_type == 'displacement':
-            if self.integration_steps > 0:
-                # Only need positive displacement
-                pos_displacement = self.velocity_field_integrator(velocity)
+        if (return_warped_source or return_field_type == "displacement") and self.integration_steps > 0:
+            # Only need positive displacement
+            pos_displacement = self.velocity_field_integrator(velocity)
 
-        if self.integration_steps > 0:
+        if self.integration_steps > 0 and return_warped_target:
+            # Only need negative displacement
+            neg_displacement = self.velocity_field_integrator(-velocity)
 
-            if return_warped_target:
-                # Only need negative displacement
-                neg_displacement = self.velocity_field_integrator(-velocity)
-
-        if return_field_type == 'displacement':
-            return_field = pos_displacement
-        else:
-            return_field = velocity
+        return_field = pos_displacement if return_field_type == "displacement" else velocity
 
         # Build return tuple starting with the requested field type
         outputs = [return_field]
@@ -240,14 +231,8 @@ class VxmPairwise(nn.Module):
 
         return tuple(outputs) if len(outputs) > 1 else outputs[0]
 
-    def _init_flow_layer(
-        self,
-        ndim: int,
-        features: int,
-        flow_initializer: float = 1e-5
-    ):
-        """
-        Initialize the flow layer with custom weight initialization.
+    def _init_flow_layer(self, ndim: int, features: int, flow_initializer: float = 1e-5) -> None:
+        """Initialize the flow layer with custom weight initialization.
 
         This layer is a convolutional block that produces a displacement (flow)
         field. The weights of its initial convolution are initialized from a
@@ -264,7 +249,6 @@ class VxmPairwise(nn.Module):
             Standard deviation for initializing the flow layer weights with a
             normal distribution (mean=0). Default is `1e-5`.
         """
-
         # Initialize the conv ("flow") layer with congruent in and out features
         flow_layer = ne.nn.modules.ConvBlock(ndim, features, features).to(self.device)
 
