@@ -36,6 +36,8 @@ the License.
 
 # Core library imports
 import argparse
+import os
+import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -45,8 +47,11 @@ import tifffile as tiff
 import torch
 
 # Local imports
-import voxelmorph as vxm  # nopep8
-from utils.configs import DATA, device
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # noqa: PTH100, PTH118, PTH120
+from utils.configs import DATA2, HEIGHT, WIDTH, device
+from utils.utils import interpole_and_pad
+
+import voxelmorph_folder.voxelmorph as vxm
 
 
 def create_grid(shape, spacing=20):
@@ -65,6 +70,8 @@ def register(args):
     args : argparse.Namespace
         Commandline arguments.
     """
+    print(f"Using device: {device}")  # noqa: T201
+
     # Load moving and fixed images
     moving = tiff.imread(args.moving)
     fixed = tiff.imread(args.fixed)
@@ -76,9 +83,13 @@ def register(args):
     moving = (moving - global_min) / (global_max - global_min)
     fixed = (fixed - global_min) / (global_max - global_min)
 
-    # load and set up model
-    # Set device
-    print(f"Using device: {device}")  # noqa: T201
+    # Interpole/Pad images to HEIGHT, WIDTH if needed
+    moving = interpole_and_pad(moving, [HEIGHT, WIDTH])
+    fixed = interpole_and_pad(fixed, [HEIGHT, WIDTH])
+
+    # Set up tensors
+    input_moving = torch.from_numpy(moving).to(device).float().unsqueeze(0).unsqueeze(0)
+    input_fixed = torch.from_numpy(fixed).to(device).float().unsqueeze(0).unsqueeze(0)
 
     # Create model
     model = vxm.nn.models.VxmPairwise(
@@ -91,35 +102,55 @@ def register(args):
     model.load_state_dict(torch.load(args.model, map_location=device))
     model.eval()
 
-    # set up tensors
-    input_moving = torch.from_numpy(moving).to(device).float().unsqueeze(0).unsqueeze(0)
-    input_fixed = torch.from_numpy(fixed).to(device).float().unsqueeze(0).unsqueeze(0)
-
-    # predict
+    # Predict
     with torch.no_grad():
         field, moved = model(
             source=input_moving, target=input_fixed, return_warped_source=True, return_field_type="displacement"
         )
 
+    # Create grid for visualistion of the field
     grid = create_grid(moving.shape)
-    grid = torch.from_numpy(grid).to(device).float().unsqueeze(0).unsqueeze(0)
-    warped_grid = model.spatial_transformer(grid, field)
+    tensor_grid = torch.from_numpy(grid).to(device).float().unsqueeze(0).unsqueeze(0)
+    warped_grid = model.spatial_transformer(tensor_grid, field)
 
-    return {"fixed": fixed, "warped_grid": warped_grid, "moved": moved}
+    results = {"fixed": fixed, "warped_grid": warped_grid, "moved": moved}
+
+    # If segmentations available, load them and warp the moving segmentation with the predicted field for evaluation
+    if args.seg_available:
+        moving_path = args.moving.replace("01/t", "01_ERR_SEG/mask")
+        fixed_path = args.fixed.replace("01/t", "01_ERR_SEG/mask")
+        if os.path.isfile(moving_path) and os.path.isfile(fixed_path):  # noqa: PTH113
+            seg_moving = tiff.imread(moving_path)
+            seg_fixed = tiff.imread(fixed_path)
+            seg_moving = np.where(seg_moving > 0, 1, 0)  # Binarize segmentation if not already binary
+            seg_fixed = np.where(seg_fixed > 0, 1, 0)  # Binarize segmentation if not already binary
+            seg_moving = interpole_and_pad(seg_moving, [HEIGHT, WIDTH])
+            seg_fixed = interpole_and_pad(seg_fixed, [HEIGHT, WIDTH])
+            tensor_seg_moving = torch.from_numpy(seg_moving).to(device).float().unsqueeze(0).unsqueeze(0)
+            spatial_transformer = vxm.nn.modules.SpatialTransformer(interpolation_mode="nearest").to(device)
+            warped_seg_moving = spatial_transformer(tensor_seg_moving, field)
+            dice = vxm.py.utils.dice(warped_seg_moving.squeeze().cpu().numpy(), seg_fixed, include_zero=False)
+            results["dice"] = dice
+        else:
+            print("Segmentation files not found, skipping segmentation evaluation.")  # noqa: T201
+
+    return results
 
 
 if __name__ == "__main__":
     # parse commandline args
     parser = argparse.ArgumentParser()
-    parser.add_argument("--moving", default=f"{DATA}/01/t090.tif", help="moving image (source) filename")
-    parser.add_argument("--fixed", default=f"{DATA}/01/t091.tif", help="fixed image (target) filename")
-    parser.add_argument("--model", default="output/final.pt", help="weights of trained model to use for registration")
+    parser.add_argument("--moving", default=f"{DATA2}/01/t000.tif", help="moving image (source) filename")
+    parser.add_argument("--fixed", default=f"{DATA2}/01/t091.tif", help="fixed image (target) filename")
+    parser.add_argument("--model", default="output/best.pt", help="weights of trained model to use for registration")
+    parser.add_argument("--seg_available", default=True, help="whether segmentation is available for dice evaluation")
     # TODO : case 3D ?
     args = parser.parse_args()
     result = register(args)
     warped_grid = result["warped_grid"]
     moved = result["moved"]
     fixed = result["fixed"]
+    print(f"Dice score: {result['dice']}")  # noqa: T201
     plt.figure(figsize=(12, 12))
     plt.subplot(2, 2, 1)
     plt.title("Fixed")
