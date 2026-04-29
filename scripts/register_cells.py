@@ -36,59 +36,79 @@ the License.
 
 # Core library imports
 import argparse
-import os
+
+import matplotlib.pyplot as plt
+import tifffile as tiff
 
 # Third-party imports
 import torch
 
-os.environ["NEURITE_BACKEND"] = "pytorch"
-os.environ["VXM_BACKEND"] = "pytorch"
-
 # Local imports
 import voxelmorph as vxm  # nopep8
-from utils.configs import device
+from utils.configs import DATA, device
 
-# parse commandline args
-parser = argparse.ArgumentParser()
-parser.add_argument(
-    "--moving", required=True, default="output", help="moving image (source) filename"
-)  # TODO default à mettre partout
-parser.add_argument("--fixed", required=True, help="fixed image (target) filename")
-parser.add_argument("--moved", required=True, help="warped image output filename")
-parser.add_argument("--model", required=True, help="pytorch model for nonlinear registration")
-parser.add_argument("--warp", help="output warp deformation filename")
-parser.add_argument(
-    "--multichannel",
-    action="store_true",
-    help="specify that data has multiple channels",
-)
-args = parser.parse_args()
 
-# load moving and fixed images
-add_feat_axis = not args.multichannel
-moving = vxm.py.utils.load_volfile(args.moving, add_batch_axis=True, add_feat_axis=add_feat_axis)
-fixed, fixed_affine = vxm.py.utils.load_volfile(
-    args.fixed, add_batch_axis=True, add_feat_axis=add_feat_axis, ret_affine=True
-)
+def register(args):
+    """Register two volumes with a VoxelMorph model.
 
-# load and set up model
-model = vxm.networks.VxmDense.load(args.model, device)
-model.to(device)
-model.eval()
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Commandline arguments.
+    """
+    # load moving and fixed images
+    moving = tiff.imread(args.moving)
+    fixed = tiff.imread(args.fixed)
 
-# set up tensors and permute
-input_moving = torch.from_numpy(moving).to(device).float().permute(0, 4, 1, 2, 3)
-input_fixed = torch.from_numpy(fixed).to(device).float().permute(0, 4, 1, 2, 3)
+    # load and set up model
+    # Set device
+    print(f"Using device: {device}")  # noqa: T201
 
-# predict
-moved, warp = model(input_moving, input_fixed, registration=True)
+    # Create model
+    model = vxm.nn.models.VxmPairwise(
+        ndim=2,
+        source_channels=1,
+        target_channels=1,
+        nb_features=[16, 16, 16, 16, 16],
+        integration_steps=0,
+    ).to(device)
+    model.load_state_dict(torch.load(args.model, map_location=device))
+    model.eval()
 
-# save moved image
-if args.moved:
-    moved = moved.detach().cpu().numpy().squeeze()
-    vxm.py.utils.save_volfile(moved, args.moved, fixed_affine)
+    # set up tensors and permute .permute(0, 4, 1, 2, 3)
+    input_moving = torch.from_numpy(moving).to(device).float()
+    input_fixed = torch.from_numpy(fixed).to(device).float()
 
-# save warp
-if args.warp:
-    warp = warp.detach().cpu().numpy().squeeze()
-    vxm.py.utils.save_volfile(warp, args.warp, fixed_affine)
+    # predict
+    with torch.no_grad():
+        field, moved = model(
+            source=input_moving, target=input_fixed, return_warped_source=True, return_field_type="displacement"
+        )
+
+    return {"fixed": fixed, "field": field, "moved": moved}
+
+
+if __name__ == "__main__":
+    # parse commandline args
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--moving", default=f"{DATA}/01/t090.tif", help="moving image (source) filename")
+    parser.add_argument("--fixed", default=f"{DATA}/01/t091.tif", help="fixed image (target) filename")
+    parser.add_argument("--model", default="output/final.pt", help="weights of trained model to use for registration")
+    # TODO : case 3D ?
+    args = parser.parse_args()
+    result = register(args)
+    field = result["field"]
+    moved = result["moved"]
+    fixed = result["fixed"]
+    plt.figure(figsize=(12, 4))
+    plt.subplot(1, 3, 1)
+    plt.title("Fixed")
+    plt.imshow(fixed, cmap="gray")
+    plt.subplot(1, 3, 2)
+    plt.title("Moved")
+    plt.imshow(moved.cpu().numpy(), cmap="gray")
+    plt.subplot(1, 3, 3)
+    plt.title("Displacement Field")
+    plt.imshow(field.cpu().numpy()[0, 0], cmap="gray")
+    plt.show()
+    # TODO save fig ?

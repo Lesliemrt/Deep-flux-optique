@@ -38,7 +38,7 @@ class VxmVideoDataset(Dataset):
         augment : bool
             Apply augmentations if True.
         """
-        self.video_path = Path(DATA)
+        self.video_path = Path(DATA + "/01")
         self.get_frames_path_list()
         self.augment = augment
         self.transform = self.get_transforms(n=len(self))
@@ -75,10 +75,12 @@ class VxmVideoDataset(Dataset):
             current_min = np.min(tiff.imread(str(self.frames_path_list[i])))
             current_max = np.max(tiff.imread(str(self.frames_path_list[i])))
 
-            if current_min < global_min:
-                global_min = min
-            if current_max > global_max:
-                global_max = max
+            global_min = min(global_min, current_min)
+            global_max = max(global_max, current_max)
+
+        # Sauvegarder les stats de normalisation pour l'inférence
+        self.global_min = global_min
+        self.global_max = global_max
 
         def normalise(frame):
             return (frame - global_min) / (global_max - global_min)
@@ -217,7 +219,7 @@ def main():
 
         # Save periodic checkpoints
         if (epoch + 1) % args.save_every == 0:
-            checkpoint_path = output_dir / f"checkpoint_epoch{epoch + 1}.pt"
+            checkpoint_path = output_dir / f"checkpoints/checkpoint_epoch{epoch + 1}.pt"
             torch.save(model.state_dict(), checkpoint_path)
             print(f"Checkpoint saved to {checkpoint_path}")  # noqa: T201
 

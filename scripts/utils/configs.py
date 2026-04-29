@@ -5,4 +5,4 @@ import torch
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Data Path
-DATA = "data/train_data/Fluo-N2DH-GOWT1_train/01"  # TODO more generic path
+DATA = "data/train_data/Fluo-N2DH-GOWT1_train"  # TODO more generic path
