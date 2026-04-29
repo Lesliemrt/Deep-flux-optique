@@ -93,7 +93,9 @@ class VxmVideoDataset(Dataset):
 
     def __len__(self):
         """Return len dataset."""
-        return len(self.frames_path_list) - 1  # to avoid out of index error when selecting pairs of frames
+        return (
+            len(self.frames_path_list) - 3
+        )  # to avoid out of index error when selecting pairs of frames + keep 2 image for testing
 
     def get_frames_path_list(self):
         """Create a list with all the frame's path."""
@@ -158,7 +160,7 @@ def main():
     """Create the dataloader, create the model, train and save."""
     parser = argparse.ArgumentParser(description="Train VoxelMorph")
     parser.add_argument("--output-dir", type=str, default="output", help="Output directory")
-    parser.add_argument("--epochs", type=int, default=300, help="Number of epochs")
+    parser.add_argument("--epochs", type=int, default=100, help="Number of epochs")
     parser.add_argument("--workers", type=int, default=0, help="Number of workers")
     parser.add_argument("--steps-per-epoch", type=int, default=100, help="Steps per epoch")
     parser.add_argument("--batch-size", type=int, default=4, help="Batch size")
@@ -197,6 +199,7 @@ def main():
     # Create output directory
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "checkpoints").mkdir(parents=True, exist_ok=True)
 
     # Training loop
     print(f"Training for {args.epochs} epochs...")  # noqa: T201

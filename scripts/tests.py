@@ -1,6 +1,7 @@
 # personnal tetst file # noqa: INP001
 
 import matplotlib.pyplot as plt
+import numpy as np
 import tifffile as tiff
 
 img_path = "data/train_data/Fluo-N2DH-GOWT1_train/01/t000.tif"
@@ -13,12 +14,11 @@ img = tiff.imread(img_path)
 seg = tiff.imread(seg_path)
 tra = tiff.imread(tra_path)
 err_seg = tiff.imread(err_seg_path)
+err_seg = np.where(err_seg > 0, 1, 0)
 st = tiff.imread(st_path)
 
-plt.subplot(1, 3, 1)
+plt.subplot(1, 2, 1)
 plt.imshow(img, cmap="gray")
-plt.subplot(1, 3, 2)
-plt.imshow(tra)
-plt.subplot(1, 3, 3)
-plt.imshow(err_seg)
+plt.subplot(1, 2, 2)
+plt.imshow(err_seg, cmap="gray")
 plt.show()
