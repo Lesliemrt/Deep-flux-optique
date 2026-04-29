@@ -78,9 +78,8 @@ class VxmVideoDataset(Dataset):
             global_min = min(global_min, current_min)
             global_max = max(global_max, current_max)
 
-        # Sauvegarder les stats de normalisation pour l'inférence
-        self.global_min = global_min
-        self.global_max = global_max
+        # self.global_min = global_min  # noqa: ERA001
+        # self.global_max = global_max  # noqa: ERA001
 
         def normalise(frame):
             return (frame - global_min) / (global_max - global_min)

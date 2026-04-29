@@ -38,6 +38,7 @@ the License.
 import argparse
 
 import matplotlib.pyplot as plt
+import numpy as np
 import tifffile as tiff
 
 # Third-party imports
@@ -48,6 +49,14 @@ import voxelmorph as vxm  # nopep8
 from utils.configs import DATA, device
 
 
+def create_grid(shape, spacing=20):
+    """Create a grid image with lines every `spacing` pixels."""
+    grid = np.zeros(shape)
+    grid[::spacing, :] = 1
+    grid[:, ::spacing] = 1
+    return grid
+
+
 def register(args):
     """Register two volumes with a VoxelMorph model.
 
@@ -56,9 +65,16 @@ def register(args):
     args : argparse.Namespace
         Commandline arguments.
     """
-    # load moving and fixed images
+    # Load moving and fixed images
     moving = tiff.imread(args.moving)
     fixed = tiff.imread(args.fixed)
+
+    # Normalize
+    global_min = min(np.min(moving), np.min(fixed))
+    global_max = max(np.max(moving), np.max(fixed))
+
+    moving = (moving - global_min) / (global_max - global_min)
+    fixed = (fixed - global_min) / (global_max - global_min)
 
     # load and set up model
     # Set device
@@ -75,9 +91,9 @@ def register(args):
     model.load_state_dict(torch.load(args.model, map_location=device))
     model.eval()
 
-    # set up tensors and permute .permute(0, 4, 1, 2, 3)
-    input_moving = torch.from_numpy(moving).to(device).float()
-    input_fixed = torch.from_numpy(fixed).to(device).float()
+    # set up tensors
+    input_moving = torch.from_numpy(moving).to(device).float().unsqueeze(0).unsqueeze(0)
+    input_fixed = torch.from_numpy(fixed).to(device).float().unsqueeze(0).unsqueeze(0)
 
     # predict
     with torch.no_grad():
@@ -85,7 +101,11 @@ def register(args):
             source=input_moving, target=input_fixed, return_warped_source=True, return_field_type="displacement"
         )
 
-    return {"fixed": fixed, "field": field, "moved": moved}
+    grid = create_grid(moving.shape)
+    grid = torch.from_numpy(grid).to(device).float().unsqueeze(0).unsqueeze(0)
+    warped_grid = model.spatial_transformer(grid, field)
+
+    return {"fixed": fixed, "warped_grid": warped_grid, "moved": moved}
 
 
 if __name__ == "__main__":
@@ -97,18 +117,21 @@ if __name__ == "__main__":
     # TODO : case 3D ?
     args = parser.parse_args()
     result = register(args)
-    field = result["field"]
+    warped_grid = result["warped_grid"]
     moved = result["moved"]
     fixed = result["fixed"]
-    plt.figure(figsize=(12, 4))
-    plt.subplot(1, 3, 1)
+    plt.figure(figsize=(12, 12))
+    plt.subplot(2, 2, 1)
     plt.title("Fixed")
     plt.imshow(fixed, cmap="gray")
-    plt.subplot(1, 3, 2)
+    plt.subplot(2, 2, 2)
     plt.title("Moved")
-    plt.imshow(moved.cpu().numpy(), cmap="gray")
-    plt.subplot(1, 3, 3)
-    plt.title("Displacement Field")
-    plt.imshow(field.cpu().numpy()[0, 0], cmap="gray")
+    plt.imshow(moved.squeeze().cpu().numpy(), cmap="gray")
+    plt.subplot(2, 2, 3)
+    plt.title("Difference (Fixed - Moved)")
+    plt.imshow(fixed - moved.squeeze().cpu().numpy(), cmap="gray")
+    plt.subplot(2, 2, 4)
+    plt.title("Warped Grid")
+    plt.imshow(warped_grid.squeeze().cpu().numpy(), cmap="gray")
     plt.show()
     # TODO save fig ?
