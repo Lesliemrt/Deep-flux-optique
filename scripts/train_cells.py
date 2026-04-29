@@ -49,9 +49,13 @@ class VxmVideoDataset(Dataset):
         dict
             A dictionary containing the source and target frames.
         """
-        # Select 2 frames
+        # Select 2 frames with a random gap (maximum 10 frames gap)
+        max_gap = 10
+        gap = np.random.randint(-max_gap, max_gap + 1)  # noqa: NPY002
+        if gap == 0:
+            gap = 1
         idx1 = idx
-        idx2 = idx + 1  # TODO 1 à mettre en arg pour entrainer sur n frame d'écart ?
+        idx2 = idx1 - gap if idx1 + gap > len(self) or idx1 + gap < 0 else idx + gap
 
         source_img = tiff.imread(self.frames_path_list[idx1])
         target_img = tiff.imread(self.frames_path_list[idx2])

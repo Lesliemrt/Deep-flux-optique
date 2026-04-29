@@ -1,37 +1,8 @@
 #!/usr/bin/env python
 # noqa: EXE001
-"""Example script to register two volumes with VoxelMorph models.
-
-Please make sure to use trained models appropriately. Let's say we have a model trained to register
-a scan (moving) to an atlas (fixed). To register a scan to the atlas and save the warp field, run:
-
-    register.py --moving moving.nii.gz --fixed fixed.nii.gz --model model.pt
-        --moved moved.nii.gz --warp warp.nii.gz
+"""Example script to register two images with VoxelMorph models.
 
 The source and target input images are expected to be affinely registered.
-
-If you use this code, please cite the following, and read function docs for further info/citations
-    VoxelMorph: A Learning Framework for Deformable Medical Image Registration
-    G. Balakrishnan, A. Zhao, M. R. Sabuncu, J. Guttag, A.V. Dalca.
-    IEEE TMI: Transactions on Medical Imaging. 38(8). pp 1788-1800. 2019.
-
-    or
-
-    Unsupervised Learning for Probabilistic Diffeomorphic Registration for Images and Surfaces
-    A.V. Dalca, G. Balakrishnan, J. Guttag, M.R. Sabuncu.
-    MedIA: Medical Image Analysis. (57). pp 226-236, 2019
-
-Copyright 2020 Adrian V. Dalca
-
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
-compliance with the License. You may obtain a copy of the License at
-
-http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software distributed under the License is
-distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-implied. See the License for the specific language governing permissions and limitations under
-the License.
 """
 
 # Core library imports
@@ -48,7 +19,7 @@ import torch
 
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # noqa: PTH100, PTH118, PTH120
-from utils.configs import DATA2, HEIGHT, WIDTH, device
+from utils.configs import DATA, DATA2, HEIGHT, WIDTH, device  # noqa: F401
 from utils.utils import interpole_and_pad
 
 import voxelmorph_folder.voxelmorph as vxm
@@ -113,7 +84,7 @@ def register(args):
     tensor_grid = torch.from_numpy(grid).to(device).float().unsqueeze(0).unsqueeze(0)
     warped_grid = model.spatial_transformer(tensor_grid, field)
 
-    results = {"fixed": fixed, "warped_grid": warped_grid, "moved": moved}
+    results = {"fixed": fixed, "moving": moving, "warped_grid": warped_grid, "moved": moved}
 
     # If segmentations available, load them and warp the moving segmentation with the predicted field for evaluation
     if args.seg_available:
@@ -130,7 +101,11 @@ def register(args):
             spatial_transformer = vxm.nn.modules.SpatialTransformer(interpolation_mode="nearest").to(device)
             warped_seg_moving = spatial_transformer(tensor_seg_moving, field)
             dice = vxm.py.utils.dice(warped_seg_moving.squeeze().cpu().numpy(), seg_fixed, include_zero=False)
+            ref_dice = vxm.py.utils.dice(
+                seg_moving, seg_fixed, include_zero=False
+            )  # reference dice to compare with the dice after registration
             results["dice"] = dice
+            results["ref_dice"] = ref_dice
         else:
             print("Segmentation files not found, skipping segmentation evaluation.")  # noqa: T201
 
@@ -140,7 +115,7 @@ def register(args):
 if __name__ == "__main__":
     # parse commandline args
     parser = argparse.ArgumentParser()
-    parser.add_argument("--moving", default=f"{DATA2}/01/t000.tif", help="moving image (source) filename")
+    parser.add_argument("--moving", default=f"{DATA2}/01/t090.tif", help="moving image (source) filename")
     parser.add_argument("--fixed", default=f"{DATA2}/01/t091.tif", help="fixed image (target) filename")
     parser.add_argument("--model", default="output/best.pt", help="weights of trained model to use for registration")
     parser.add_argument("--seg_available", default=True, help="whether segmentation is available for dice evaluation")
@@ -150,7 +125,9 @@ if __name__ == "__main__":
     warped_grid = result["warped_grid"]
     moved = result["moved"]
     fixed = result["fixed"]
+    moving = result["moving"]
     print(f"Dice score: {result['dice']}")  # noqa: T201
+    print(f"Reference Dice score: {result['ref_dice']}")  # noqa: T201
     plt.figure(figsize=(12, 12))
     plt.subplot(2, 2, 1)
     plt.title("Fixed")
