@@ -14,50 +14,50 @@ from skimage import measure
 import pystrum.pynd.ndutils as nd
 
 __all__ = [
-    'default_unet_features',
-    'read_file_list',
-    'read_pair_list',
-    'load_volfile',
-    'save_volfile',
-    'load_labels',
-    'load_pheno_csv',
-    'pad',
-    'resize',
-    'dice',
-    'affine_shift_to_matrix',
-    'extract_largest_vol',
-    'clean_seg',
-    'clean_seg_batch',
-    'filter_labels',
-    'dist_trf',
-    'signed_dist_trf',
-    'vol_to_sdt',
-    'vol_to_sdt_batch',
-    'get_surface_pts_per_label',
-    'edge_to_surface_pts',
-    'sdt_to_surface_pts',
-    'jacobian_determinant'
+    "default_unet_features",
+    "read_file_list",
+    "read_pair_list",
+    "load_volfile",
+    "save_volfile",
+    "load_labels",
+    "load_pheno_csv",
+    "pad",
+    "resize",
+    "dice",
+    "affine_shift_to_matrix",
+    "extract_largest_vol",
+    "clean_seg",
+    "clean_seg_batch",
+    "filter_labels",
+    "dist_trf",
+    "signed_dist_trf",
+    "vol_to_sdt",
+    "vol_to_sdt_batch",
+    "get_surface_pts_per_label",
+    "edge_to_surface_pts",
+    "sdt_to_surface_pts",
+    "jacobian_determinant",
 ]
 
 
 def default_unet_features():
     nb_features = [
-        [16, 32, 32, 32],             # encoder
-        [32, 32, 32, 32, 32, 16, 16]  # decoder
+        [16, 32, 32, 32],  # encoder
+        [32, 32, 32, 32, 32, 16, 16],  # decoder
     ]
     return nb_features
 
 
 def read_file_list(filename, prefix=None, suffix=None):
-    '''
+    """
     Reads a list of files from a line-seperated text file.
 
     Parameters:
         filename: Filename to load.
         prefix: File prefix. Default is None.
         suffix: File suffix. Default is None.
-    '''
-    with open(filename, 'r') as file:
+    """
+    with open(filename, "r") as file:
         content = file.readlines()
     filelist = [x.strip() for x in content if x.strip()]
     if prefix is not None:
@@ -68,7 +68,7 @@ def read_file_list(filename, prefix=None, suffix=None):
 
 
 def read_pair_list(filename, delim=None, prefix=None, suffix=None):
-    '''
+    """
     Reads a list of registration file pairs from a line-seperated text file.
 
     Parameters:
@@ -76,7 +76,7 @@ def read_pair_list(filename, delim=None, prefix=None, suffix=None):
         delim: File pair delimiter. Default is a whitespace seperator (None).
         prefix: File prefix. Default is None.
         suffix: File suffix. Default is None.
-    '''
+    """
     pairlist = [f.split(delim) for f in read_file_list(filename)]
     if prefix is not None:
         pairlist = [[prefix + f for f in pair] for pair in pairlist]
@@ -86,13 +86,7 @@ def read_pair_list(filename, delim=None, prefix=None, suffix=None):
 
 
 def load_volfile(
-    filename,
-    np_var='vol',
-    add_batch_axis=False,
-    add_feat_axis=False,
-    pad_shape=None,
-    resize_factor=1,
-    ret_affine=False
+    filename, np_var="vol", add_batch_axis=False, add_feat_axis=False, pad_shape=None, resize_factor=1, ret_affine=False
 ):
     """
     Loads a file in nii, nii.gz, mgz, npz, or npy format. If input file is not a string,
@@ -118,20 +112,21 @@ def load_volfile(
             (vol, affine) = filename
         else:
             vol = filename
-    elif filename.endswith(('.nii', '.nii.gz', '.mgz')):
+    elif filename.endswith((".nii", ".nii.gz", ".mgz")):
         import nibabel as nib
+
         img = nib.load(filename)
         vol = np.squeeze(img.dataobj)
         affine = img.affine
-    elif filename.endswith('.npy'):
+    elif filename.endswith(".npy"):
         vol = np.load(filename)
         affine = None
-    elif filename.endswith('.npz'):
+    elif filename.endswith(".npz"):
         npz = np.load(filename)
         vol = next(iter(npz.values())) if len(npz.keys()) == 1 else npz[np_var]
         affine = None
     else:
-        raise ValueError('unknown filetype for %s' % filename)
+        raise ValueError("unknown filetype for %s" % filename)
 
     if pad_shape:
         vol, _ = pad(vol, pad_shape)
@@ -160,24 +155,30 @@ def save_volfile(array, filename, affine=None):
     if isinstance(filename, pathlib.PurePath):
         filename = str(filename)
 
-    if filename.endswith(('.nii', '.nii.gz')):
+    if filename.endswith((".nii", ".nii.gz")):
         import nibabel as nib
+
         if affine is None and array.ndim >= 3:
             # use LIA transform as default affine
-            affine = np.array([[-1, 0, 0, 0],  # nopep8
-                               [0, 0, 1, 0],  # nopep8
-                               [0, -1, 0, 0],  # nopep8
-                               [0, 0, 0, 1]], dtype=float)  # nopep8
+            affine = np.array(
+                [
+                    [-1, 0, 0, 0],  # nopep8
+                    [0, 0, 1, 0],  # nopep8
+                    [0, -1, 0, 0],  # nopep8
+                    [0, 0, 0, 1],
+                ],
+                dtype=float,
+            )  # nopep8
             pcrs = np.append(np.array(array.shape[:3]) / 2, 1)
             affine[:3, 3] = -np.matmul(affine, pcrs)[:3]
         nib.save(nib.Nifti1Image(array, affine), filename)
-    elif filename.endswith('.npz'):
+    elif filename.endswith(".npz"):
         np.savez_compressed(filename, vol=array)
     else:
-        raise ValueError('unknown filetype for %s' % filename)
+        raise ValueError("unknown filetype for %s" % filename)
 
 
-def load_labels(arg, ext=('.nii.gz', '.nii', '.mgz', '.npy', '.npz')):
+def load_labels(arg, ext=(".nii.gz", ".nii", ".mgz", ".npy", ".npz")):
     """
     Load label maps, return a list of unique labels and the label maps. The label maps have to be
     of an integer type and identical shape.
@@ -196,7 +197,8 @@ def load_labels(arg, ext=('.nii.gz', '.nii', '.mgz', '.npy', '.npz')):
 
     # List files.
     import glob
-    files = [os.path.join(f, '*') if os.path.isdir(f) else f for f in map(str, arg)]
+
+    files = [os.path.join(f, "*") if os.path.isdir(f) else f for f in map(str, arg)]
     files = sum((glob.glob(f) for f in files), [])
     files = [f for f in files if f.endswith(ext)]
     if len(files) == 0:
@@ -234,7 +236,7 @@ def load_pheno_csv(filename, training_files=None):
     # load csv into dictionary
     pheno = {}
     with open(filename) as csv_file:
-        csv_reader = csv.reader(csv_file, delimiter=',')
+        csv_reader = csv.reader(csv_file, delimiter=",")
         header = next(csv_reader)
         for row in csv_reader:
             pheno[row[0]] = np.array([float(f) for f in row[1:]])
@@ -295,14 +297,13 @@ def dice(array1, array2, labels=None, include_zero=False):
         labels = np.concatenate([np.unique(a) for a in [array1, array2]])
         labels = np.sort(np.unique(labels))
     if not include_zero:
-        labels = np.delete(labels, np.argwhere(labels == 0)) 
+        labels = np.delete(labels, np.argwhere(labels == 0))
 
     dicem = np.zeros(len(labels))
     for idx, label in enumerate(labels):
         top = 2 * np.sum(np.logical_and(array1 == label, array2 == label))
         bottom = np.sum(array1 == label) + np.sum(array2 == label)
-        bottom = np.maximum(bottom, np.finfo(float).eps)  # add epsilon
-        dicem[idx] = top / bottom
+        dicem[idx] = top / bottom if bottom > 0 else 0.0
     return dicem
 
 
@@ -329,7 +330,7 @@ def extract_largest_vol(bw, connectivity=1):
     Extracts the binary (boolean) image with just the largest component.
     TODO: This might be less than efficiently implemented.
     """
-    lab = measure.label(bw.astype('int'), connectivity=connectivity)
+    lab = measure.label(bw.astype("int"), connectivity=connectivity)
     regions = measure.regionprops(lab, cache=False)
     areas = [f.area for f in regions]
     ai = np.argsort(areas)[::-1]
@@ -345,14 +346,14 @@ def clean_seg(x, std=1):
     # take out islands, fill in holes, and gaussian blur
     bw = extract_largest_vol(x)
     bw = 1 - extract_largest_vol(1 - bw)
-    gadt = scipy.ndimage.gaussian_filter(bw.astype('float'), std)
+    gadt = scipy.ndimage.gaussian_filter(bw.astype("float"), std)
 
     # figure out the proper threshold to maintain the total volume
     sgadt = np.sort(gadt.flatten())[::-1]
     thr = sgadt[np.ceil(bw.sum()).astype(int)]
     clean_bw = gadt > thr
 
-    assert np.isclose(bw.sum(), clean_bw.sum(), atol=5), 'cleaning segmentation failed'
+    assert np.isclose(bw.sum(), clean_bw.sum(), atol=5), "cleaning segmentation failed"
     return clean_bw.astype(float)
 
 
@@ -360,8 +361,8 @@ def clean_seg_batch(X_label, std=1):
     """
     Cleans batches of segmentation images.
     """
-    if not X_label.dtype == 'float':
-        X_label = X_label.astype('float')
+    if not X_label.dtype == "float":
+        X_label = X_label.astype("float")
 
     data = np.zeros(X_label.shape)
     for xi, x in enumerate(X_label):
@@ -374,7 +375,7 @@ def filter_labels(atlas_vol, labels):
     """
     Filters given volumes to only include given labels, all other voxels are set to 0.
     """
-    mask = np.zeros(atlas_vol.shape, 'bool')
+    mask = np.zeros(atlas_vol.shape, "bool")
     for label in labels:
         mask = np.logical_or(mask, atlas_vol == label)
     return atlas_vol * mask
@@ -420,7 +421,7 @@ def vol_to_sdt(X_label, sdt=True, sdt_vol_resize=1):
         if not isinstance(sdt_vol_resize, (list, tuple)):
             sdt_vol_resize = [sdt_vol_resize] * X_dt.ndim
         if any([f != 1 for f in sdt_vol_resize]):
-            X_dt = scipy.ndimage.interpolation.zoom(X_dt, sdt_vol_resize, order=1, mode='reflect')
+            X_dt = scipy.ndimage.interpolation.zoom(X_dt, sdt_vol_resize, order=1, mode="reflect")
 
     if not sdt:
         X_dt = np.abs(X_dt)
@@ -434,10 +435,9 @@ def vol_to_sdt_batch(X_label, sdt=True, sdt_vol_resize=1):
     """
 
     # assume X_label is [batch_size, *vol_shape, 1]
-    assert X_label.shape[-1] == 1, 'implemented assuming size is [batch_size, *vol_shape, 1]'
+    assert X_label.shape[-1] == 1, "implemented assuming size is [batch_size, *vol_shape, 1]"
     X_lst = [f[..., 0] for f in X_label]  # get rows
-    X_dt_lst = [vol_to_sdt(f, sdt=sdt, sdt_vol_resize=sdt_vol_resize)
-                for f in X_lst]  # distance transform
+    X_dt_lst = [vol_to_sdt(f, sdt=sdt, sdt_vol_resize=sdt_vol_resize) for f in X_lst]  # distance transform
     X_dt = np.stack(X_dt_lst, 0)[..., np.newaxis]
     return X_dt
 
@@ -446,7 +446,7 @@ def get_surface_pts_per_label(total_nb_surface_pts, layer_edge_ratios):
     """
     Gets the number of surface points per label, given the total number of surface points.
     """
-    nb_surface_pts_sel = np.round(np.array(layer_edge_ratios) * total_nb_surface_pts).astype('int')
+    nb_surface_pts_sel = np.round(np.array(layer_edge_ratios) * total_nb_surface_pts).astype("int")
     nb_surface_pts_sel[-1] = total_nb_surface_pts - int(np.sum(nb_surface_pts_sel[:-1]))
     return nb_surface_pts_sel
 
@@ -467,19 +467,18 @@ def edge_to_surface_pts(X_edges, nb_surface_pts=None):
     return surface_pts
 
 
-def sdt_to_surface_pts(X_sdt, nb_surface_pts,
-                       surface_pts_upsample_factor=2, thr=0.50001, resize_fn=None):
+def sdt_to_surface_pts(X_sdt, nb_surface_pts, surface_pts_upsample_factor=2, thr=0.50001, resize_fn=None):
     """
     Converts a signed distance transform to surface points.
     """
     us = [surface_pts_upsample_factor] * X_sdt.ndim
 
     if resize_fn is None:
-        resized_vol = scipy.ndimage.interpolation.zoom(X_sdt, us, order=1, mode='reflect')
+        resized_vol = scipy.ndimage.interpolation.zoom(X_sdt, us, order=1, mode="reflect")
     else:
         resized_vol = resize_fn(X_sdt)
         pred_shape = np.array(X_sdt.shape) * surface_pts_upsample_factor
-        assert np.array_equal(pred_shape, resized_vol.shape), 'resizing failed'
+        assert np.array_equal(pred_shape, resized_vol.shape), "resizing failed"
 
     X_edges = np.abs(resized_vol) < thr
     sf_pts = edge_to_surface_pts(X_edges, nb_surface_pts=nb_surface_pts)
@@ -495,7 +494,7 @@ def jacobian_determinant(disp):
     NB: to compute the spatial gradients, we use np.gradient.
 
     Parameters:
-        disp: 2D or 3D displacement field of size [*vol_shape, nb_dims], 
+        disp: 2D or 3D displacement field of size [*vol_shape, nb_dims],
               where vol_shape is of len nb_dims
 
     Returns:
@@ -505,7 +504,7 @@ def jacobian_determinant(disp):
     # check inputs
     volshape = disp.shape[:-1]
     nb_dims = len(volshape)
-    assert len(volshape) in (2, 3), 'flow has to be 2D or 3D'
+    assert len(volshape) in (2, 3), "flow has to be 2D or 3D"
 
     # compute grid
     grid_lst = nd.volsize2ndgrid(volshape)
@@ -528,7 +527,6 @@ def jacobian_determinant(disp):
         return Jdet0 - Jdet1 + Jdet2
 
     else:  # must be 2
-
         dfdx = J[0]
         dfdy = J[1]
 

@@ -88,6 +88,14 @@ def register(args):
             seg_fixed = tiff.imread(fixed_path)
             seg_moving = interpole_and_pad(seg_moving, [HEIGHT, WIDTH])
             seg_fixed = interpole_and_pad(seg_fixed, [HEIGHT, WIDTH])
+            # Check if nbr of cells different
+            labels_moving = np.sort(np.unique(seg_moving))
+            labels_fixed = np.sort(np.unique(seg_fixed))
+            if len(labels_moving) != len(labels_fixed):
+                print(  # noqa: T201
+                    f"Different number of cells for pair {len(labels_moving)} vs {len(labels_fixed)}, skipping evaluation."  # noqa: E501
+                )
+                return results
             # Warp moving segmentation with the predicted field
             tensor_seg_moving = torch.from_numpy(seg_moving).to(device).float().unsqueeze(0).unsqueeze(0)
             spatial_transformer = vxm.nn.modules.SpatialTransformer(interpolation_mode="nearest").to(device)

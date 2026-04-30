@@ -17,7 +17,7 @@ import torch
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # noqa: PTH100, PTH118, PTH120
 from utils.configs import DATA, DATA2, HEIGHT, WIDTH, device  # noqa: F401
-from utils.utils import create_grid, interpole_and_pad, iou
+from utils.utils import create_grid, interpole_and_pad, iou, normalisation_params
 
 import voxelmorph_folder.voxelmorph as vxm
 
@@ -32,18 +32,10 @@ def register_video(args):
     """
     print(f"Using device: {device}")  # noqa: T201
 
-    # Load video frames
+    # Load video and segmentations frames
     frames_path_list = sorted(Path(args.video_path).iterdir())
     seg_path_list = sorted(Path(args.seg_path).iterdir()) if args.seg_path is not None else None
-    global_min = np.min(tiff.imread(str(frames_path_list[0])))
-    global_max = np.max(tiff.imread(str(frames_path_list[0])))
-
-    for i in range(1, len(frames_path_list)):
-        current_min = np.min(tiff.imread(str(frames_path_list[i])))
-        current_max = np.max(tiff.imread(str(frames_path_list[i])))
-
-        global_min = min(global_min, current_min)
-        global_max = max(global_max, current_max)
+    global_min, global_max = normalisation_params(frames_path_list)
 
     # Create model
     model = vxm.nn.models.VxmPairwise(
@@ -97,6 +89,14 @@ def register_video(args):
             seg_fixed = tiff.imread(seg_path_list[idx2])
             seg_moving = interpole_and_pad(seg_moving, [HEIGHT, WIDTH])
             seg_fixed = interpole_and_pad(seg_fixed, [HEIGHT, WIDTH])
+            # Check if nbr of cells different
+            labels_moving = np.sort(np.unique(seg_moving))
+            labels_fixed = np.sort(np.unique(seg_fixed))
+            if len(labels_moving) != len(labels_fixed):
+                print(  # noqa: T201
+                    f"Different number of cells for pair {idx}-{idx2} {len(labels_moving)} vs {len(labels_fixed)}, skipping evaluation for this pair."  # noqa: E501
+                )
+                continue
             # Warp moving segmentation with the predicted field
             tensor_seg_moving = torch.from_numpy(seg_moving).to(device).float().unsqueeze(0).unsqueeze(0)
             spatial_transformer = vxm.nn.modules.SpatialTransformer(interpolation_mode="nearest").to(device)

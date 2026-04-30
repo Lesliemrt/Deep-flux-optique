@@ -4,11 +4,27 @@ import sys
 
 import numpy as np
 import scipy
+import tifffile as tiff
 
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # noqa: PTH100, PTH118, PTH120
 
 import voxelmorph_folder.voxelmorph as vxm
+
+
+def normalisation_params(frames_path_list):
+    """Return the global minimum and maximum pixel values across all frame's paths in the video."""
+    global_min = np.min(tiff.imread(str(frames_path_list[0])))
+    global_max = np.max(tiff.imread(str(frames_path_list[0])))
+
+    for i in range(1, len(frames_path_list)):
+        current_min = np.min(tiff.imread(str(frames_path_list[i])))
+        current_max = np.max(tiff.imread(str(frames_path_list[i])))
+
+        global_min = min(global_min, current_min)
+        global_max = max(global_max, current_max)
+
+    return global_min, global_max
 
 
 def interpole_and_pad(image, target_shape=(1024, 1024)):
@@ -46,6 +62,5 @@ def iou(array1, array2, labels=None, include_zero=False):
     for idx, label in enumerate(labels):
         top = np.sum(np.logical_and(array1 == label, array2 == label))
         bottom = np.sum(np.logical_or(array1 == label, array2 == label))
-        bottom = np.maximum(bottom, np.finfo(float).eps)  # add epsilon
-        ioum[idx] = top / bottom
+        ioum[idx] = top / bottom if bottom > 0 else 0.0
     return ioum
