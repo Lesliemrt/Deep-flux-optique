@@ -105,7 +105,7 @@ class VxmVideoDataset(Dataset):
 
     def get_frames_path_list(self):
         """Create a list with all the frame's path."""
-        self.frames_path_list = list(self.video_path.iterdir())
+        self.frames_path_list = sorted(self.video_path.iterdir())
 
 
 def train_epoch(
