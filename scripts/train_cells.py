@@ -82,8 +82,10 @@ class VxmVideoDataset(Dataset):
             global_min = min(global_min, current_min)
             global_max = max(global_max, current_max)
 
-        # self.global_min = global_min  # noqa: ERA001
-        # self.global_max = global_max  # noqa: ERA001
+        # TODO : move this normalisation in a separate function and call it in the __getitem__ to avoid loading all
+        # the frames at the initialization of the dataset?
+        # TODO : Save normalisation parameters in a file to be able to normalise the test data with the same parameters
+        # as the training data?
 
         def normalise(frame):
             return (frame - global_min) / (global_max - global_min)
