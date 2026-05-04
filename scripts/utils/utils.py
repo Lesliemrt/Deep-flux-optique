@@ -1,10 +1,13 @@
 # utils.py  # noqa: ERA001, INP001
 import os
 import sys
+from collections import Counter
 
+import matplotlib.pyplot as plt
 import numpy as np
 import scipy
 import tifffile as tiff
+from skimage.measure import regionprops
 
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # noqa: PTH100, PTH118, PTH120
@@ -64,3 +67,35 @@ def iou(array1, array2, labels=None, include_zero=False):
         bottom = np.sum(np.logical_or(array1 == label, array2 == label))
         ioum[idx] = top / bottom if bottom > 0 else 0.0
     return ioum
+
+
+def relabel_cells(array, with_labels):
+    """Relabel an segmentation mask with labels from another one."""
+    relabeled = np.zeros_like(array)
+    for region in regionprops(array):
+        if region.label == 0:
+            continue
+        # Get the most common label in the region from with_labels
+        labels_in_region = with_labels[region.coords[:, 0], region.coords[:, 1]]
+        label_count = Counter(labels_in_region)
+        if max(label_count.values()) == 0:
+            most_common_label = 0
+        else:
+            label_count.pop(0, None)
+            most_common_label = label_count.most_common(1)[0][0]
+        relabeled[region.coords[:, 0], region.coords[:, 1]] = most_common_label
+    return relabeled
+
+
+def visualize_labels(mask, ax=None):
+    """Visualize a segmentation mask with written labels."""
+    if ax is None:
+        ax = plt.gca()
+    ax.imshow(mask, interpolation="nearest")
+    ax.axis("off")
+
+    for region in regionprops(mask):
+        if region.label == 0:
+            continue
+        y, x = region.centroid
+        ax.text(x, y, str(region.label), color="white", fontsize=10, ha="center", va="center")

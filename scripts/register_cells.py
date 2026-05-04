@@ -86,6 +86,7 @@ def register(args):
         if os.path.isfile(moving_path) and os.path.isfile(fixed_path):  # noqa: PTH113
             seg_moving = tiff.imread(moving_path)
             seg_fixed = tiff.imread(fixed_path)
+            # Interpole and pad with zeros to HEIGHT, WIDTH if needed
             seg_moving = interpole_and_pad(seg_moving, [HEIGHT, WIDTH])
             seg_fixed = interpole_and_pad(seg_fixed, [HEIGHT, WIDTH])
             # Check if nbr of cells different
