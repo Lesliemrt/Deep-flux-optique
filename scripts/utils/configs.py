@@ -4,9 +4,20 @@ import torch
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+# Seed for reproductability
+SEED = 42
+
 # Data Path
-DATA = "data/train_data/Fluo-N2DH-GOWT1_train"
-DATA2 = "data/train_data/Fluo-N2DL-HeLa_train"
+# GOWT video
+TRAIN_DATA = "data/train_data/Fluo-N2DH-GOWT1_train/01"
+TRAIN_SEG_DATA = "data/train_data/Fluo-N2DH-GOWT1_train/01_ERR_SEG"
+TEST_DATA = "data/test_data/Fluo-N2DH-GOWT1_train/02"
+TEST_SEG_DATA = "data/test_data/Fluo-N2DH-GOWT1_train/02_ERR_SEG"
+# HeLa video
+TRAIN_DATA_2 = "data/train_data/Fluo-N2DL-HeLa_train/01"
+TRAIN_SEG_DATA_2 = "data/train_data/Fluo-N2DL-HeLa_train/01_ERR_SEG"
+TEST_DATA_2 = "data/train_data/Fluo-N2DL-HeLa_train/02"
+TEST_SEG_DATA_2 = "data/train_data/Fluo-N2DL-HeLa_train/02_ERR_SEG"
 
 # Constants
 HEIGHT = 1024

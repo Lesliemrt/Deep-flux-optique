@@ -24,7 +24,7 @@ from tqdm import tqdm
 
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # noqa: PTH100, PTH118, PTH120
-from utils.configs import DATA, device
+from utils.configs import TRAIN_DATA, device
 
 import voxelmorph_folder.voxelmorph as vxm
 
@@ -32,37 +32,39 @@ import voxelmorph_folder.voxelmorph as vxm
 class VxmVideoDataset(Dataset):
     """PyTorch Dataset for VoxelMorph registration data on video."""
 
-    def __init__(self, augment=False) -> None:
+    def __init__(self, video_path, max_gap=20, augment=False) -> None:
         """Parameters
 
         augment : bool
             Apply augmentations if True.
         """
-        self.video_path = Path(DATA + "/01")
+        self.video_path = Path(video_path)
         self.get_frames_path_list()
         self.augment = augment
         self.transform = self.get_transforms(n=len(self))
+        if not max_gap < len(self) // 2:
+            raise ValueError(f"max_gap {max_gap} should be smaller than frames number // 2 {len(self) // 2}.")
+        self.max_gap = max_gap
 
-    def __getitem__(self, idx):  # TODO: get item ou get_iter ?
+    def __getitem__(self, idx):
         """Normalize video and generate pairs of frame from a single video.
 
         dict
             A dictionary containing the source and target frames.
         """
         # Select 2 frames with a random gap (maximum 10 frames gap)
-        max_gap = 10
-        gap = np.random.randint(-max_gap, max_gap + 1)  # noqa: NPY002
+        gap = np.random.randint(-self.max_gap, self.max_gap + 1)  # noqa: NPY002
         if gap == 0:
             gap = 1
-        idx1 = idx
-        idx2 = idx1 - gap if idx1 + gap > len(self) or idx1 + gap < 0 else idx + gap
+        idx1 = idx % len(self)  # to avoid out of index error when selecting pairs of frames
+        idx2 = idx1 - gap if (idx1 + gap > len(self) or idx1 + gap < 0) else idx + gap
 
         source_img = tiff.imread(self.frames_path_list[idx1])
         target_img = tiff.imread(self.frames_path_list[idx2])
 
         # Normalisation + augmentation if augment
         source_img = self.transform(source_img)
-        target_img = self.transform(target_img)
+        target_img = self.transform(target_img)  # TODO verify if same transform/augment is applied to source and target
 
         # To tensor
         source = torch.from_numpy(source_img)
@@ -98,10 +100,10 @@ class VxmVideoDataset(Dataset):
         return transforms.Compose(base_transforms)
 
     def __len__(self):
-        """Return len dataset."""
+        """Return nbr of paires per epoch."""
         return (
-            len(self.frames_path_list) - 3
-        )  # to avoid out of index error when selecting pairs of frames + keep 2 image for testing
+            len(self.frames_path_list) * 3  # To have more paires per epoch
+        )
 
     def get_frames_path_list(self):
         """Create a list with all the frame's path."""
@@ -195,7 +197,7 @@ def main():
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # Create dataloader
-    train_dataset = VxmVideoDataset()
+    train_dataset = VxmVideoDataset(video_path=TRAIN_DATA, augment=False)
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,

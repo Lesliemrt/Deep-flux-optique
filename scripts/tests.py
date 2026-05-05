@@ -16,7 +16,7 @@ import torch
 
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # noqa: PTH100, PTH118, PTH120
-from utils.configs import DATA, DATA2, HEIGHT, WIDTH, device  # noqa: F401
+from utils.configs import DATA, DATA2, HEIGHT, TEST_DATA, TEST_SEG_DATA, WIDTH, device  # noqa: F401
 from utils.utils import create_grid, interpole_and_pad, iou, normalisation_params
 
 import voxelmorph_folder.voxelmorph as vxm
@@ -125,10 +125,10 @@ def register_video(args):
 if __name__ == "__main__":
     # parse commandline args
     parser = argparse.ArgumentParser()
-    parser.add_argument("--video_path", default=f"{DATA}/02", help="moving image (source) filename")
+    parser.add_argument("--video_path", default=f"{TEST_DATA}", help="moving image (source) filename")
     parser.add_argument(
         "--seg_path",
-        default=f"{DATA}/02_ERR_SEG",
+        default=f"{TEST_SEG_DATA}",
         help="if segmentations not available, set to None",
     )
     parser.add_argument("--model", default="output/best.pt", help="weights of trained model to use for registration")
