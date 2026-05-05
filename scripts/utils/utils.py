@@ -78,7 +78,7 @@ def relabel_cells(array, with_labels):
         # Get the most common label in the region from with_labels
         labels_in_region = with_labels[region.coords[:, 0], region.coords[:, 1]]
         label_count = Counter(labels_in_region)
-        if max(label_count.values()) == 0:
+        if max(label_count.keys()) == 0:
             most_common_label = 0
         else:
             label_count.pop(0, None)

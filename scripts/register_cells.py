@@ -81,22 +81,14 @@ def register(args):
     # If segmentations available, load them and warp the moving segmentation with the predicted field for evaluation
     if args.seg_available:
         # Load segmentation masks
-        moving_path = args.moving.replace("02/t", "02_ERR_SEG/mask")
-        fixed_path = args.fixed.replace("02/t", "02_ERR_SEG/mask")
+        moving_path = args.moving.replace("02/t0", "02_ERR_SEG_TRA/relabeled_")
+        fixed_path = args.fixed.replace("02/t0", "02_ERR_SEG_TRA/relabeled_")
         if os.path.isfile(moving_path) and os.path.isfile(fixed_path):  # noqa: PTH113
             seg_moving = tiff.imread(moving_path)
             seg_fixed = tiff.imread(fixed_path)
             # Interpole and pad with zeros to HEIGHT, WIDTH if needed
             seg_moving = interpole_and_pad(seg_moving, [HEIGHT, WIDTH])
             seg_fixed = interpole_and_pad(seg_fixed, [HEIGHT, WIDTH])
-            # Check if nbr of cells different
-            labels_moving = np.sort(np.unique(seg_moving))
-            labels_fixed = np.sort(np.unique(seg_fixed))
-            if len(labels_moving) != len(labels_fixed):
-                print(  # noqa: T201
-                    f"Different number of cells for pair {len(labels_moving)} vs {len(labels_fixed)}, skipping evaluation."  # noqa: E501
-                )
-                return results
             # Warp moving segmentation with the predicted field
             tensor_seg_moving = torch.from_numpy(seg_moving).to(device).float().unsqueeze(0).unsqueeze(0)
             spatial_transformer = vxm.nn.modules.SpatialTransformer(interpolation_mode="nearest").to(device)
@@ -124,8 +116,8 @@ def register(args):
 if __name__ == "__main__":
     # parse commandline args
     parser = argparse.ArgumentParser()
-    parser.add_argument("--moving", default=f"{DATA}/02/t000.tif", help="moving image (source) filename")
-    parser.add_argument("--fixed", default=f"{DATA}/02/t001.tif", help="fixed image (target) filename")
+    parser.add_argument("--moving", default=f"{DATA}/02/t003.tif", help="moving image (source) filename")
+    parser.add_argument("--fixed", default=f"{DATA}/02/t004.tif", help="fixed image (target) filename")
     parser.add_argument("--model", default="output/best.pt", help="weights of trained model to use for registration")
     parser.add_argument("--seg_available", default=True, help="whether segmentation is available for dice evaluation")
     # TODO : case 3D ?
@@ -135,10 +127,11 @@ if __name__ == "__main__":
     moved = result["moved"]
     fixed = result["fixed"]
     moving = result["moving"]
-    print(f"Dice score: {result['dice']}")  # noqa: T201
-    print(f"Reference Dice score: {result['ref_dice']}")  # noqa: T201
-    print(f"IoU score: {result['iou']}")  # noqa: T201
-    print(f"Reference IoU score: {result['ref_iou']}")  # noqa: T201
+    if "dice" in result:
+        print(f"Dice score: {result['dice']}")  # noqa: T201
+        print(f"Reference Dice score: {result['ref_dice']}")  # noqa: T201
+        print(f"IoU score: {result['iou']}")  # noqa: T201
+        print(f"Reference IoU score: {result['ref_iou']}")  # noqa: T201
     plt.figure(figsize=(12, 12))
     plt.subplot(2, 2, 1)
     plt.title("Fixed")
