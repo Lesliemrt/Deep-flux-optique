@@ -41,9 +41,11 @@ class VxmVideoDataset(Dataset):
         self.video_path = Path(video_path)
         self.get_frames_path_list()
         self.augment = augment
-        self.transform = self.get_transforms(n=len(self))
-        if not max_gap < len(self) // 2:
-            raise ValueError(f"max_gap {max_gap} should be smaller than frames number // 2 {len(self) // 2}.")
+        self.transform = self.get_transforms(n=len(self.frames_path_list))
+        if not max_gap < len(self.frames_path_list) // 2:
+            raise ValueError(
+                f"max_gap {max_gap} should be smaller than frames number // 2 {len(self.frames_path_list) // 2}."
+            )
         self.max_gap = max_gap
 
     def __getitem__(self, idx):
@@ -56,8 +58,8 @@ class VxmVideoDataset(Dataset):
         gap = np.random.randint(-self.max_gap, self.max_gap + 1)  # noqa: NPY002
         if gap == 0:
             gap = 1
-        idx1 = idx % len(self)  # to avoid out of index error when selecting pairs of frames
-        idx2 = idx1 - gap if (idx1 + gap > len(self) or idx1 + gap < 0) else idx + gap
+        idx1 = idx % (len(self.frames_path_list) - 1)  # to avoid out of index error when selecting pairs of frames
+        idx2 = idx1 - gap if (idx1 + gap > (len(self.frames_path_list) - 1) or idx1 + gap < 0) else idx1 + gap
 
         source_img = tiff.imread(self.frames_path_list[idx1])
         target_img = tiff.imread(self.frames_path_list[idx2])
