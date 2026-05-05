@@ -120,6 +120,7 @@ def train_epoch(
     grad_loss_fn: nn.Module,
     loss_weights: Sequence[float],
     # steps_per_epoch: int,
+    # TODO : loss for seg
 ) -> float:
     """Train for one epoch.
 
