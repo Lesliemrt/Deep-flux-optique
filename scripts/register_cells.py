@@ -1,5 +1,4 @@
-#!/usr/bin/env python
-# noqa: EXE001
+#!/usr/bin/env python noqa: EXE001
 """Example script to register two images with VoxelMorph models.
 
 The source and target input images are expected to be affinely registered.

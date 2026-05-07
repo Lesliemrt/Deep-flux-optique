@@ -11,8 +11,8 @@ import sys
 from collections.abc import Sequence  # noqa: TC003
 from pathlib import Path
 
-import neurite as ne
-
+os.environ["NEURITE_BACKEND"] = "pytorch"
+os.environ["VXM_BACKEND"] = "pytorch"
 # Third-party imports
 import numpy as np
 import tifffile as tiff
@@ -22,9 +22,11 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from tqdm import tqdm
 
+import neurite as ne
+
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # noqa: PTH100, PTH118, PTH120
-from utils.configs import TRAIN_DATA, device
+from utils.configs import TRAIN_DATA, TRAIN_SEG_DATA, device
 
 import voxelmorph_folder.voxelmorph as vxm
 
@@ -32,14 +34,21 @@ import voxelmorph_folder.voxelmorph as vxm
 class VxmVideoDataset(Dataset):
     """PyTorch Dataset for VoxelMorph registration data on video."""
 
-    def __init__(self, video_path, max_gap=20, augment=False) -> None:
+    def __init__(self, video_path, seg_path=None, max_gap=20, augment=False) -> None:
         """Parameters
 
+        video_path : str
+            Path to the video frames.
+        seg_path : str
+            Path to the segmentation frames (optional).
+        max_gap : int
+            Maximum gap between the two frames to select for registration (default: 20).
         augment : bool
             Apply augmentations if True.
         """
         self.video_path = Path(video_path)
-        self.get_frames_path_list()
+        self.seg_path = Path(seg_path) if seg_path is not None else None
+        self.get_path_list()
         self.augment = augment
         self.transform = self.get_transforms(n=len(self.frames_path_list))
         if not max_gap < len(self.frames_path_list) // 2:
@@ -71,6 +80,15 @@ class VxmVideoDataset(Dataset):
         # To tensor
         source = torch.from_numpy(source_img)
         target = torch.from_numpy(target_img)
+
+        if self.seg_path is not None:
+            source_seg = tiff.imread(self.seg_path_list[idx1])
+            target_seg = tiff.imread(self.seg_path_list[idx2])
+            source_seg = self.transform(source_seg)
+            target_seg = self.transform(target_seg)
+            source_seg = torch.from_numpy(source_seg)
+            target_seg = torch.from_numpy(target_seg)
+            return {"source": source, "target": target, "source_seg": source_seg, "target_seg": target_seg}
 
         return {"source": source, "target": target}
 
@@ -107,10 +125,11 @@ class VxmVideoDataset(Dataset):
             len(self.frames_path_list) * 3  # To have more paires per epoch
         )
 
-    def get_frames_path_list(self):
-        """Create a list with all the frame's path."""
+    def get_path_list(self):
+        """Create a list with all the frame's path and segmentation's path."""
         self.frames_path_list = sorted(self.video_path.iterdir())
-
+        if self.seg_path is not None:
+            self.seg_path_list = sorted(self.seg_path.iterdir())
 
 def train_epoch(
     model: nn.Module,
@@ -118,6 +137,7 @@ def train_epoch(
     optimizer: torch.optim.Optimizer,
     image_loss_fn: nn.Module,
     grad_loss_fn: nn.Module,
+    seg_loss_fn: nn.Module,
     loss_weights: Sequence[float],
     # steps_per_epoch: int,
     # TODO : loss for seg
@@ -160,6 +180,12 @@ def train_epoch(
         grad_loss = grad_loss_fn(displacement)
 
         loss = loss_weights[0] * img_loss + loss_weights[1] * grad_loss
+        if "source_seg" in batch and "target_seg" in batch:
+            source_seg = batch["source_seg"].float().to(device).unsqueeze(1)
+            target_seg = batch["target_seg"].float().to(device).unsqueeze(1)
+            warped_source_seg = model.spatial_transformer(source_seg, displacement)
+            seg_loss = seg_loss_fn(target_seg, warped_source_seg)
+            loss += loss_weights[2] * seg_loss
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
@@ -177,6 +203,7 @@ def main():
     parser.add_argument("--batch-size", type=int, default=4, help="Batch size")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument("--lambda", type=float, dest="lambda_param", default=0.01)
+    parser.add_argument("--gamma", type=float, dest="gamma_param", default=0.01)
     parser.add_argument("--gpu", type=str, default="0", help="GPU ID")
     parser.add_argument("--save-every", type=int, default=10, help="Checkpoint every N epochs")
     args = parser.parse_args()
@@ -196,11 +223,12 @@ def main():
     # Setup losses and optimizer
     image_loss_fn = ne.nn.modules.MSE()
     grad_loss_fn = ne.nn.modules.SpatialGradient("l2")
-    loss_weights = [1.0, args.lambda_param]
+    seg_loss_fn = ne.nn.modules.Dice()
+    loss_weights = [1.0, args.lambda_param, args.gamma_param]
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # Create dataloader
-    train_dataset = VxmVideoDataset(video_path=TRAIN_DATA, augment=False)
+    train_dataset = VxmVideoDataset(video_path=TRAIN_DATA, seg_path=TRAIN_SEG_DATA, augment=False)
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
@@ -223,6 +251,7 @@ def main():
             optimizer=optimizer,
             image_loss_fn=image_loss_fn,
             grad_loss_fn=grad_loss_fn,
+            seg_loss_fn=seg_loss_fn,
             loss_weights=loss_weights,
         )
 
