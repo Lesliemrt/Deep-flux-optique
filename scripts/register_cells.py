@@ -147,4 +147,3 @@ if __name__ == "__main__":
     plt.title("Warped Grid")
     plt.imshow(warped_grid.squeeze().cpu().numpy(), cmap="gray")
     plt.show()
-    # TODO save fig ?

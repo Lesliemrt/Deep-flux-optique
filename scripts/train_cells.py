@@ -77,7 +77,7 @@ class VxmVideoDataset(Dataset):
 
         # Normalisation + augmentation if augment
         source_img = self.transform(source_img)
-        target_img = self.transform(target_img)  # TODO verify if same transform/augment is applied to source and target
+        target_img = self.transform(target_img)
 
         # To tensor
         source = torch.from_numpy(source_img)
@@ -103,11 +103,6 @@ class VxmVideoDataset(Dataset):
 
             global_min = min(global_min, current_min)
             global_max = max(global_max, current_max)
-
-        # TODO : move this normalisation in a separate function and call it in the __getitem__ to avoid loading all
-        # the frames at the initialization of the dataset?
-        # TODO : Save normalisation parameters in a file to be able to normalise the test data with the same parameters
-        # as the training data?
 
         def normalise(frame):
             return (frame - global_min) / (global_max - global_min)
@@ -141,7 +136,6 @@ def train_epoch(
     seg_loss_fn: nn.Module,
     loss_weights: Sequence[float],
     # steps_per_epoch: int,
-    # TODO : loss for seg
 ) -> float:
     """Train for one epoch.
 

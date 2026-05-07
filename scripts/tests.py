@@ -55,9 +55,9 @@ def register_video(args):
     tensor_grid = torch.from_numpy(grid).to(device).float().unsqueeze(0).unsqueeze(0)
 
     results = []
-    for idx in range(len(frames_path_list) - 1):
+    for idx in range(len(frames_path_list) - args.gap):
         # Load moving and fixed images
-        idx2 = idx + 1
+        idx2 = idx + args.gap
         moving = tiff.imread(frames_path_list[idx])
         fixed = tiff.imread(frames_path_list[idx2])  # TODO : select 2 frames with a gap?
 
@@ -120,6 +120,7 @@ if __name__ == "__main__":
     # parse commandline args
     parser = argparse.ArgumentParser()
     parser.add_argument("--video_path", default=f"{TEST_DATA}", help="moving image (source) filename")
+    parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
         default=f"{TEST_SEG_DATA}",
@@ -150,6 +151,7 @@ if __name__ == "__main__":
         print(f"Global IoU : {[f'{result[('iou')]:.4f}' for result in results]}")  # noqa: T201
         # Save metrics in a json file
         metrics = {
+            "gap": args.gap,
             "global_dice": global_dice,
             "global_ref_dice": global_ref_dice,
             "global_iou": global_iou,
