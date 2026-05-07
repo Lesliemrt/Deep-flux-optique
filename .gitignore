@@ -25,16 +25,13 @@ MANIFEST
 **/.DS_Store
 .vscode/settings.json
 .vscode/settings.json
-**/*.ipynb
+neurite/
 
 # Data files
-**/*.h5
 data.tar.gz
 fs_rgb.npy
-**/*.npz
+**/*.tif
 data/*
-.claude/*
-CLAUDE.md
 TODOs
 voxelmorph-sandbox/
 th_*
