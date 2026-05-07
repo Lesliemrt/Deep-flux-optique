@@ -3,6 +3,8 @@
 
 # Core library imports
 import argparse
+import datetime
+import json
 import os
 import sys
 from pathlib import Path
@@ -121,15 +123,18 @@ if __name__ == "__main__":
     parser.add_argument(
         "--seg_path",
         default=f"{TEST_SEG_DATA}",
-        help="if segmentations not available, set to None",
+        help="for evaluation (if segmentations not available, set to None)",
     )
-    parser.add_argument(
-        "--model", default="output_seg/best.pt", help="weights of trained model to use for registration"
-    )
+    parser.add_argument("--model", default="output/best.pt", help="weights of trained model to use for registration")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    parser.add_argument("--saving_dir", default=f"results/result_{timestamp}", help="directory to save results")
     # TODO : case 3D ?
     args = parser.parse_args()
     # Compute results for all pairs of frames in the video
     results = register_video(args)
+    # Create results directory if it doesn't exist
+    results_dir = Path(args.saving_dir)
+    results_dir.mkdir(parents=True, exist_ok=True)
     # Compute de global dice score across all pairs of frames if segmentations are available
     if "dice" in results[0]:
         global_dice = np.mean([result["dice"] for result in results])
@@ -143,11 +148,25 @@ if __name__ == "__main__":
         print(f"Global IoU score across all pairs of frames: {global_iou}")  # noqa: T201
         print(f"Global reference IoU score across all pairs of frames: {global_ref_iou}")  # noqa: T201
         print(f"Global IoU : {[f'{result[('iou')]:.4f}' for result in results]}")  # noqa: T201
+        # Save metrics in a json file
+        metrics = {
+            "global_dice": global_dice,
+            "global_ref_dice": global_ref_dice,
+            "global_iou": global_iou,
+            "global_ref_iou": global_ref_iou,
+            "dice_per_pair": [result["dice"] for result in results],
+            "ref_dice_per_pair": [result["ref_dice"] for result in results],
+            "iou_per_pair": [result["iou"] for result in results],
+            "ref_iou_per_pair": [result["ref_iou"] for result in results],
+        }
+        with Path.open(results_dir / "metrics.json", "w") as f:
+            json.dump(metrics, f)
     # Visualise results for first 2 frames
-    warped_grid = results[0]["warped_grid"]
-    moved = results[0]["moved"]
-    fixed = results[0]["fixed"]
-    moving = results[0]["moving"]
+    idx = 0
+    warped_grid = results[idx]["warped_grid"]
+    moved = results[idx]["moved"]
+    fixed = results[idx]["fixed"]
+    moving = results[idx]["moving"]
     plt.figure(figsize=(12, 12))
     plt.subplot(2, 2, 1)
     plt.title("Fixed")
@@ -162,3 +181,4 @@ if __name__ == "__main__":
     plt.title("Warped Grid")
     plt.imshow(warped_grid.squeeze().cpu().numpy(), cmap="gray")
     plt.show()
+    plt.savefig(results_dir / f"registration_result_for_paire_{idx}.png")

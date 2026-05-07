@@ -6,6 +6,7 @@ pp 1788-1800. 2019.
 
 # Core library imports
 import argparse
+import json
 import os
 import sys
 from collections.abc import Sequence  # noqa: TC003
@@ -14,6 +15,8 @@ from pathlib import Path
 os.environ["NEURITE_BACKEND"] = "pytorch"
 os.environ["VXM_BACKEND"] = "pytorch"
 # Third-party imports
+import datetime
+
 import neurite as ne
 import numpy as np
 import tifffile as tiff
@@ -201,11 +204,19 @@ def train_epoch(
     return total_loss / len(dataloader)
 
 
-def main():
+def main():  # noqa: PLR0915
     """Create the dataloader, create the model, train and save."""
     parser = argparse.ArgumentParser(description="Train VoxelMorph")
-    parser.add_argument("--output-dir", type=str, default="output_seg", help="Output directory")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    parser.add_argument("--output-dir", type=str, default=f"outputs/output_{timestamp}", help="Output directory")
+    parser.add_argument("--video-path", default=f"{TRAIN_DATA}", help="Path to the training video")
+    parser.add_argument(
+        "--seg-path",
+        default=f"{TRAIN_SEG_DATA}",
+        help="Path to the segmentation of the training video, if not available set to None",
+    )
     parser.add_argument("--epochs", type=int, default=100, help="Number of epochs")
+    parser.add_argument("--image-loss", type=str, default="mse", help="Image loss to use: 'mse' or 'CC'")
     parser.add_argument("--workers", type=int, default=0, help="Number of workers")
     parser.add_argument("--steps-per-epoch", type=int, default=100, help="Steps per epoch")
     parser.add_argument("--batch-size", type=int, default=4, help="Batch size")
@@ -229,14 +240,19 @@ def main():
     ).to(device)
 
     # Setup losses and optimizer
-    image_loss_fn = ne.nn.modules.MSE()
+    if args.image_loss == "mse":
+        image_loss_fn = ne.nn.modules.MSE()
+    elif args.image_loss == "CC":
+        image_loss_fn = ne.nn.modules.NCC()
+    else:
+        raise ValueError(f"Unsupported image loss: {args.image_loss} use 'mse' or 'CC'.")
     grad_loss_fn = ne.nn.modules.SpatialGradient("l2")
     seg_loss_fn = ne.nn.modules.Dice()
     loss_weights = [1.0, args.lambda_param, args.gamma_param]
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # Create dataloader
-    train_dataset = VxmVideoDataset(video_path=TRAIN_DATA, seg_path=TRAIN_SEG_DATA, augment=False)
+    train_dataset = VxmVideoDataset(video_path=args.video_path, seg_path=args.seg_path, augment=False)
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
@@ -282,6 +298,22 @@ def main():
     # Save final model
     final_path = output_dir / "final.pt"
     torch.save(model.state_dict(), final_path)
+    config = {
+        "model": "VxmPairwise",
+        "segmentations": args.seg_path is not None,
+        "dataset": args.video_path,
+        "epochs": args.epochs,
+        "image_loss": args.image_loss,
+        "batch_size": args.batch_size,
+        "learning_rate": args.lr,
+        "lambda": args.lambda_param,
+        "gamma": args.gamma_param,
+        "device": device,
+        "date": timestamp,
+    }
+    with Path.open(output_dir / "config.json", "w") as f:
+        json.dump(config, f, indent=4)
+
     print(f"Final model saved to {final_path}")  # noqa: T201
 
 
