@@ -6,11 +6,11 @@ import sys
 from collections.abc import Callable, Sequence  # noqa: TC003
 from typing import Literal
 
-import neurite as ne
-
 # Third-party imports
 import torch
 from torch import nn
+
+import neurite as ne
 
 # Local imports
 import voxelmorph as vxm

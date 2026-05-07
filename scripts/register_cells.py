@@ -1,9 +1,8 @@
-#!/usr/bin/env python
-# noqa: EXE001
+#!/usr/bin/env python noqa: EXE001
 """Example script to register two images with VoxelMorph models.
 
 The source and target input images are expected to be affinely registered.
-"""
+"""  # noqa: EXE001
 
 # Core library imports
 import argparse
@@ -19,7 +18,7 @@ import torch
 
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # noqa: PTH100, PTH118, PTH120
-from utils.configs import DATA, DATA2, HEIGHT, WIDTH, device  # noqa: F401
+from utils.configs import HEIGHT, TEST_DATA, TEST_SEG_DATA, WIDTH, device  # noqa: F401
 from utils.utils import create_grid, interpole_and_pad, iou
 
 import voxelmorph_folder.voxelmorph as vxm
@@ -116,9 +115,11 @@ def register(args):
 if __name__ == "__main__":
     # parse commandline args
     parser = argparse.ArgumentParser()
-    parser.add_argument("--moving", default=f"{DATA}/02/t003.tif", help="moving image (source) filename")
-    parser.add_argument("--fixed", default=f"{DATA}/02/t004.tif", help="fixed image (target) filename")
-    parser.add_argument("--model", default="output/best.pt", help="weights of trained model to use for registration")
+    parser.add_argument("--moving", default=f"{TEST_DATA}/t003.tif", help="moving image (source) filename")
+    parser.add_argument("--fixed", default=f"{TEST_DATA}/t004.tif", help="fixed image (target) filename")
+    parser.add_argument(
+        "--model", default="output_seg/best.pt", help="weights of trained model to use for registration"
+    )
     parser.add_argument("--seg_available", default=True, help="whether segmentation is available for dice evaluation")
     # TODO : case 3D ?
     args = parser.parse_args()
