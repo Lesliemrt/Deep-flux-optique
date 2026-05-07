@@ -44,3 +44,4 @@ pyrightconfig.json
 .vscode
 TODO
 output/
+output_seg/
