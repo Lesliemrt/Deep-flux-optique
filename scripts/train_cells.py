@@ -14,6 +14,7 @@ from pathlib import Path
 os.environ["NEURITE_BACKEND"] = "pytorch"
 os.environ["VXM_BACKEND"] = "pytorch"
 # Third-party imports
+import neurite as ne
 import numpy as np
 import tifffile as tiff
 import torch
@@ -22,11 +23,9 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from tqdm import tqdm
 
-import neurite as ne
-
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # noqa: PTH100, PTH118, PTH120
-from utils.configs import TRAIN_DATA, TRAIN_SEG_DATA, device
+from utils.configs import NB_CLASSES, TRAIN_DATA, TRAIN_SEG_DATA, device
 
 import voxelmorph_folder.voxelmorph as vxm
 
@@ -84,8 +83,6 @@ class VxmVideoDataset(Dataset):
         if self.seg_path is not None:
             source_seg = tiff.imread(self.seg_path_list[idx1])
             target_seg = tiff.imread(self.seg_path_list[idx2])
-            source_seg = self.transform(source_seg)
-            target_seg = self.transform(target_seg)
             source_seg = torch.from_numpy(source_seg)
             target_seg = torch.from_numpy(target_seg)
             return {"source": source, "target": target, "source_seg": source_seg, "target_seg": target_seg}
@@ -130,6 +127,7 @@ class VxmVideoDataset(Dataset):
         self.frames_path_list = sorted(self.video_path.iterdir())
         if self.seg_path is not None:
             self.seg_path_list = sorted(self.seg_path.iterdir())
+
 
 def train_epoch(
     model: nn.Module,
@@ -181,10 +179,20 @@ def train_epoch(
 
         loss = loss_weights[0] * img_loss + loss_weights[1] * grad_loss
         if "source_seg" in batch and "target_seg" in batch:
-            source_seg = batch["source_seg"].float().to(device).unsqueeze(1)
-            target_seg = batch["target_seg"].float().to(device).unsqueeze(1)
-            warped_source_seg = model.spatial_transformer(source_seg, displacement)
-            seg_loss = seg_loss_fn(target_seg, warped_source_seg)
+            source_seg = batch["source_seg"].to(device).float().unsqueeze(1)
+            target_seg = batch["target_seg"].to(device)
+            spatial_transformer = vxm.nn.modules.SpatialTransformer(interpolation_mode="nearest").to(device)
+            warped_source_seg = spatial_transformer(source_seg, displacement).squeeze()
+            # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)  # noqa: E501, ERA001
+            target_seg_one_hot = (
+                torch.nn.functional.one_hot(target_seg.long(), num_classes=NB_CLASSES).permute(0, 3, 1, 2).float()
+            )
+            warped_source_seg_one_hot = (
+                torch.nn.functional.one_hot(warped_source_seg.long(), num_classes=NB_CLASSES)
+                .permute(0, 3, 1, 2)
+                .float()
+            )
+            seg_loss = seg_loss_fn(target_seg_one_hot, warped_source_seg_one_hot).squeeze()
             loss += loss_weights[2] * seg_loss
         loss.backward()
         optimizer.step()
@@ -196,7 +204,7 @@ def train_epoch(
 def main():
     """Create the dataloader, create the model, train and save."""
     parser = argparse.ArgumentParser(description="Train VoxelMorph")
-    parser.add_argument("--output-dir", type=str, default="output", help="Output directory")
+    parser.add_argument("--output-dir", type=str, default="output_seg", help="Output directory")
     parser.add_argument("--epochs", type=int, default=100, help="Number of epochs")
     parser.add_argument("--workers", type=int, default=0, help="Number of workers")
     parser.add_argument("--steps-per-epoch", type=int, default=100, help="Steps per epoch")

@@ -16,7 +16,7 @@ import torch
 
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # noqa: PTH100, PTH118, PTH120
-from utils.configs import DATA, DATA2, HEIGHT, TEST_DATA, TEST_SEG_DATA, WIDTH, device  # noqa: F401
+from utils.configs import HEIGHT, TEST_DATA, TEST_SEG_DATA, WIDTH, device
 from utils.utils import create_grid, interpole_and_pad, iou, normalisation_params
 
 import voxelmorph_folder.voxelmorph as vxm
@@ -89,14 +89,6 @@ def register_video(args):
             seg_fixed = tiff.imread(seg_path_list[idx2])
             seg_moving = interpole_and_pad(seg_moving, [HEIGHT, WIDTH])
             seg_fixed = interpole_and_pad(seg_fixed, [HEIGHT, WIDTH])
-            # Check if nbr of cells different
-            labels_moving = np.sort(np.unique(seg_moving))
-            labels_fixed = np.sort(np.unique(seg_fixed))
-            if len(labels_moving) != len(labels_fixed):
-                print(  # noqa: T201
-                    f"Different number of cells for pair {idx}-{idx2} {len(labels_moving)} vs {len(labels_fixed)}, skipping evaluation for this pair."  # noqa: E501
-                )
-                continue
             # Warp moving segmentation with the predicted field
             tensor_seg_moving = torch.from_numpy(seg_moving).to(device).float().unsqueeze(0).unsqueeze(0)
             spatial_transformer = vxm.nn.modules.SpatialTransformer(interpolation_mode="nearest").to(device)
@@ -131,7 +123,9 @@ if __name__ == "__main__":
         default=f"{TEST_SEG_DATA}",
         help="if segmentations not available, set to None",
     )
-    parser.add_argument("--model", default="output/best.pt", help="weights of trained model to use for registration")
+    parser.add_argument(
+        "--model", default="output_seg/best.pt", help="weights of trained model to use for registration"
+    )
     # TODO : case 3D ?
     args = parser.parse_args()
     # Compute results for all pairs of frames in the video
