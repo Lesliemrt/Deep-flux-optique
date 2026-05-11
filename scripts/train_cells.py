@@ -201,20 +201,20 @@ def train_epoch(
 def main():  # noqa: PLR0915
     """Create the dataloader, create the model, train and save."""
     parser = argparse.ArgumentParser(description="Train VoxelMorph")
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")  # noqa: DTZ005
     parser.add_argument("--output-dir", type=str, default=f"outputs/output_{timestamp}", help="Output directory")
     parser.add_argument("--video-path", default=f"{TRAIN_DATA}", help="Path to the training video")
     parser.add_argument(
         "--seg-path",
-        default=f"{TRAIN_SEG_DATA}",
+        default=TRAIN_SEG_DATA,
         help="Path to the segmentation of the training video, if not available set to None",
     )
-    parser.add_argument("--epochs", type=int, default=100, help="Number of epochs")
-    parser.add_argument("--image-loss", type=str, default="mse", help="Image loss to use: 'mse' or 'CC'")
+    parser.add_argument("--epochs", type=int, default=50, help="Number of epochs")
+    parser.add_argument("--image-loss", type=str, default="CC", help="Image loss to use: 'mse' or 'CC'")
     parser.add_argument("--workers", type=int, default=0, help="Number of workers")
-    parser.add_argument("--steps-per-epoch", type=int, default=100, help="Steps per epoch")
+    # parser.add_argument("--steps-per-epoch", type=int, default=100, help="Steps per epoch")  # noqa: ERA001
     parser.add_argument("--batch-size", type=int, default=4, help="Batch size")
-    parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
+    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
     parser.add_argument("--lambda", type=float, dest="lambda_param", default=0.01)
     parser.add_argument("--gamma", type=float, dest="gamma_param", default=0.01)
     parser.add_argument("--gpu", type=str, default="0", help="GPU ID")
@@ -302,7 +302,7 @@ def main():  # noqa: PLR0915
         "learning_rate": args.lr,
         "lambda": args.lambda_param,
         "gamma": args.gamma_param,
-        "device": device,
+        "device": str(device),
         "date": timestamp,
     }
     with Path.open(output_dir / "config.json", "w") as f:

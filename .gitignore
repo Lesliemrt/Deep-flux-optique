@@ -40,5 +40,6 @@ uv.lock
 pyrightconfig.json
 .vscode
 TODO
-output/
-output_seg/
+outputs/
+**/*.pt
+**/*.json
