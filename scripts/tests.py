@@ -120,15 +120,20 @@ if __name__ == "__main__":
     # parse commandline args
     parser = argparse.ArgumentParser()
     parser.add_argument("--video_path", default=f"{TEST_DATA}", help="moving image (source) filename")
-    parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
+    parser.add_argument("--gap", default=10, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
         default=f"{TEST_SEG_DATA}",
         help="for evaluation (if segmentations not available, set to None)",
     )
-    parser.add_argument("--model", default="output/best.pt", help="weights of trained model to use for registration")
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    parser.add_argument("--saving_dir", default=f"results/result_{timestamp}", help="directory to save results")
+    parser.add_argument(
+        "--model",
+        default="outputs/output_20260511_100710/best.pt",
+        help="weights of trained model to use for registration",
+    )
+    parser.add_argument(
+        "--saving_dir", default="outputs/output_20260511_100710/results_gap10", help="directory to save results"
+    )
     # TODO : case 3D ?
     args = parser.parse_args()
     # Compute results for all pairs of frames in the video
@@ -150,7 +155,12 @@ if __name__ == "__main__":
         print(f"Global reference IoU score across all pairs of frames: {global_ref_iou}")  # noqa: T201
         print(f"Global IoU : {[f'{result[('iou')]:.4f}' for result in results]}")  # noqa: T201
         # Save metrics in a json file
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")  # noqa: DTZ005
         metrics = {
+            "data": args.video_path,
+            "date": timestamp,
+            "model": args.model,
+            "device": str(device),
             "gap": args.gap,
             "global_dice": global_dice,
             "global_ref_dice": global_ref_dice,
@@ -162,7 +172,7 @@ if __name__ == "__main__":
             "ref_iou_per_pair": [result["ref_iou"] for result in results],
         }
         with Path.open(results_dir / "metrics.json", "w") as f:
-            json.dump(metrics, f)
+            json.dump(metrics, f, indent=4)
     # Visualise results for first 2 frames
     idx = 0
     warped_grid = results[idx]["warped_grid"]

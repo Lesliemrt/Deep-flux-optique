@@ -17,6 +17,7 @@ os.environ["VXM_BACKEND"] = "pytorch"
 # Third-party imports
 import datetime
 
+import matplotlib.pyplot as plt
 import neurite as ne
 import numpy as np
 import tifffile as tiff
@@ -210,7 +211,7 @@ def main():  # noqa: PLR0915
         help="Path to the segmentation of the training video, if not available set to None",
     )
     parser.add_argument("--epochs", type=int, default=50, help="Number of epochs")
-    parser.add_argument("--image-loss", type=str, default="CC", help="Image loss to use: 'mse' or 'CC'")
+    parser.add_argument("--image-loss", type=str, default="mse", help="Image loss to use: 'mse' or 'cc'")
     parser.add_argument("--workers", type=int, default=0, help="Number of workers")
     # parser.add_argument("--steps-per-epoch", type=int, default=100, help="Steps per epoch")  # noqa: ERA001
     parser.add_argument("--batch-size", type=int, default=4, help="Batch size")
@@ -236,7 +237,7 @@ def main():  # noqa: PLR0915
     # Setup losses and optimizer
     if args.image_loss == "mse":
         image_loss_fn = ne.nn.modules.MSE()
-    elif args.image_loss == "CC":
+    elif args.image_loss == "cc":
         image_loss_fn = ne.nn.modules.NCC()
     else:
         raise ValueError(f"Unsupported image loss: {args.image_loss} use 'mse' or 'CC'.")
@@ -261,6 +262,7 @@ def main():  # noqa: PLR0915
     # Training loop
     print(f"Training for {args.epochs} epochs...")  # noqa: T201
     best_loss = float("inf")
+    loss_during_training = []
     for epoch in tqdm(range(args.epochs), desc="Epochs"):
         # Train for one epoch
         avg_loss = train_epoch(
@@ -272,6 +274,8 @@ def main():  # noqa: PLR0915
             seg_loss_fn=seg_loss_fn,
             loss_weights=loss_weights,
         )
+        # Save loss for visualisation
+        loss_during_training.append(avg_loss)
 
         # Print progress
         # if (epoch + 1) % 10 == 0:
@@ -288,7 +292,10 @@ def main():  # noqa: PLR0915
             best_loss = avg_loss
             best_path = output_dir / "best.pt"
             torch.save(model.state_dict(), best_path)
-
+    # Loss visualisation
+    plt.plot(loss_during_training)
+    plt.title("Training loss")
+    plt.savefig(output_dir / "loss.png")
     # Save final model
     final_path = output_dir / "final.pt"
     torch.save(model.state_dict(), final_path)
