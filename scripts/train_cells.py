@@ -6,6 +6,7 @@ pp 1788-1800. 2019.
 
 # Core library imports
 import argparse
+import json
 import os
 import sys
 from collections.abc import Sequence  # noqa: TC003
@@ -14,6 +15,9 @@ from pathlib import Path
 os.environ["NEURITE_BACKEND"] = "pytorch"
 os.environ["VXM_BACKEND"] = "pytorch"
 # Third-party imports
+import datetime
+
+import neurite as ne
 import numpy as np
 import tifffile as tiff
 import torch
@@ -22,11 +26,9 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from tqdm import tqdm
 
-import neurite as ne
-
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # noqa: PTH100, PTH118, PTH120
-from utils.configs import TRAIN_DATA, TRAIN_SEG_DATA, device
+from utils.configs import NB_CLASSES, TRAIN_DATA, TRAIN_SEG_DATA, device
 
 import voxelmorph_folder.voxelmorph as vxm
 
@@ -84,8 +86,6 @@ class VxmVideoDataset(Dataset):
         if self.seg_path is not None:
             source_seg = tiff.imread(self.seg_path_list[idx1])
             target_seg = tiff.imread(self.seg_path_list[idx2])
-            source_seg = self.transform(source_seg)
-            target_seg = self.transform(target_seg)
             source_seg = torch.from_numpy(source_seg)
             target_seg = torch.from_numpy(target_seg)
             return {"source": source, "target": target, "source_seg": source_seg, "target_seg": target_seg}
@@ -130,6 +130,7 @@ class VxmVideoDataset(Dataset):
         self.frames_path_list = sorted(self.video_path.iterdir())
         if self.seg_path is not None:
             self.seg_path_list = sorted(self.seg_path.iterdir())
+
 
 def train_epoch(
     model: nn.Module,
@@ -181,10 +182,20 @@ def train_epoch(
 
         loss = loss_weights[0] * img_loss + loss_weights[1] * grad_loss
         if "source_seg" in batch and "target_seg" in batch:
-            source_seg = batch["source_seg"].float().to(device).unsqueeze(1)
-            target_seg = batch["target_seg"].float().to(device).unsqueeze(1)
-            warped_source_seg = model.spatial_transformer(source_seg, displacement)
-            seg_loss = seg_loss_fn(target_seg, warped_source_seg)
+            source_seg = batch["source_seg"].to(device).float().unsqueeze(1)
+            target_seg = batch["target_seg"].to(device)
+            spatial_transformer = vxm.nn.modules.SpatialTransformer(interpolation_mode="nearest").to(device)
+            warped_source_seg = spatial_transformer(source_seg, displacement).squeeze()
+            # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)  # noqa: E501, ERA001
+            target_seg_one_hot = (
+                torch.nn.functional.one_hot(target_seg.long(), num_classes=NB_CLASSES).permute(0, 3, 1, 2).float()
+            )
+            warped_source_seg_one_hot = (
+                torch.nn.functional.one_hot(warped_source_seg.long(), num_classes=NB_CLASSES)
+                .permute(0, 3, 1, 2)
+                .float()
+            )
+            seg_loss = seg_loss_fn(target_seg_one_hot, warped_source_seg_one_hot).squeeze()
             loss += loss_weights[2] * seg_loss
         loss.backward()
         optimizer.step()
@@ -193,11 +204,19 @@ def train_epoch(
     return total_loss / len(dataloader)
 
 
-def main():
+def main():  # noqa: PLR0915
     """Create the dataloader, create the model, train and save."""
     parser = argparse.ArgumentParser(description="Train VoxelMorph")
-    parser.add_argument("--output-dir", type=str, default="output", help="Output directory")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    parser.add_argument("--output-dir", type=str, default=f"outputs/output_{timestamp}", help="Output directory")
+    parser.add_argument("--video-path", default=f"{TRAIN_DATA}", help="Path to the training video")
+    parser.add_argument(
+        "--seg-path",
+        default=f"{TRAIN_SEG_DATA}",
+        help="Path to the segmentation of the training video, if not available set to None",
+    )
     parser.add_argument("--epochs", type=int, default=100, help="Number of epochs")
+    parser.add_argument("--image-loss", type=str, default="mse", help="Image loss to use: 'mse' or 'CC'")
     parser.add_argument("--workers", type=int, default=0, help="Number of workers")
     parser.add_argument("--steps-per-epoch", type=int, default=100, help="Steps per epoch")
     parser.add_argument("--batch-size", type=int, default=4, help="Batch size")
@@ -221,14 +240,19 @@ def main():
     ).to(device)
 
     # Setup losses and optimizer
-    image_loss_fn = ne.nn.modules.MSE()
+    if args.image_loss == "mse":
+        image_loss_fn = ne.nn.modules.MSE()
+    elif args.image_loss == "CC":
+        image_loss_fn = ne.nn.modules.NCC()
+    else:
+        raise ValueError(f"Unsupported image loss: {args.image_loss} use 'mse' or 'CC'.")
     grad_loss_fn = ne.nn.modules.SpatialGradient("l2")
     seg_loss_fn = ne.nn.modules.Dice()
     loss_weights = [1.0, args.lambda_param, args.gamma_param]
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # Create dataloader
-    train_dataset = VxmVideoDataset(video_path=TRAIN_DATA, seg_path=TRAIN_SEG_DATA, augment=False)
+    train_dataset = VxmVideoDataset(video_path=args.video_path, seg_path=args.seg_path, augment=False)
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
@@ -274,6 +298,22 @@ def main():
     # Save final model
     final_path = output_dir / "final.pt"
     torch.save(model.state_dict(), final_path)
+    config = {
+        "model": "VxmPairwise",
+        "segmentations": args.seg_path is not None,
+        "dataset": args.video_path,
+        "epochs": args.epochs,
+        "image_loss": args.image_loss,
+        "batch_size": args.batch_size,
+        "learning_rate": args.lr,
+        "lambda": args.lambda_param,
+        "gamma": args.gamma_param,
+        "device": device,
+        "date": timestamp,
+    }
+    with Path.open(output_dir / "config.json", "w") as f:
+        json.dump(config, f, indent=4)
+
     print(f"Final model saved to {final_path}")  # noqa: T201
 
 

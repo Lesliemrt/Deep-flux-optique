@@ -3,6 +3,8 @@
 
 # Core library imports
 import argparse
+import datetime
+import json
 import os
 import sys
 from pathlib import Path
@@ -16,7 +18,7 @@ import torch
 
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # noqa: PTH100, PTH118, PTH120
-from utils.configs import DATA, DATA2, HEIGHT, TEST_DATA, TEST_SEG_DATA, WIDTH, device  # noqa: F401
+from utils.configs import HEIGHT, TEST_DATA, TEST_SEG_DATA, WIDTH, device
 from utils.utils import create_grid, interpole_and_pad, iou, normalisation_params
 
 import voxelmorph_folder.voxelmorph as vxm
@@ -89,14 +91,6 @@ def register_video(args):
             seg_fixed = tiff.imread(seg_path_list[idx2])
             seg_moving = interpole_and_pad(seg_moving, [HEIGHT, WIDTH])
             seg_fixed = interpole_and_pad(seg_fixed, [HEIGHT, WIDTH])
-            # Check if nbr of cells different
-            labels_moving = np.sort(np.unique(seg_moving))
-            labels_fixed = np.sort(np.unique(seg_fixed))
-            if len(labels_moving) != len(labels_fixed):
-                print(  # noqa: T201
-                    f"Different number of cells for pair {idx}-{idx2} {len(labels_moving)} vs {len(labels_fixed)}, skipping evaluation for this pair."  # noqa: E501
-                )
-                continue
             # Warp moving segmentation with the predicted field
             tensor_seg_moving = torch.from_numpy(seg_moving).to(device).float().unsqueeze(0).unsqueeze(0)
             spatial_transformer = vxm.nn.modules.SpatialTransformer(interpolation_mode="nearest").to(device)
@@ -129,13 +123,18 @@ if __name__ == "__main__":
     parser.add_argument(
         "--seg_path",
         default=f"{TEST_SEG_DATA}",
-        help="if segmentations not available, set to None",
+        help="for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument("--model", default="output/best.pt", help="weights of trained model to use for registration")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    parser.add_argument("--saving_dir", default=f"results/result_{timestamp}", help="directory to save results")
     # TODO : case 3D ?
     args = parser.parse_args()
     # Compute results for all pairs of frames in the video
     results = register_video(args)
+    # Create results directory if it doesn't exist
+    results_dir = Path(args.saving_dir)
+    results_dir.mkdir(parents=True, exist_ok=True)
     # Compute de global dice score across all pairs of frames if segmentations are available
     if "dice" in results[0]:
         global_dice = np.mean([result["dice"] for result in results])
@@ -149,11 +148,25 @@ if __name__ == "__main__":
         print(f"Global IoU score across all pairs of frames: {global_iou}")  # noqa: T201
         print(f"Global reference IoU score across all pairs of frames: {global_ref_iou}")  # noqa: T201
         print(f"Global IoU : {[f'{result[('iou')]:.4f}' for result in results]}")  # noqa: T201
+        # Save metrics in a json file
+        metrics = {
+            "global_dice": global_dice,
+            "global_ref_dice": global_ref_dice,
+            "global_iou": global_iou,
+            "global_ref_iou": global_ref_iou,
+            "dice_per_pair": [result["dice"] for result in results],
+            "ref_dice_per_pair": [result["ref_dice"] for result in results],
+            "iou_per_pair": [result["iou"] for result in results],
+            "ref_iou_per_pair": [result["ref_iou"] for result in results],
+        }
+        with Path.open(results_dir / "metrics.json", "w") as f:
+            json.dump(metrics, f)
     # Visualise results for first 2 frames
-    warped_grid = results[0]["warped_grid"]
-    moved = results[0]["moved"]
-    fixed = results[0]["fixed"]
-    moving = results[0]["moving"]
+    idx = 0
+    warped_grid = results[idx]["warped_grid"]
+    moved = results[idx]["moved"]
+    fixed = results[idx]["fixed"]
+    moving = results[idx]["moving"]
     plt.figure(figsize=(12, 12))
     plt.subplot(2, 2, 1)
     plt.title("Fixed")
@@ -168,3 +181,4 @@ if __name__ == "__main__":
     plt.title("Warped Grid")
     plt.imshow(warped_grid.squeeze().cpu().numpy(), cmap="gray")
     plt.show()
+    plt.savefig(results_dir / f"registration_result_for_paire_{idx}.png")
