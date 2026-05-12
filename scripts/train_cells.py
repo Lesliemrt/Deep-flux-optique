@@ -201,20 +201,18 @@ def train_epoch(
 
         loss = loss_weights[0] * img_loss + loss_weights[1] * grad_loss
         if "source_seg" in batch and "target_seg" in batch:
-            source_seg = batch["source_seg"].to(device).unsqueeze(1)
+            source_seg = batch["source_seg"].to(device)
             target_seg = batch["target_seg"].to(device)
-            spatial_transformer = vxm.nn.modules.SpatialTransformer(interpolation_mode="nearest").to(device)
-            warped_source_seg = spatial_transformer(source_seg, displacement).squeeze()
-            # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)  # noqa: E501, ERA001
-            target_seg_one_hot = (
+            target_seg_oh = (
                 torch.nn.functional.one_hot(target_seg.long(), num_classes=NB_CLASSES).permute(0, 3, 1, 2).float()
             )
-            warped_source_seg_one_hot = (
-                torch.nn.functional.one_hot(warped_source_seg.long(), num_classes=NB_CLASSES)
-                .permute(0, 3, 1, 2)
-                .float()
+            source_seg_oh = (
+                torch.nn.functional.one_hot(source_seg.long(), num_classes=NB_CLASSES).permute(0, 3, 1, 2).float()
             )
-            seg_loss = seg_loss_fn(target_seg_one_hot, warped_source_seg_one_hot).squeeze()
+            spatial_transformer = vxm.nn.modules.SpatialTransformer(interpolation_mode="linear").to(device)
+            warped_source_seg_oh = spatial_transformer(source_seg_oh, displacement).squeeze()
+            # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)  # noqa: E501, ERA001
+            seg_loss = seg_loss_fn(target_seg_oh, warped_source_seg_oh).squeeze()
             loss += loss_weights[2] * seg_loss
         loss.backward()
         optimizer.step()
