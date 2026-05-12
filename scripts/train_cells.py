@@ -22,7 +22,7 @@ import neurite as ne
 import numpy as np
 import tifffile as tiff
 import torch
-from torch import nn  # noqa: TC002
+from torch import nn
 from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import v2
 from tqdm import tqdm
@@ -34,15 +34,30 @@ from utils.configs import NB_CLASSES, TRAIN_DATA, TRAIN_SEG_DATA, device
 import voxelmorph_folder.voxelmorph as vxm
 
 
-class ThresholdTransform:
+class ThresholdTransform(nn.Module):
     """Return binarised object with a threshold and in the same type."""
 
     def __init__(self, thr_1):
+        super().__init__()
         self.thr = thr_1
 
-    def __call__(self, x):
-        """Return function."""
+    def forward(self, x):
+        """Forward."""
         return (x > self.thr).to(x.dtype)  # do not change the data type
+
+
+class NormalizeMinMax(nn.Module):
+    """Return normalized tensor based on min, max."""
+
+    def __init__(self, global_min, global_max, eps=1e-7):
+        super().__init__()
+        self.min = global_min
+        self.max = global_max
+        self.eps = eps
+
+    def forward(self, x):
+        """Forward."""
+        return (x - self.min) / (self.max - self.min + self.eps)
 
 
 class VxmVideoDataset(Dataset):
@@ -87,13 +102,13 @@ class VxmVideoDataset(Dataset):
         source_img = tiff.imread(self.frames_path_list[idx1])
         target_img = tiff.imread(self.frames_path_list[idx2])
 
-        # Normalisation + augmentation if augment
-        source_img = self.transform(source_img)
-        target_img = self.transform(target_img)
-
         # To tensor
-        source = torch.from_numpy(source_img)
-        target = torch.from_numpy(target_img)
+        source = torch.from_numpy(source_img).float()
+        target = torch.from_numpy(target_img).float()
+
+        # Normalisation + augmentation if augment
+        source = self.transform(source)
+        target = self.transform(target)
 
         if self.seg_path is not None:
             source_seg = tiff.imread(self.seg_path_list[idx1])
@@ -116,14 +131,11 @@ class VxmVideoDataset(Dataset):
             global_min = min(global_min, current_min)
             global_max = max(global_max, current_max)
 
-        def normalise(frame):
-            return (frame - global_min) / (global_max - global_min)
-
-        base_transforms = [normalise]
+        base_transforms = [NormalizeMinMax(global_min=global_min, global_max=global_max)]
 
         if self.augment:
             # base_transforms += [v2.RandomApply(v2.ColorJitter, 0.3)]  # noqa: ERA001
-            base_transforms += ThresholdTransform(thr_1=0.5)
+            base_transforms += [ThresholdTransform(thr_1=0.05)]
 
         return v2.Compose(base_transforms)
 
