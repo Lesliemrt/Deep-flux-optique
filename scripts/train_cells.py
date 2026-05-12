@@ -24,7 +24,7 @@ import tifffile as tiff
 import torch
 from torch import nn  # noqa: TC002
 from torch.utils.data import DataLoader, Dataset
-from torchvision import transforms
+from torchvision.transforms import v2
 from tqdm import tqdm
 
 # Local imports
@@ -32,6 +32,17 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))) 
 from utils.configs import NB_CLASSES, TRAIN_DATA, TRAIN_SEG_DATA, device
 
 import voxelmorph_folder.voxelmorph as vxm
+
+
+class ThresholdTransform:
+    """Return binarised object with a threshold and in the same type."""
+
+    def __init__(self, thr_1):
+        self.thr = thr_1
+
+    def __call__(self, x):
+        """Return function."""
+        return (x > self.thr).to(x.dtype)  # do not change the data type
 
 
 class VxmVideoDataset(Dataset):
@@ -111,12 +122,13 @@ class VxmVideoDataset(Dataset):
         base_transforms = [normalise]
 
         if self.augment:
-            base_transforms += [transforms.RandomApply(transforms.ColorJitter, 0.3)]
+            # base_transforms += [v2.RandomApply(v2.ColorJitter, 0.3)]  # noqa: ERA001
+            base_transforms += ThresholdTransform(thr_1=0.5)
 
-        return transforms.Compose(base_transforms)
+        return v2.Compose(base_transforms)
 
     def __len__(self):
-        """Return nbr of paires per epoch."""
+        """Return nbr of paires to train on per epoch."""
         return (
             len(self.frames_path_list) * 3  # To have more paires per epoch
         )
@@ -166,8 +178,8 @@ def train_epoch(
         # Move to device in training loop (not dataloader/dataset!)
         source = batch["source"]
         target = batch["target"]
-        source = source.float().to(device).unsqueeze(1)  # Add channel dimension
-        target = target.float().to(device).unsqueeze(1)  # Add channel dimension
+        source = source.to(device).unsqueeze(1)  # Add channel dimension
+        target = target.to(device).unsqueeze(1)  # Add channel dimension
 
         # Get the displacement and the warped source image from the model
         displacement, warped_source = model(source, target, return_warped_source=True, return_field_type="displacement")
@@ -177,7 +189,7 @@ def train_epoch(
 
         loss = loss_weights[0] * img_loss + loss_weights[1] * grad_loss
         if "source_seg" in batch and "target_seg" in batch:
-            source_seg = batch["source_seg"].to(device).float().unsqueeze(1)
+            source_seg = batch["source_seg"].to(device).unsqueeze(1)
             target_seg = batch["target_seg"].to(device)
             spatial_transformer = vxm.nn.modules.SpatialTransformer(interpolation_mode="nearest").to(device)
             warped_source_seg = spatial_transformer(source_seg, displacement).squeeze()
@@ -204,7 +216,7 @@ def main():  # noqa: PLR0915
     parser = argparse.ArgumentParser(description="Train VoxelMorph")
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")  # noqa: DTZ005
     parser.add_argument("--output-dir", type=str, default=f"outputs/output_{timestamp}", help="Output directory")
-    parser.add_argument("--video-path", default=f"{TRAIN_DATA}", help="Path to the training video")
+    parser.add_argument("--video-path", default=TRAIN_DATA, help="Path to the training video")
     parser.add_argument(
         "--seg-path",
         default=TRAIN_SEG_DATA,
@@ -215,9 +227,17 @@ def main():  # noqa: PLR0915
     parser.add_argument("--workers", type=int, default=0, help="Number of workers")
     # parser.add_argument("--steps-per-epoch", type=int, default=100, help="Steps per epoch")  # noqa: ERA001
     parser.add_argument("--batch-size", type=int, default=4, help="Batch size")
-    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
-    parser.add_argument("--lambda", type=float, dest="lambda_param", default=0.01)
-    parser.add_argument("--gamma", type=float, dest="gamma_param", default=0.01)
+    parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
+    parser.add_argument(
+        "--lambda", type=float, dest="lambda_param", default=0.01, help="Regularisation parameter for smooth loss"
+    )
+    parser.add_argument(
+        "--gamma",
+        type=float,
+        dest="gamma_param",
+        default=0.01,
+        help="Regularisation parameter for segmentation loss, not used if seg_path is set to None",
+    )
     parser.add_argument("--gpu", type=str, default="0", help="GPU ID")
     parser.add_argument("--save-every", type=int, default=10, help="Checkpoint every N epochs")
     args = parser.parse_args()
