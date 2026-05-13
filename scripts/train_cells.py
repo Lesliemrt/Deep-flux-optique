@@ -11,6 +11,7 @@ import os
 import sys
 from collections.abc import Sequence  # noqa: TC003
 from pathlib import Path
+from xmlrpc.client import Boolean
 
 os.environ["NEURITE_BACKEND"] = "pytorch"
 os.environ["VXM_BACKEND"] = "pytorch"
@@ -63,7 +64,7 @@ class NormalizeMinMax(nn.Module):
 class VxmVideoDataset(Dataset):
     """PyTorch Dataset for VoxelMorph registration data on video."""
 
-    def __init__(self, video_path, seg_path=None, max_gap=20, augment=False) -> None:
+    def __init__(self, video_path, seg_path=None, max_gap=20, binarize=False) -> None:
         """Parameters
 
         video_path : str
@@ -78,7 +79,7 @@ class VxmVideoDataset(Dataset):
         self.video_path = Path(video_path)
         self.seg_path = Path(seg_path) if seg_path is not None else None
         self.get_path_list()
-        self.augment = augment
+        self.binarize = binarize
         self.transform = self.get_transforms(n=len(self.frames_path_list))
         if not max_gap < len(self.frames_path_list) // 2:
             raise ValueError(
@@ -113,8 +114,8 @@ class VxmVideoDataset(Dataset):
         if self.seg_path is not None:
             source_seg = tiff.imread(self.seg_path_list[idx1])
             target_seg = tiff.imread(self.seg_path_list[idx2])
-            source_seg = torch.from_numpy(source_seg)
-            target_seg = torch.from_numpy(target_seg)
+            source_seg = torch.from_numpy(source_seg).float()
+            target_seg = torch.from_numpy(target_seg).float()
             return {"source": source, "target": target, "source_seg": source_seg, "target_seg": target_seg}
 
         return {"source": source, "target": target}
@@ -133,7 +134,7 @@ class VxmVideoDataset(Dataset):
 
         base_transforms = [NormalizeMinMax(global_min=global_min, global_max=global_max)]
 
-        if self.augment:
+        if self.binarize:
             # base_transforms += [v2.RandomApply(v2.ColorJitter, 0.3)]  # noqa: ERA001
             base_transforms += [ThresholdTransform(thr_1=0.05)]
 
@@ -203,16 +204,20 @@ def train_epoch(
         if "source_seg" in batch and "target_seg" in batch:
             source_seg = batch["source_seg"].to(device)
             target_seg = batch["target_seg"].to(device)
-            target_seg_oh = (
+            source_seg_bi = (source_seg > 0).float().unsqueeze(1)
+            target_seg_bi = (target_seg > 0).float().unsqueeze(1)
+            target_seg_oh = (  # noqa: F841
                 torch.nn.functional.one_hot(target_seg.long(), num_classes=NB_CLASSES).permute(0, 3, 1, 2).float()
             )
-            source_seg_oh = (
+            source_seg_oh = (  # noqa: F841
                 torch.nn.functional.one_hot(source_seg.long(), num_classes=NB_CLASSES).permute(0, 3, 1, 2).float()
             )
+            # Not enough memory to use labels (and one hot)
             spatial_transformer = vxm.nn.modules.SpatialTransformer(interpolation_mode="linear").to(device)
-            warped_source_seg_oh = spatial_transformer(source_seg_oh, displacement).squeeze()
+            warped_source_seg_bi = spatial_transformer(source_seg_bi, displacement)
+            warped_source_seg_bi = torch.clamp(warped_source_seg_bi, 0, 1)
             # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)  # noqa: E501, ERA001
-            seg_loss = seg_loss_fn(target_seg_oh, warped_source_seg_oh).squeeze()
+            seg_loss = seg_loss_fn(target_seg_bi, warped_source_seg_bi).squeeze()
             loss += loss_weights[2] * seg_loss
         loss.backward()
         optimizer.step()
@@ -221,37 +226,8 @@ def train_epoch(
     return total_loss / len(dataloader)
 
 
-def main():  # noqa: PLR0915
+def main(args):
     """Create the dataloader, create the model, train and save."""
-    parser = argparse.ArgumentParser(description="Train VoxelMorph")
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")  # noqa: DTZ005
-    parser.add_argument("--output-dir", type=str, default=f"outputs/output_{timestamp}", help="Output directory")
-    parser.add_argument("--video-path", default=TRAIN_DATA, help="Path to the training video")
-    parser.add_argument(
-        "--seg-path",
-        default=TRAIN_SEG_DATA,
-        help="Path to the segmentation of the training video, if not available set to None",
-    )
-    parser.add_argument("--epochs", type=int, default=50, help="Number of epochs")
-    parser.add_argument("--image-loss", type=str, default="mse", help="Image loss to use: 'mse' or 'cc'")
-    parser.add_argument("--workers", type=int, default=0, help="Number of workers")
-    # parser.add_argument("--steps-per-epoch", type=int, default=100, help="Steps per epoch")  # noqa: ERA001
-    parser.add_argument("--batch-size", type=int, default=4, help="Batch size")
-    parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
-    parser.add_argument(
-        "--lambda", type=float, dest="lambda_param", default=0.01, help="Regularisation parameter for smooth loss"
-    )
-    parser.add_argument(
-        "--gamma",
-        type=float,
-        dest="gamma_param",
-        default=0.01,
-        help="Regularisation parameter for segmentation loss, not used if seg_path is set to None",
-    )
-    parser.add_argument("--gpu", type=str, default="0", help="GPU ID")
-    parser.add_argument("--save-every", type=int, default=10, help="Checkpoint every N epochs")
-    args = parser.parse_args()
-
     # Set device
     print(f"Using device: {device}")  # noqa: T201
 
@@ -277,7 +253,7 @@ def main():  # noqa: PLR0915
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # Create dataloader
-    train_dataset = VxmVideoDataset(video_path=args.video_path, seg_path=args.seg_path, augment=False)
+    train_dataset = VxmVideoDataset(video_path=args.video_path, seg_path=args.seg_path, binarize=args.binarize)
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
@@ -333,6 +309,7 @@ def main():  # noqa: PLR0915
         "model": "VxmPairwise",
         "segmentations": args.seg_path is not None,
         "dataset": args.video_path,
+        "binarization": args.binarize,
         "epochs": args.epochs,
         "image_loss": args.image_loss,
         "batch_size": args.batch_size,
@@ -349,4 +326,32 @@ def main():  # noqa: PLR0915
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Train VoxelMorph")
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")  # noqa: DTZ005
+    parser.add_argument("--output-dir", type=str, default=f"outputs/output_{timestamp}", help="Output directory")
+    parser.add_argument("--video-path", default=TRAIN_DATA, help="Path to the training video")
+    parser.add_argument(
+        "--seg-path",
+        default=TRAIN_SEG_DATA,
+        help="Path to the segmentation of the training video, if not available set to None",
+    )
+    parser.add_argument("--binarize", type=Boolean, default=True, help="Binarize images for training")
+    parser.add_argument("--epochs", type=int, default=50, help="Number of epochs")
+    parser.add_argument("--image-loss", type=str, default="mse", help="Image loss to use: 'mse' or 'cc'")
+    parser.add_argument("--workers", type=int, default=0, help="Number of workers")
+    parser.add_argument("--batch-size", type=int, default=4, help="Batch size")
+    parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
+    parser.add_argument(
+        "--lambda", type=float, dest="lambda_param", default=0.01, help="Regularisation parameter for smooth loss"
+    )
+    parser.add_argument(
+        "--gamma",
+        type=float,
+        dest="gamma_param",
+        default=0.01,
+        help="Regularisation parameter for segmentation loss, not used if seg_path is set to None",
+    )
+    parser.add_argument("--gpu", type=str, default="0", help="GPU ID")
+    parser.add_argument("--save-every", type=int, default=10, help="Checkpoint every N epochs")
+    args = parser.parse_args()
+    main(args)

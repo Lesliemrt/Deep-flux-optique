@@ -18,13 +18,14 @@ import torch
 
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # noqa: PTH100, PTH118, PTH120
+from train_cells import NormalizeMinMax, ThresholdTransform
 from utils.configs import HEIGHT, TEST_DATA, TEST_SEG_DATA, WIDTH, device
 from utils.utils import create_grid, interpole_and_pad, iou, normalisation_params
 
 import voxelmorph_folder.voxelmorph as vxm
 
 
-def register_video(args):
+def register_video(args):  # noqa: PLR0915
     """Register video frames with a VoxelMorph model.
 
     Parameters
@@ -47,7 +48,9 @@ def register_video(args):
         nb_features=[16, 16, 16, 16, 16],
         integration_steps=0,
     ).to(device)
-    model.load_state_dict(torch.load(args.model, map_location=device))
+    model_path = f"{args.output_dir}/best.pt"
+    model.load_state_dict(torch.load(model_path, map_location=device))
+    print(f"Load model : {model_path}")  # noqa: T201
     model.eval()
 
     # Create grid for visualisation of the field
@@ -59,19 +62,29 @@ def register_video(args):
         # Load moving and fixed images
         idx2 = idx + args.gap
         moving = tiff.imread(frames_path_list[idx])
-        fixed = tiff.imread(frames_path_list[idx2])  # TODO : select 2 frames with a gap?
-
-        # Normalize
-        moving = (moving - global_min) / (global_max - global_min)
-        fixed = (fixed - global_min) / (global_max - global_min)
+        fixed = tiff.imread(frames_path_list[idx2])
 
         # Interpole/Pad images to HEIGHT, WIDTH if needed
         moving = interpole_and_pad(moving, [HEIGHT, WIDTH])
         fixed = interpole_and_pad(fixed, [HEIGHT, WIDTH])
 
-        # Set up tensors
-        input_moving = torch.from_numpy(moving).to(device).float().unsqueeze(0).unsqueeze(0)
-        input_fixed = torch.from_numpy(fixed).to(device).float().unsqueeze(0).unsqueeze(0)
+        # To tensor
+        input_moving = torch.from_numpy(moving).float().to(device).unsqueeze(0).unsqueeze(0)
+        input_fixed = torch.from_numpy(fixed).float().to(device).unsqueeze(0).unsqueeze(0)
+
+        # Normalisation
+        normalise = NormalizeMinMax(global_min=global_min, global_max=global_max)
+        input_moving = normalise(input_moving)
+        input_fixed = normalise(input_fixed)
+
+        # Binarise
+        with Path(f"{args.output_dir}/config.json").open() as j:
+            config = json.load(j)
+            if config["binarization"]:
+                thr = 0.05
+                binarise = ThresholdTransform(thr_1=thr)
+                input_moving = binarise(input_moving)
+                input_fixed = binarise(input_fixed)
 
         # Predict
         with torch.no_grad():
@@ -82,7 +95,7 @@ def register_video(args):
         # Apply warp on grid for visualistion of the field
         warped_grid = model.spatial_transformer(tensor_grid, field)
 
-        results_pair = {"fixed": fixed, "moving": moving, "warped_grid": warped_grid, "moved": moved}
+        results_pair = {"fixed": input_fixed, "moving": input_moving, "warped_grid": warped_grid, "moved": moved}
 
         # If segmentations available, load them and warp the moving segmentation with the predicted field for evaluation
         if args.seg_path is not None:
@@ -117,29 +130,24 @@ def register_video(args):
 
 
 if __name__ == "__main__":
-    # parse commandline args
+    # Parse commandline args
     parser = argparse.ArgumentParser()
-    parser.add_argument("--video_path", default=f"{TEST_DATA}", help="moving image (source) filename")
+    parser.add_argument("--video_path", default=f"{TEST_DATA}", help="Moving image (source) filename")
     parser.add_argument("--gap", default=10, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
         default=f"{TEST_SEG_DATA}",
-        help="for evaluation (if segmentations not available, set to None)",
+        help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
-        "--model",
-        default="outputs/output_20260511_100710/best.pt",
-        help="weights of trained model to use for registration",
+        "--output_dir", default="outputs/output_20260512_153746", help="Directory to find model and to save results"
     )
-    parser.add_argument(
-        "--saving_dir", default="outputs/output_20260511_100710/results_gap10", help="directory to save results"
-    )
-    # TODO : case 3D ?
     args = parser.parse_args()
+
     # Compute results for all pairs of frames in the video
     results = register_video(args)
     # Create results directory if it doesn't exist
-    results_dir = Path(args.saving_dir)
+    results_dir = Path(f"{args.output_dir}/results_gap{args.gap}")
     results_dir.mkdir(parents=True, exist_ok=True)
     # Compute de global dice score across all pairs of frames if segmentations are available
     if "dice" in results[0]:
@@ -159,7 +167,7 @@ if __name__ == "__main__":
         metrics = {
             "data": args.video_path,
             "date": timestamp,
-            "model": args.model,
+            "model": args.output_dir,
             "device": str(device),
             "gap": args.gap,
             "global_dice": global_dice,
@@ -182,15 +190,14 @@ if __name__ == "__main__":
     plt.figure(figsize=(12, 12))
     plt.subplot(2, 2, 1)
     plt.title("Fixed")
-    plt.imshow(fixed, cmap="gray")
+    plt.imshow(fixed.squeeze().cpu().numpy(), cmap="gray")
     plt.subplot(2, 2, 2)
     plt.title("Moved")
     plt.imshow(moved.squeeze().cpu().numpy(), cmap="gray")
     plt.subplot(2, 2, 3)
-    plt.title("Source")
-    plt.imshow(moving, cmap="gray")
+    plt.title("Moving")
+    plt.imshow(moving.squeeze().cpu().numpy(), cmap="gray")
     plt.subplot(2, 2, 4)
     plt.title("Warped Grid")
     plt.imshow(warped_grid.squeeze().cpu().numpy(), cmap="gray")
-    plt.show()
     plt.savefig(results_dir / f"registration_result_for_paire_{idx}.png")
