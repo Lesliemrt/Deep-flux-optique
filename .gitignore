@@ -26,6 +26,7 @@ MANIFEST
 .vscode/settings.json
 .vscode/settings.json
 neurite/
+.env
 
 # Data files
 data.tar.gz
@@ -42,4 +43,6 @@ pyrightconfig.json
 TODO
 outputs/
 **/*.pt
+**/*.pth
 **/*.json
+**/*.zip
