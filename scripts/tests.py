@@ -20,7 +20,7 @@ import torch
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # noqa: PTH100, PTH118, PTH120
 from train_cells import NormalizeMinMax, ThresholdTransform
 from utils.configs import HEIGHT, TEST_DATA, TEST_SEG_DATA, WIDTH, device
-from utils.utils import create_grid, interpole_and_pad, iou, normalisation_params
+from utils.utils import create_grid, interpole_and_pad, iou, normalisation_params, viz
 
 import voxelmorph_folder.voxelmorph as vxm
 
@@ -95,7 +95,13 @@ def register_video(args):  # noqa: PLR0915
         # Apply warp on grid for visualistion of the field
         warped_grid = model.spatial_transformer(tensor_grid, field)
 
-        results_pair = {"fixed": input_fixed, "moving": input_moving, "warped_grid": warped_grid, "moved": moved}
+        results_pair = {
+            "fixed": input_fixed,
+            "moving": input_moving,
+            "warped_grid": warped_grid,
+            "moved": moved,
+            "field": field,
+        }
 
         # If segmentations available, load them and warp the moving segmentation with the predicted field for evaluation
         if args.seg_path is not None:
@@ -184,6 +190,7 @@ if __name__ == "__main__":
     # Visualise results for first 2 frames
     idx = 0
     warped_grid = results[idx]["warped_grid"]
+    field = results[idx]["field"]
     moved = results[idx]["moved"]
     fixed = results[idx]["fixed"]
     moving = results[idx]["moving"]
@@ -198,6 +205,6 @@ if __name__ == "__main__":
     plt.title("Moving")
     plt.imshow(moving.squeeze().cpu().numpy(), cmap="gray")
     plt.subplot(2, 2, 4)
-    plt.title("Warped Grid")
-    plt.imshow(warped_grid.squeeze().cpu().numpy(), cmap="gray")
+    plt.title("Flow")
+    viz(img=fixed, flo=field)
     plt.savefig(results_dir / f"registration_result_for_paire_{idx}.png")
