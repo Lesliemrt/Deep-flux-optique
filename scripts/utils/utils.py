@@ -13,6 +13,7 @@ from skimage.measure import regionprops
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # noqa: PTH100, PTH118, PTH120
 
 import voxelmorph_folder.voxelmorph as vxm
+from raft.core.utils import flow_viz
 
 
 def normalisation_params(frames_path_list):
@@ -99,3 +100,13 @@ def visualize_labels(mask, ax=None):
             continue
         y, x = region.centroid
         ax.text(x, y, str(region.label), color="white", fontsize=10, ha="center", va="center")
+
+
+def viz(img, flo):
+    """Visualisation of flow, code from raft."""
+    img = img.squeeze(0).permute(1, 2, 0).cpu().numpy()
+    flo = flo.squeeze(0).permute(1, 2, 0).cpu().numpy()
+
+    # map flow to rgb image
+    flo = flow_viz.flow_to_image(flo)
+    plt.imshow(flo)
