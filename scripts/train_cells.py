@@ -19,6 +19,7 @@ os.environ["VXM_BACKEND"] = "pytorch"
 import datetime
 
 import matplotlib.pyplot as plt
+import mlflow
 import neurite as ne
 import numpy as np
 import tifffile as tiff
@@ -30,7 +31,7 @@ from tqdm import tqdm
 
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # noqa: PTH100, PTH118, PTH120
-from utils.configs import NB_CLASSES, TRAIN_DATA, TRAIN_SEG_DATA, device
+from utils.configs import NB_CLASSES, TRAIN_DATA, device
 
 import voxelmorph_folder.voxelmorph as vxm
 
@@ -64,7 +65,7 @@ class NormalizeMinMax(nn.Module):
 class VxmVideoDataset(Dataset):
     """PyTorch Dataset for VoxelMorph registration data on video."""
 
-    def __init__(self, video_path, seg_path=None, max_gap=20, binarize=False) -> None:
+    def __init__(self, video_path, seg_path=None, max_gap=1, binarize=False) -> None:
         """Parameters
 
         video_path : str
@@ -230,6 +231,12 @@ def main(args):
     """Create the dataloader, create the model, train and save."""
     # Set device
     print(f"Using device: {device}")  # noqa: T201
+    # MLflow set up
+    if args.mlflow:
+        mlflow.set_tracking_uri("http://127.0.0.0:5000")
+        mlflow.set_experiment("Deep_Optical_Flow")
+        mlflow.start_run()
+        mlflow.log_params(vars(args))
 
     # Create model
     model = vxm.nn.models.VxmPairwise(
@@ -253,7 +260,9 @@ def main(args):
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # Create dataloader
-    train_dataset = VxmVideoDataset(video_path=args.video_path, seg_path=args.seg_path, binarize=args.binarize)
+    train_dataset = VxmVideoDataset(
+        video_path=args.video_path, seg_path=args.seg_path, max_gap=args.max_gap, binarize=args.binarize
+    )
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
@@ -282,6 +291,8 @@ def main(args):
         )
         # Save loss for visualisation
         loss_during_training.append(avg_loss)
+        if mlflow.active_run():
+            mlflow.log_metric("Train_loss", avg_loss, step=epoch)
 
         # Print progress
         # if (epoch + 1) % 10 == 0:
@@ -298,6 +309,9 @@ def main(args):
             best_loss = avg_loss
             best_path = output_dir / "best.pt"
             torch.save(model.state_dict(), best_path)
+            if mlflow.active_run():
+                mlflow.pytorch.log_model(model)
+
     # Loss visualisation
     plt.plot(loss_during_training)
     plt.title("Training loss")
@@ -307,6 +321,7 @@ def main(args):
     torch.save(model.state_dict(), final_path)
     config = {
         "model": "VxmPairwise",
+        "max_gap": args.max_gap,
         "segmentations": args.seg_path is not None,
         "dataset": args.video_path,
         "binarization": args.binarize,
@@ -324,18 +339,24 @@ def main(args):
 
     print(f"Final model saved to {final_path}")  # noqa: T201
 
+    # End MLflow run
+    if mlflow.active_run():
+        mlflow.end_run()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train VoxelMorph")
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")  # noqa: DTZ005
+    parser.add_argument("--mlflow", action="store_true", help="Enable mlflow tracking during training")
     parser.add_argument("--output-dir", type=str, default=f"outputs/output_{timestamp}", help="Output directory")
     parser.add_argument("--video-path", default=TRAIN_DATA, help="Path to the training video")
     parser.add_argument(
         "--seg-path",
-        default=TRAIN_SEG_DATA,
+        default=None,
         help="Path to the segmentation of the training video, if not available set to None",
     )
-    parser.add_argument("--binarize", type=Boolean, default=True, help="Binarize images for training")
+    parser.add_argument("--binarize", type=Boolean, default=False, help="Binarize images for training")
+    parser.add_argument("--max_gap", type=Boolean, default=1, help="Max temporal gap between 2 frames")
     parser.add_argument("--epochs", type=int, default=50, help="Number of epochs")
     parser.add_argument("--image-loss", type=str, default="mse", help="Image loss to use: 'mse' or 'cc'")
     parser.add_argument("--workers", type=int, default=0, help="Number of workers")

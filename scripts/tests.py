@@ -110,6 +110,12 @@ def register_video(args):  # noqa: PLR0915
             seg_fixed = tiff.imread(seg_path_list[idx2])
             seg_moving = interpole_and_pad(seg_moving, [HEIGHT, WIDTH])
             seg_fixed = interpole_and_pad(seg_fixed, [HEIGHT, WIDTH])
+            # Take only pairs of frame with same nbr of cells (to have max dice = 1 in case of disappaering cell in vid)
+            moving_labels = set(np.unique([seg_moving]))
+            fixed_labels = set(np.unique([seg_fixed]))
+            if moving_labels != fixed_labels:
+                # print(f"ignored frame {idx} and {idx2} : {moving_labels} vs {fixed_labels}")  # noqa: ERA001
+                continue
             # Warp moving segmentation with the predicted field
             tensor_seg_moving = torch.from_numpy(seg_moving).to(device).float().unsqueeze(0).unsqueeze(0)
             spatial_transformer = vxm.nn.modules.SpatialTransformer(interpolation_mode="nearest").to(device)
@@ -146,7 +152,7 @@ if __name__ == "__main__":
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
-        "--output_dir", default="outputs/output_20260512_153746", help="Directory to find model and to save results"
+        "--output_dir", default="outputs/output_20260519_145503", help="Directory to find model and to save results"
     )
     args = parser.parse_args()
 
