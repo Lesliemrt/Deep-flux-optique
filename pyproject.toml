@@ -40,3 +40,6 @@ lint.pylint.max-args = 8
 [tool.mypy]
 enable_error_code = ["ignore-without-code"]
 check_untyped_defs = true
+
+[tool.ruff.lint.pylint]
+max-statements = 75
