@@ -11,7 +11,6 @@ import os
 import sys
 from collections.abc import Sequence  # noqa: TC003
 from pathlib import Path
-from xmlrpc.client import Boolean
 
 os.environ["NEURITE_BACKEND"] = "pytorch"
 os.environ["VXM_BACKEND"] = "pytorch"
@@ -184,6 +183,9 @@ def train_epoch(
     """
     model.train()
     total_loss = 0.0
+    epoch_img_loss = 0.0
+    epoch_grad_loss = 0.0
+    epoch_seg_loss = 0.0
 
     # Si get_iter dans dataset : for _ in range(steps_per_epoch): puis batch = next(dataloader)
     for batch in tqdm(dataloader, total=len(dataloader), desc="Training"):
@@ -220,11 +222,19 @@ def train_epoch(
             # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)  # noqa: E501, ERA001
             seg_loss = seg_loss_fn(target_seg_bi, warped_source_seg_bi).squeeze()
             loss += loss_weights[2] * seg_loss
+            epoch_seg_loss += seg_loss.item()
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
+        epoch_img_loss += img_loss.item()
+        epoch_grad_loss += grad_loss.item()
 
-    return total_loss / len(dataloader)
+    return {
+        "loss": total_loss / len(dataloader),
+        "img_loss": epoch_img_loss / len(dataloader),
+        "grad_loss": epoch_grad_loss / len(dataloader),
+        "seg_loss": epoch_seg_loss / len(dataloader) if epoch_seg_loss > 0 else None,
+    }
 
 
 def main(args):
@@ -233,9 +243,9 @@ def main(args):
     print(f"Using device: {device}")  # noqa: T201
     # MLflow set up
     if args.mlflow:
-        mlflow.set_tracking_uri("http://127.0.0.0:5000")
-        mlflow.set_experiment("Deep_Optical_Flow")
+        mlflow.set_tracking_uri("http://127.0.0.1:5000")
         mlflow.start_run()
+        print("MLflow tracking enabled.")  # noqa: T201
         mlflow.log_params(vars(args))
 
     # Create model
@@ -254,7 +264,7 @@ def main(args):
         image_loss_fn = ne.nn.modules.NCC()
     else:
         raise ValueError(f"Unsupported image loss: {args.image_loss} use 'mse' or 'CC'.")
-    grad_loss_fn = ne.nn.modules.SpatialGradient("l2")
+    grad_loss_fn = ne.nn.modules.SpatialGradient("l1")
     seg_loss_fn = ne.nn.modules.Dice()
     loss_weights = [1.0, args.lambda_param, args.gamma_param]
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
@@ -278,6 +288,9 @@ def main(args):
     print(f"Training for {args.epochs} epochs...")  # noqa: T201
     best_loss = float("inf")
     loss_during_training = []
+    img_loss_during_training = []
+    grad_loss_during_training = []
+    seg_loss_during_training = []
     for epoch in tqdm(range(args.epochs), desc="Epochs"):
         # Train for one epoch
         avg_loss = train_epoch(
@@ -290,13 +303,21 @@ def main(args):
             loss_weights=loss_weights,
         )
         # Save loss for visualisation
-        loss_during_training.append(avg_loss)
+        loss_during_training.append(avg_loss["loss"])
+        img_loss_during_training.append(avg_loss["img_loss"])
+        grad_loss_during_training.append(avg_loss["grad_loss"])
+        if avg_loss["seg_loss"] is not None:
+            seg_loss_during_training.append(avg_loss["seg_loss"])
         if mlflow.active_run():
-            mlflow.log_metric("Train_loss", avg_loss, step=epoch)
+            mlflow.log_metric("Train_loss", avg_loss["loss"], step=epoch)
+            mlflow.log_metric("Train_img_loss", avg_loss["img_loss"], step=epoch)
+            mlflow.log_metric("Train_grad_loss", avg_loss["grad_loss"], step=epoch)
+            if avg_loss["seg_loss"] is not None:
+                mlflow.log_metric("Train_seg_loss", avg_loss["seg_loss"], step=epoch)
 
         # Print progress
         # if (epoch + 1) % 10 == 0:
-        print(f"Epoch {epoch + 1}/{args.epochs}, Loss: {avg_loss:.6f}")  # noqa: T201
+        print(f"Epoch {epoch + 1}/{args.epochs}, Loss: {avg_loss['loss']:.6f}")  # noqa: T201
 
         # Save periodic checkpoints
         if (epoch + 1) % args.save_every == 0:
@@ -305,16 +326,21 @@ def main(args):
             print(f"Checkpoint saved to {checkpoint_path}")  # noqa: T201
 
         # Save best model
-        if avg_loss < best_loss:
-            best_loss = avg_loss
+        if avg_loss["loss"] < best_loss:
+            best_loss = avg_loss["loss"]
             best_path = output_dir / "best.pt"
             torch.save(model.state_dict(), best_path)
             if mlflow.active_run():
                 mlflow.pytorch.log_model(model)
 
     # Loss visualisation
-    plt.plot(loss_during_training)
+    plt.plot(loss_during_training, label="Total Loss")
+    plt.plot(img_loss_during_training, label="Image Loss")
+    plt.plot(grad_loss_during_training, label="Gradient Loss")
+    if seg_loss_during_training:
+        plt.plot(seg_loss_during_training, label="Segmentation Loss")
     plt.title("Training loss")
+    plt.legend()
     plt.savefig(output_dir / "loss.png")
     # Save final model
     final_path = output_dir / "final.pt"
@@ -327,6 +353,7 @@ def main(args):
         "binarization": args.binarize,
         "epochs": args.epochs,
         "image_loss": args.image_loss,
+        "grad_loss": args.grad_loss,
         "batch_size": args.batch_size,
         "learning_rate": args.lr,
         "lambda": args.lambda_param,
@@ -334,6 +361,9 @@ def main(args):
         "device": str(device),
         "date": timestamp,
     }
+    if mlflow.active_run():
+        run_id = mlflow.active_run().info.run_id
+        config["mlflow_run_id"] = run_id
     with Path.open(output_dir / "config.json", "w") as f:
         json.dump(config, f, indent=4)
 
@@ -355,10 +385,11 @@ if __name__ == "__main__":
         default=None,
         help="Path to the segmentation of the training video, if not available set to None",
     )
-    parser.add_argument("--binarize", type=Boolean, default=False, help="Binarize images for training")
-    parser.add_argument("--max_gap", type=Boolean, default=1, help="Max temporal gap between 2 frames")
+    parser.add_argument("--binarize", type=bool, default=False, help="Binarize images for training")
+    parser.add_argument("--max_gap", type=int, default=20, help="Max temporal gap between 2 frames")
     parser.add_argument("--epochs", type=int, default=50, help="Number of epochs")
     parser.add_argument("--image-loss", type=str, default="mse", help="Image loss to use: 'mse' or 'cc'")
+    parser.add_argument("--grad_loss", type=str, default="l1", help="Gradient loss to use: 'l1' or 'l2'")
     parser.add_argument("--workers", type=int, default=0, help="Number of workers")
     parser.add_argument("--batch-size", type=int, default=4, help="Batch size")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
