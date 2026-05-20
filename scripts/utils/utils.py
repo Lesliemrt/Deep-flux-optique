@@ -34,7 +34,10 @@ def normalisation_params(frames_path_list):
 def interpole_and_pad(image, target_shape=(1024, 1024)):
     """Interpolate and pad image to target shape."""
     if image.shape[0] > target_shape[0] or image.shape[1] > target_shape[1]:
-        dim_factors = [target_shape[0] / image.shape[0], target_shape[1] / image.shape[1]]
+        dim_factors = [
+            target_shape[0] / image.shape[0],
+            target_shape[1] / image.shape[1],
+        ]
         image = scipy.ndimage.interpolation.zoom(image, dim_factors, order=0)
     return vxm.py.utils.pad(image, target_shape)[0]
 
@@ -99,7 +102,15 @@ def visualize_labels(mask, ax=None):
         if region.label == 0:
             continue
         y, x = region.centroid
-        ax.text(x, y, str(region.label), color="white", fontsize=10, ha="center", va="center")
+        ax.text(
+            x,
+            y,
+            str(region.label),
+            color="white",
+            fontsize=10,
+            ha="center",
+            va="center",
+        )
 
 
 def viz(img, flo, ax=None):
@@ -113,3 +124,8 @@ def viz(img, flo, ax=None):
         plt.imshow(flo)
     else:
         ax.imshow(flo)
+
+
+def normalise(image, global_min, global_max):
+    """Normalize image to [0, 1] range using global min and max."""
+    return (image - global_min) / (global_max - global_min)

@@ -30,7 +30,7 @@ from tqdm import tqdm
 
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # noqa: PTH100, PTH118, PTH120
-from utils.configs import NB_CLASSES, TRAIN_DATA, device
+from utils.configs import NB_CLASSES, TRAIN_DATA, TRAIN_SEG_DATA, device
 
 import voxelmorph_folder.voxelmorph as vxm
 
@@ -97,8 +97,14 @@ class VxmVideoDataset(Dataset):
         gap = np.random.randint(-self.max_gap, self.max_gap + 1)  # noqa: NPY002
         if gap == 0:
             gap = 1
-        idx1 = idx % (len(self.frames_path_list) - 1)  # to avoid out of index error when selecting pairs of frames
-        idx2 = idx1 - gap if (idx1 + gap > (len(self.frames_path_list) - 1) or idx1 + gap < 0) else idx1 + gap
+        idx1 = idx % (
+            len(self.frames_path_list) - 1
+        )  # to avoid out of index error when selecting pairs of frames
+        idx2 = (
+            idx1 - gap
+            if (idx1 + gap > (len(self.frames_path_list) - 1) or idx1 + gap < 0)
+            else idx1 + gap
+        )
 
         source_img = tiff.imread(self.frames_path_list[idx1])
         target_img = tiff.imread(self.frames_path_list[idx2])
@@ -116,7 +122,12 @@ class VxmVideoDataset(Dataset):
             target_seg = tiff.imread(self.seg_path_list[idx2])
             source_seg = torch.from_numpy(source_seg).float()
             target_seg = torch.from_numpy(target_seg).float()
-            return {"source": source, "target": target, "source_seg": source_seg, "target_seg": target_seg}
+            return {
+                "source": source,
+                "target": target,
+                "source_seg": source_seg,
+                "target_seg": target_seg,
+            }
 
         return {"source": source, "target": target}
 
@@ -132,7 +143,9 @@ class VxmVideoDataset(Dataset):
             global_min = min(global_min, current_min)
             global_max = max(global_max, current_max)
 
-        base_transforms = [NormalizeMinMax(global_min=global_min, global_max=global_max)]
+        base_transforms = [
+            NormalizeMinMax(global_min=global_min, global_max=global_max)
+        ]
 
         if self.binarize:
             # base_transforms += [v2.RandomApply(v2.ColorJitter, 0.3)]  # noqa: ERA001
@@ -198,7 +211,9 @@ def train_epoch(
         target = target.to(device).unsqueeze(1)  # Add channel dimension
 
         # Get the displacement and the warped source image from the model
-        displacement, warped_source = model(source, target, return_warped_source=True, return_field_type="displacement")
+        displacement, warped_source = model(
+            source, target, return_warped_source=True, return_field_type="displacement"
+        )
 
         img_loss = image_loss_fn(target, warped_source)
         grad_loss = grad_loss_fn(displacement)
@@ -210,13 +225,19 @@ def train_epoch(
             source_seg_bi = (source_seg > 0).float().unsqueeze(1)
             target_seg_bi = (target_seg > 0).float().unsqueeze(1)
             target_seg_oh = (  # noqa: F841
-                torch.nn.functional.one_hot(target_seg.long(), num_classes=NB_CLASSES).permute(0, 3, 1, 2).float()
+                torch.nn.functional.one_hot(target_seg.long(), num_classes=NB_CLASSES)
+                .permute(0, 3, 1, 2)
+                .float()
             )
             source_seg_oh = (  # noqa: F841
-                torch.nn.functional.one_hot(source_seg.long(), num_classes=NB_CLASSES).permute(0, 3, 1, 2).float()
+                torch.nn.functional.one_hot(source_seg.long(), num_classes=NB_CLASSES)
+                .permute(0, 3, 1, 2)
+                .float()
             )
             # Not enough memory to use labels (and one hot)
-            spatial_transformer = vxm.nn.modules.SpatialTransformer(interpolation_mode="linear").to(device)
+            spatial_transformer = vxm.nn.modules.SpatialTransformer(
+                interpolation_mode="linear"
+            ).to(device)
             warped_source_seg_bi = spatial_transformer(source_seg_bi, displacement)
             warped_source_seg_bi = torch.clamp(warped_source_seg_bi, 0, 1)
             # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)  # noqa: E501, ERA001
@@ -263,15 +284,20 @@ def main(args):
     elif args.image_loss == "cc":
         image_loss_fn = ne.nn.modules.NCC()
     else:
-        raise ValueError(f"Unsupported image loss: {args.image_loss} use 'mse' or 'CC'.")
-    grad_loss_fn = ne.nn.modules.SpatialGradient("l1")
+        raise ValueError(
+            f"Unsupported image loss: {args.image_loss} use 'mse' or 'CC'."
+        )
+    grad_loss_fn = ne.nn.modules.SpatialGradient(args.grad_loss)
     seg_loss_fn = ne.nn.modules.Dice()
     loss_weights = [1.0, args.lambda_param, args.gamma_param]
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # Create dataloader
     train_dataset = VxmVideoDataset(
-        video_path=args.video_path, seg_path=args.seg_path, max_gap=args.max_gap, binarize=args.binarize
+        video_path=args.video_path,
+        seg_path=args.seg_path,
+        max_gap=args.max_gap,
+        binarize=args.binarize,
     )
     train_loader = DataLoader(
         train_dataset,
@@ -314,6 +340,19 @@ def main(args):
             mlflow.log_metric("Train_grad_loss", avg_loss["grad_loss"], step=epoch)
             if avg_loss["seg_loss"] is not None:
                 mlflow.log_metric("Train_seg_loss", avg_loss["seg_loss"], step=epoch)
+
+        if epoch == 0:
+            mlflow.log_metric("Initial_train_loss", avg_loss["loss"])
+            mlflow.log_metric("Initial_train_img_loss", avg_loss["img_loss"])
+            mlflow.log_metric(
+                f"Initial_train_grad_loss * {args.lambda_param}",
+                avg_loss["grad_loss"] * args.lambda_param,
+            )
+            if avg_loss["seg_loss"] is not None:
+                mlflow.log_metric(
+                    f"Initial_train_seg_loss * {args.gamma_param}",
+                    avg_loss["seg_loss"] * args.gamma_param,
+                )
 
         # Print progress
         # if (epoch + 1) % 10 == 0:
@@ -377,33 +416,56 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train VoxelMorph")
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")  # noqa: DTZ005
-    parser.add_argument("--mlflow", action="store_true", help="Enable mlflow tracking during training")
-    parser.add_argument("--output-dir", type=str, default=f"outputs/output_{timestamp}", help="Output directory")
-    parser.add_argument("--video-path", default=TRAIN_DATA, help="Path to the training video")
+    parser.add_argument(
+        "--mlflow", action="store_true", help="Enable mlflow tracking during training"
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=f"outputs/output_{timestamp}",
+        help="Output directory",
+    )
+    parser.add_argument(
+        "--video-path", default=TRAIN_DATA, help="Path to the training video"
+    )
     parser.add_argument(
         "--seg-path",
-        default=None,
+        default=TRAIN_SEG_DATA,
         help="Path to the segmentation of the training video, if not available set to None",
     )
-    parser.add_argument("--binarize", type=bool, default=False, help="Binarize images for training")
-    parser.add_argument("--max_gap", type=int, default=20, help="Max temporal gap between 2 frames")
+    parser.add_argument(
+        "--binarize", type=bool, default=False, help="Binarize images for training"
+    )
+    parser.add_argument(
+        "--max_gap", type=int, default=20, help="Max temporal gap between 2 frames"
+    )
     parser.add_argument("--epochs", type=int, default=50, help="Number of epochs")
-    parser.add_argument("--image-loss", type=str, default="mse", help="Image loss to use: 'mse' or 'cc'")
-    parser.add_argument("--grad_loss", type=str, default="l1", help="Gradient loss to use: 'l1' or 'l2'")
+    parser.add_argument(
+        "--image-loss", type=str, default="mse", help="Image loss to use: 'mse' or 'cc'"
+    )
+    parser.add_argument(
+        "--grad_loss", type=str, default="l1", help="Gradient loss to use: 'l1' or 'l2'"
+    )
     parser.add_argument("--workers", type=int, default=0, help="Number of workers")
     parser.add_argument("--batch-size", type=int, default=4, help="Batch size")
-    parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
+    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
     parser.add_argument(
-        "--lambda", type=float, dest="lambda_param", default=0.01, help="Regularisation parameter for smooth loss"
+        "--lambda",
+        type=float,
+        dest="lambda_param",
+        default=0.01,
+        help="Regularisation parameter for smooth loss",
     )
     parser.add_argument(
         "--gamma",
         type=float,
         dest="gamma_param",
-        default=0.01,
+        default=0.001,
         help="Regularisation parameter for segmentation loss, not used if seg_path is set to None",
     )
     parser.add_argument("--gpu", type=str, default="0", help="GPU ID")
-    parser.add_argument("--save-every", type=int, default=10, help="Checkpoint every N epochs")
+    parser.add_argument(
+        "--save-every", type=int, default=10, help="Checkpoint every N epochs"
+    )
     args = parser.parse_args()
     main(args)
