@@ -27,6 +27,8 @@ MANIFEST
 .vscode/settings.json
 neurite/
 .env
+mlartifacts/
+mlflow.db
 
 # Data files
 data.tar.gz
