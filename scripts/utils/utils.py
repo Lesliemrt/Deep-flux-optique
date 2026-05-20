@@ -102,11 +102,14 @@ def visualize_labels(mask, ax=None):
         ax.text(x, y, str(region.label), color="white", fontsize=10, ha="center", va="center")
 
 
-def viz(img, flo):
+def viz(img, flo, ax=None):
     """Visualisation of flow, code from raft."""
     img = img.squeeze(0).permute(1, 2, 0).cpu().numpy()
     flo = flo.squeeze(0).permute(1, 2, 0).cpu().numpy()
 
     # map flow to rgb image
     flo = flow_viz.flow_to_image(flo)
-    plt.imshow(flo)
+    if ax is None:
+        plt.imshow(flo)
+    else:
+        ax.imshow(flo)
