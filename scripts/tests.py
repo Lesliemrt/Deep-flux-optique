@@ -23,6 +23,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))) 
 from train_cells import NormalizeMinMax, ThresholdTransform
 from utils.configs import HEIGHT, TEST_DATA, TEST_SEG_DATA, WIDTH, device
 from utils.utils import interpole_and_pad, iou, normalisation_params, viz, normalise
+from flow_visualizer import FlowVisualizer
 
 import voxelmorph_folder.voxelmorph as vxm
 
@@ -46,6 +47,17 @@ def register_pair(moving, fixed, model_type, model, global_min, global_max, conf
         Global maximum for normalization.
     config : dict
         Configuration dictionary.
+
+    Returns
+    -------
+    field : torch.Tensor
+        Predicted deformation field.
+    fig : matplotlib.figure.Figure
+        Figure showing the fixed image, the moved image, the moving image and the flow field.
+    input_moving : numpy.ndarray
+        Normalized moving image.
+    input_fixed : numpy.ndarray
+        Normalized fixed image.
     """
     # Interpole/Pad images to HEIGHT, WIDTH if needed
     moving_resized = interpole_and_pad(moving, [HEIGHT, WIDTH])
@@ -94,7 +106,12 @@ def register_pair(moving, fixed, model_type, model, global_min, global_max, conf
     ax[1, 1].set_title("Flow")
     viz(img=input_fixed, flo=field, ax=ax[1, 1])
 
-    return field, fig
+    return (
+        field,
+        fig,
+        input_moving.squeeze().cpu().numpy(),
+        input_fixed.squeeze().cpu().numpy(),
+    )
 
 
 def register_pair_tvl1(moving, fixed, model_type, global_min, global_max, config):
@@ -114,6 +131,17 @@ def register_pair_tvl1(moving, fixed, model_type, global_min, global_max, config
         Global maximum for normalization.
     config : dict
         Configuration dictionary.
+
+    Returns
+    -------
+    field : torch.Tensor
+        Predicted deformation field.
+    fig : matplotlib.figure.Figure
+        Figure showing the fixed image, the moved image, the moving image and the flow field.
+    input_moving : numpy.ndarray
+        Normalized moving image.
+    input_fixed : numpy.ndarray
+        Normalized fixed image.
     """
     # Interpole/Pad images to HEIGHT, WIDTH if needed
     moving_resized = interpole_and_pad(moving, [HEIGHT, WIDTH])
@@ -123,22 +151,19 @@ def register_pair_tvl1(moving, fixed, model_type, global_min, global_max, config
     input_moving = normalise(moving_resized, global_min, global_max)
     input_fixed = normalise(fixed_resized, global_min, global_max)
 
+    # To tensor
+    tensor_moving = (
+        torch.from_numpy(input_moving).float().to(device).unsqueeze(0).unsqueeze(0)
+    )
+
     # Predict
     field = optical_flow_tvl1(reference_image=input_fixed, moving_image=input_moving)
     spatial_transformer = vxm.nn.modules.SpatialTransformer(
         interpolation_mode="bilinear"
     ).to(device)
-    tensor_moving = (
-        torch.from_numpy(input_moving).float().to(device).unsqueeze(0).unsqueeze(0)
-    )
     tensor_field = torch.from_numpy(field).float().to(device).unsqueeze(0)
     moved = spatial_transformer(tensor_moving, tensor_field)
-    #  moving_image : torch.Tensor
-    #         Tensor to be spatially transformed by `deformation_field`.
-    #         Shape: (B, C, *spatial_dims).
-    #     deformation_field : torch.Tensor
-    #         Field causing the spatial transformation of `moving_image`.
-    #         Shape: (B, ndim, *spatial_dims).
+    #  moving_image : torch.Tensor shape: (B, C, *spatial_dims), deformation_field : torch.Tensor shape: (B, ndim, *spatial_dims).
 
     fig, ax = plt.subplots(2, 2, figsize=(12, 12))
     plt.subplot(2, 2, 1)
@@ -158,7 +183,7 @@ def register_pair_tvl1(moving, fixed, model_type, global_min, global_max, config
         ax=ax[1, 1],
     )
 
-    return tensor_field, fig
+    return tensor_field, fig, input_moving, input_fixed
 
 
 def evaluate_registration(segmentation_moving, segmentation_fixed, field):
@@ -214,14 +239,14 @@ def register_video(args):
     # 1. Load video and segmentations frames
     frames_path_list = sorted(Path(args.video_path).iterdir())
     seg_path_list = (
-        sorted(Path(args.seg_path).iterdir()) if args.seg_path is not None else None
+        (sorted(Path(args.seg_path).iterdir())) if args.seg_path is not None else None
     )
     global_min, global_max = normalisation_params(frames_path_list)
 
     if args.model_type == "voxelmorph":
         # Open config file
         with Path(f"{args.output_dir}/config.json").open() as j:
-            config = json.load(j)
+            config = json.load(j)  # To get informations from vxm training
     else:
         config = {}
 
@@ -232,7 +257,7 @@ def register_video(args):
         mlflow.start_run(
             run_name=f"Test gap {args.gap} model type {args.model_type} on {args.video_path}",
             nested=True,
-            parent_run_id=parent_run_id,
+            parent_run_id=parent_run_id,  # To link the test run to the training run (if not specified, the test run will be a independant run)
         )
         print("MLflow tracking enabled.")  # noqa: T201
         mlflow.log_params(vars(args))
@@ -259,23 +284,51 @@ def register_video(args):
     viz_dir = results_dir / "viz"
     viz_dir.mkdir(parents=True, exist_ok=True)
     results = []
+    flow_maps = {}
+    video = []  # list of frames to visualize the flow maps on (only for gap=1 and if args.visualize is True)
     for idx in range(len(frames_path_list) - args.gap):
         # Load moving and fixed images
         idx2 = idx + args.gap
+        print(f"Registering pair: {idx} and {idx2}")  # noqa: T201
         moving = tiff.imread(frames_path_list[idx])
         fixed = tiff.imread(frames_path_list[idx2])
 
         # 3. Compute registration
         if args.model_type == "voxelmorph":
-            field, fig = register_pair(
+            field, fig, input_moving, input_fixed = register_pair(
                 moving, fixed, args.model_type, model, global_min, global_max, config
             )
         elif args.model_type == "tvl1":
-            field, fig = register_pair_tvl1(
+            field, fig, input_moving, input_fixed = register_pair_tvl1(
                 moving, fixed, args.model_type, global_min, global_max, config
             )
         fig.savefig(viz_dir / f"registration_result_for_paire_{idx}.png")
         plt.close(fig)
+
+        if args.visualize and args.gap == 1:
+            flow_maps[(idx2, idx)] = field.squeeze().cpu().numpy()
+            if idx == 0:
+                video.append(
+                    np.expand_dims(input_moving, axis=-1)
+                )  # channel dimension needed for visualization
+            video.append(
+                np.expand_dims(input_fixed, axis=-1)
+            )  # channel dimension neededfor visualization
+            if args.model_type == "voxelmorph":
+                inv_field, _, _, _ = register_pair(
+                    fixed,
+                    moving,
+                    args.model_type,
+                    model,
+                    global_min,
+                    global_max,
+                    config,
+                )
+            elif args.model_type == "tvl1":
+                inv_field, _, _, _ = register_pair_tvl1(
+                    fixed, moving, args.model_type, global_min, global_max, config
+                )
+            flow_maps[(idx, idx2)] = inv_field.squeeze().cpu().numpy()
 
         if mlflow.active_run():
             mlflow.log_figure(
@@ -289,12 +342,11 @@ def register_video(args):
             seg_moving = tiff.imread(seg_path_list[idx])
             seg_fixed = tiff.imread(seg_path_list[idx2])
             score_pair = evaluate_registration(seg_moving, seg_fixed, field)
+            results.append(score_pair)
             if score_pair is None:
                 continue
         else:
             print("Segmentation files not found, skipping segmentation evaluation.")  # noqa: T201
-
-        results.append(score_pair)
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")  # noqa: DTZ005
     metrics = {
@@ -336,6 +388,12 @@ def register_video(args):
     if args.mlflow:
         mlflow.end_run()
 
+    if args.visualize:
+        if args.gap != 1:
+            raise ValueError("Visualization is only available for gap=1")
+        visualizer = FlowVisualizer(video, flow_maps, grid_step=20)
+        visualizer.run()
+
 
 if __name__ == "__main__":
     # Parse commandline args
@@ -344,12 +402,17 @@ if __name__ == "__main__":
         "--mlflow", action="store_true", help="Enable mlflow tracking during training"
     )
     parser.add_argument(
+        "--visualize",
+        action="store_true",
+        help="Enable visualization of flow maps (only for gap=1)",
+    )
+    parser.add_argument(
         "--video_path", default=f"{TEST_DATA}", help="Moving image (source) filename"
     )
-    parser.add_argument("--gap", default=10, help="Temporal gap between 2 frames")
+    parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
-        default=f"{TEST_SEG_DATA}",
+        default=None,  # TEST_SEG_DATA
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
@@ -360,7 +423,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/TVL1",
+        default="outputs/output_20260520_145929",
         help="Directory to find model and to save results",
     )
     args = parser.parse_args()
