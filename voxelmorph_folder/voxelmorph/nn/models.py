@@ -15,8 +15,8 @@ import neurite as ne
 # Local imports
 import voxelmorph as vxm
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))  # noqa: PTH100, PTH118, PTH120
-from scripts.utils import configs
+# sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))  # noqa: PTH100, PTH118, PTH120
+# from scripts.my_utils import configs
 
 
 class VxmPairwise(nn.Module):
@@ -71,7 +71,7 @@ class VxmPairwise(nn.Module):
         flow_initializer: float = 1e-5,
         integration_steps: int = 5,
         resize_integrated_fields: bool = False,
-        device: str = configs.device,
+        device: str = "cpu",
         unet_kwargs: dict | None = None,
     ):
         """Initialize the `VxmPairwise`.
@@ -118,9 +118,9 @@ class VxmPairwise(nn.Module):
 
         # Initialize the velocity field integrator
         if self.integration_steps > 0:
-            self.velocity_field_integrator = vxm.nn.modules.IntegrateVelocityField(steps=self.integration_steps).to(
-                self.device
-            )
+            self.velocity_field_integrator = vxm.nn.modules.IntegrateVelocityField(
+                steps=self.integration_steps
+            ).to(self.device)
 
         # Initialize the spatial transformer
         self.spatial_transformer = vxm.nn.modules.SpatialTransformer().to(self.device)
@@ -188,27 +188,39 @@ class VxmPairwise(nn.Module):
         """
         valid_field_types = {"velocity", "svf", "displacement"}
         if return_field_type not in valid_field_types:
-            raise ValueError(f"return_field_type must be one of {valid_field_types}, got '{return_field_type}'")
+            raise ValueError(
+                f"return_field_type must be one of {valid_field_types}, got '{return_field_type}'"
+            )
 
         if self.integration_steps == 0 and return_warped_target:
-            raise ValueError("Cannot return warped target image when integration_steps=0.")
+            raise ValueError(
+                "Cannot return warped target image when integration_steps=0."
+            )
 
         # Pass combined features through the model's backbone & flow layer
         combined_features = torch.cat([source, target], dim=1)
         combined_features = self.model(combined_features)
-        velocity = self.flow_layer(combined_features)  # Positive velocity: (source -> target)
+        velocity = self.flow_layer(
+            combined_features
+        )  # Positive velocity: (source -> target)
 
         if self.integration_steps > 0:
             self.velocity = velocity
 
         # Early return if no warped images requested and returning velocity
-        if not return_warped_source and not return_warped_target and return_field_type in {"velocity", "svf"}:
+        if (
+            not return_warped_source
+            and not return_warped_target
+            and return_field_type in {"velocity", "svf"}
+        ):
             return velocity
 
         pos_displacement = velocity
         neg_displacement = None
 
-        if (return_warped_source or return_field_type == "displacement") and self.integration_steps > 0:
+        if (
+            return_warped_source or return_field_type == "displacement"
+        ) and self.integration_steps > 0:
             # Only need positive displacement
             pos_displacement = self.velocity_field_integrator(velocity)
 
@@ -216,7 +228,9 @@ class VxmPairwise(nn.Module):
             # Only need negative displacement
             neg_displacement = self.velocity_field_integrator(-velocity)
 
-        return_field = pos_displacement if return_field_type == "displacement" else velocity
+        return_field = (
+            pos_displacement if return_field_type == "displacement" else velocity
+        )
 
         # Build return tuple starting with the requested field type
         outputs = [return_field]
@@ -231,7 +245,9 @@ class VxmPairwise(nn.Module):
 
         return tuple(outputs) if len(outputs) > 1 else outputs[0]
 
-    def _init_flow_layer(self, ndim: int, features: int, flow_initializer: float = 1e-5) -> None:
+    def _init_flow_layer(
+        self, ndim: int, features: int, flow_initializer: float = 1e-5
+    ) -> None:
         """Initialize the flow layer with custom weight initialization.
 
         This layer is a convolutional block that produces a displacement (flow)
@@ -256,7 +272,9 @@ class VxmPairwise(nn.Module):
         if flow_initializer is not None:
             # Initialize weights from Normal(mean=0, std=flow_initializer)
             with torch.no_grad():
-                torch.nn.init.normal_(flow_layer.conv0.weight, mean=0.0, std=flow_initializer)
+                torch.nn.init.normal_(
+                    flow_layer.conv0.weight, mean=0.0, std=flow_initializer
+                )
                 # Set the bias term(s) to zero for the first (and only) conv
                 if flow_layer.conv0.bias is not None:
                     flow_layer.conv0.bias.zero_()

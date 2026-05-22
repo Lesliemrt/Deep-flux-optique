@@ -34,10 +34,9 @@ def viz(img, flo):
 
     # map flow to rgb image
     flo = flow_viz.flow_to_image(flo)
-    img_flo = np.concatenate([img, flo], axis=0)
 
-    plt.figure(figsize=(8, 16))
-    plt.imshow(img_flo / 255.0)
+    plt.figure(figsize=(8, 8))
+    plt.imshow(flo)
     plt.show()
 
     # cv2.imshow("image", img_flo[:, :, [2, 1, 0]] / 255.0)
@@ -69,11 +68,19 @@ def demo(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default="raft_model/raft-things.pth", help="restore checkpoint")
+    parser.add_argument(
+        "--model", default="raft_model/raft-things.pth", help="restore checkpoint"
+    )
     parser.add_argument("--path", help="dataset for evaluation")
     parser.add_argument("--small", action="store_true", help="use small model")
-    parser.add_argument("--mixed_precision", action="store_true", help="use mixed precision")
-    parser.add_argument("--alternate_corr", action="store_true", help="use efficent correlation implementation")
+    parser.add_argument(
+        "--mixed_precision", action="store_true", help="use mixed precision"
+    )
+    parser.add_argument(
+        "--alternate_corr",
+        action="store_true",
+        help="use efficent correlation implementation",
+    )
     args = parser.parse_args()
 
     demo(args)

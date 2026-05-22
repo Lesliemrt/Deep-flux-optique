@@ -14,16 +14,21 @@ import mlflow
 import numpy as np
 import tifffile as tiff
 from skimage.registration import optical_flow_tvl1
+from argparse import Namespace
+from PIL import Image
 
 # Third-party imports
 import torch
 
 # Local imports
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # noqa: PTH100, PTH118, PTH120
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
+)  # noqa: PTH100, PTH118, PTH120
 from train_cells import NormalizeMinMax, ThresholdTransform
-from utils.configs import HEIGHT, TEST_DATA, TEST_SEG_DATA, WIDTH, device
-from utils.utils import interpole_and_pad, iou, normalisation_params, viz, normalise
+from my_utils.configs import HEIGHT, TEST_DATA, TEST_SEG_DATA, WIDTH, device
+from my_utils.utils import interpole_and_pad, iou, normalisation_params, viz, normalise
 from flow_visualizer import FlowVisualizer
+from raft import RAFT
 
 import voxelmorph_folder.voxelmorph as vxm
 
@@ -186,6 +191,91 @@ def register_pair_tvl1(moving, fixed, model_type, global_min, global_max, config
     return tensor_field, fig, input_moving, input_fixed
 
 
+def register_pair_raft(
+    moving_path, fixed_path, model_type, model, global_min, global_max, config
+):
+    """Register a pair of frames using RAFT optical flow model.
+
+    Parameters
+    ----------
+    moving_path : str
+        Path to the moving image.
+    fixed_path : str
+        Path to the fixed image.
+    model_type : str
+        Type of model to use for registration.
+    global_min : float
+        Global minimum for normalization.
+    global_max : float
+        Global maximum for normalization.
+    config : dict
+        Configuration dictionary.
+
+    Returns
+    -------
+    field : torch.Tensor
+        Predicted deformation field.
+    fig : matplotlib.figure.Figure
+        Figure showing the fixed image, the moved image, the moving image and the flow field.
+    input_moving : numpy.ndarray
+        Normalized moving image.
+    input_fixed : numpy.ndarray
+        Normalized fixed image.
+    """
+
+    moving = np.array(Image.open(moving_path).convert("RGB")).astype(np.uint8)
+    fixed = np.array(Image.open(fixed_path).convert("RGB")).astype(np.uint8)
+
+    # Interpole/Pad images to HEIGHT, WIDTH if needed
+    moving_resized = interpole_and_pad(moving, [HEIGHT, WIDTH])
+    fixed_resized = interpole_and_pad(fixed, [HEIGHT, WIDTH])
+
+    # To tensor
+    input_moving = torch.from_numpy(moving_resized).permute(2, 0, 1).float()
+    input_fixed = torch.from_numpy(fixed_resized).permute(2, 0, 1).float()
+
+    # Normalisation
+    normalise = NormalizeMinMax(global_min=global_min, global_max=global_max)
+    input_moving = normalise(input_moving)
+    input_fixed = normalise(input_fixed)
+
+    # Predict
+    with torch.no_grad():
+        _, field = model(
+            source=input_moving,
+            target=input_fixed,
+            iters=20,
+            test_mode=True,
+        )
+
+    spatial_transformer = vxm.nn.modules.SpatialTransformer(
+        interpolation_mode="bilinear"
+    ).to(device)
+    tensor_field = torch.from_numpy(field).float().to(device).unsqueeze(0)
+    moved = spatial_transformer(input_moving, tensor_field)
+
+    fig, ax = plt.subplots(2, 2, figsize=(12, 12))
+    plt.subplot(2, 2, 1)
+    ax[0, 0].set_title("Fixed")
+    ax[0, 0].imshow(input_fixed.squeeze().cpu().numpy(), cmap="gray")
+    plt.subplot(2, 2, 2)
+    ax[0, 1].set_title("Moved")
+    ax[0, 1].imshow(moved.squeeze().cpu().numpy(), cmap="gray")
+    plt.subplot(2, 2, 3)
+    ax[1, 0].set_title("Moving")
+    ax[1, 0].imshow(input_moving.squeeze().cpu().numpy(), cmap="gray")
+    plt.subplot(2, 2, 4)
+    ax[1, 1].set_title("Flow")
+    viz(img=input_fixed, flo=field, ax=ax[1, 1])
+
+    return (
+        field,
+        fig,
+        input_moving.squeeze().cpu().numpy(),
+        input_fixed.squeeze().cpu().numpy(),
+    )
+
+
 def evaluate_registration(segmentation_moving, segmentation_fixed, field):
     """Evaluate the registration results."""
     score = {}
@@ -226,6 +316,45 @@ def evaluate_registration(segmentation_moving, segmentation_fixed, field):
     return score
 
 
+def create_model(args):
+    """Create the model for registration."""
+    if args.model_type == "voxelmorph":
+        model = vxm.nn.models.VxmPairwise(
+            ndim=2,
+            source_channels=1,
+            target_channels=1,
+            nb_features=[16, 16, 16, 16, 16],
+            integration_steps=0,
+            device=device,
+        ).to(device)
+        model_path = f"{args.output_dir}/best.pt"
+        model.load_state_dict(torch.load(model_path, map_location=device))
+        print(f"Load model : {model_path}")  # noqa: T201
+        model.eval()
+        if mlflow.active_run():
+            mlflow.log_param("model_path", model_path)
+    elif args.model_type == "tvl1":
+        model = None
+    elif args.model_type == "raft":
+        raft_args = Namespace(
+            model="raft-things.pth",
+            path=args.video_path,
+            small=False,
+            mixed_precision=False,
+            alternate_corr=False,
+        )
+        model = torch.nn.DataParallel(RAFT(raft_args))
+        model_path = "raft_models/raft-things.pth"
+        model.load_state_dict(torch.load(model_path, map_location=device))
+
+        model = model.module
+        model.to(device)
+        model.eval()
+    else:
+        raise ValueError(f"Unknown model type: {args.model_type}")
+    return model
+
+
 def register_video(args):
     """Register video frames.
 
@@ -263,20 +392,21 @@ def register_video(args):
         mlflow.log_params(vars(args))
 
     # 2. Create model
-    if args.model_type == "voxelmorph":
-        model = vxm.nn.models.VxmPairwise(
-            ndim=2,
-            source_channels=1,
-            target_channels=1,
-            nb_features=[16, 16, 16, 16, 16],
-            integration_steps=0,
-        ).to(device)
-        model_path = f"{args.output_dir}/best.pt"
-        model.load_state_dict(torch.load(model_path, map_location=device))
-        print(f"Load model : {model_path}")  # noqa: T201
-        model.eval()
-        if mlflow.active_run():
-            mlflow.log_param("model_path", model_path)
+    model = create_model(args)
+    # if args.model_type == "voxelmorph":
+    #     model = vxm.nn.models.VxmPairwise(
+    #         ndim=2,
+    #         source_channels=1,
+    #         target_channels=1,
+    #         nb_features=[16, 16, 16, 16, 16],
+    #         integration_steps=0,
+    #     ).to(device)
+    #     model_path = f"{args.output_dir}/best.pt"
+    #     model.load_state_dict(torch.load(model_path, map_location=device))
+    #     print(f"Load model : {model_path}")  # noqa: T201
+    #     model.eval()
+    #     if mlflow.active_run():
+    #         mlflow.log_param("model_path", model_path)
 
     # Create results directory if it doesn't exist
     results_dir = Path(f"{args.output_dir}/results_gap{args.gap}")
@@ -301,6 +431,16 @@ def register_video(args):
         elif args.model_type == "tvl1":
             field, fig, input_moving, input_fixed = register_pair_tvl1(
                 moving, fixed, args.model_type, global_min, global_max, config
+            )
+        elif args.model_type == "raft":
+            field, fig, input_moving, input_fixed = register_pair_raft(
+                frames_path_list[idx],
+                frames_path_list[idx2],
+                args.model_type,
+                model,
+                global_min,
+                global_max,
+                config,
             )
         fig.savefig(viz_dir / f"registration_result_for_paire_{idx}.png")
         plt.close(fig)
@@ -359,20 +499,30 @@ def register_video(args):
     # 5. Global evaluation
     # Compute de global dice score an iou score
     if args.seg_path is not None:
-        global_dice = np.mean([result["dice"] for result in results])
-        global_ref_dice = np.mean([result["ref_dice"] for result in results])
-        # Compute de global iou score
-        global_iou = np.mean([result["iou"] for result in results])
-        global_ref_iou = np.mean([result["ref_iou"] for result in results])
+        # TODO fonction pour faire ça pck la c'est moche
+        dice_per_pair = [result["dice"] for result in results if result is not None]
+        ref_dice_scores_per_pair = [
+            result["ref_dice"] for result in results if result is not None
+        ]
+        iou_scores_per_pair = [
+            result["iou"] for result in results if result is not None
+        ]
+        ref_iou_scores_per_pair = [
+            result["ref_iou"] for result in results if result is not None
+        ]
+        global_dice = np.mean(dice_per_pair)
+        global_ref_dice = np.mean(ref_dice_scores_per_pair)
+        global_iou = np.mean(iou_scores_per_pair)
+        global_ref_iou = np.mean(ref_iou_scores_per_pair)
         # Save metrics in a json file
         metrics["global_dice"] = global_dice
         metrics["global_ref_dice"] = global_ref_dice
         metrics["global_iou"] = global_iou
         metrics["global_ref_iou"] = global_ref_iou
-        metrics["dice_per_pair"] = [result["dice"] for result in results]
-        metrics["ref_dice_per_pair"] = [result["ref_dice"] for result in results]
-        metrics["iou_per_pair"] = [result["iou"] for result in results]
-        metrics["ref_iou_per_pair"] = [result["ref_iou"] for result in results]
+        metrics["dice_per_pair"] = dice_per_pair
+        metrics["ref_dice_per_pair"] = ref_dice_scores_per_pair
+        metrics["iou_per_pair"] = iou_scores_per_pair
+        metrics["ref_iou_per_pair"] = ref_iou_scores_per_pair
         if mlflow.active_run():
             mlflow.log_metrics(
                 {
@@ -409,21 +559,21 @@ if __name__ == "__main__":
     parser.add_argument(
         "--video_path", default=f"{TEST_DATA}", help="Moving image (source) filename"
     )
-    parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
+    parser.add_argument("--gap", default=10, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
-        default=None,  # TEST_SEG_DATA
+        default=TEST_SEG_DATA,
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
         "--model_type",
         default="voxelmorph",
-        choices=["voxelmorph", "tvl1"],
+        choices=["voxelmorph", "tvl1", "raft"],
         help="Type of model to use for registration",
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/output_20260520_145929",
+        default="outputs/output_20260522_154621",
         help="Directory to find model and to save results",
     )
     args = parser.parse_args()

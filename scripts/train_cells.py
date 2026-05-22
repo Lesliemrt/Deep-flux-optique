@@ -30,7 +30,7 @@ from tqdm import tqdm
 
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # noqa: PTH100, PTH118, PTH120
-from utils.configs import NB_CLASSES, TRAIN_DATA, TRAIN_SEG_DATA, device
+from my_utils.configs import NB_CLASSES, TRAIN_DATA, TRAIN_SEG_DATA, device
 
 import voxelmorph_folder.voxelmorph as vxm
 
@@ -265,7 +265,7 @@ def main(args):
     # MLflow set up
     if args.mlflow:
         mlflow.set_tracking_uri("http://127.0.0.1:5000")
-        mlflow.start_run()
+        mlflow.start_run(run_name=f"train_cells_{timestamp}")  # noqa: DTZ005
         print("MLflow tracking enabled.")  # noqa: T201
         mlflow.log_params(vars(args))
 
@@ -276,6 +276,7 @@ def main(args):
         target_channels=1,
         nb_features=[16, 16, 16, 16, 16],
         integration_steps=0,
+        device=device,
     ).to(device)
 
     # Setup losses and optimizer
@@ -340,19 +341,6 @@ def main(args):
             mlflow.log_metric("Train_grad_loss", avg_loss["grad_loss"], step=epoch)
             if avg_loss["seg_loss"] is not None:
                 mlflow.log_metric("Train_seg_loss", avg_loss["seg_loss"], step=epoch)
-
-        if epoch == 0:
-            mlflow.log_metric("Initial_train_loss", avg_loss["loss"])
-            mlflow.log_metric("Initial_train_img_loss", avg_loss["img_loss"])
-            mlflow.log_metric(
-                f"Initial_train_grad_loss * {args.lambda_param}",
-                avg_loss["grad_loss"] * args.lambda_param,
-            )
-            if avg_loss["seg_loss"] is not None:
-                mlflow.log_metric(
-                    f"Initial_train_seg_loss * {args.gamma_param}",
-                    avg_loss["seg_loss"] * args.gamma_param,
-                )
 
         # Print progress
         # if (epoch + 1) % 10 == 0:
@@ -444,11 +432,11 @@ if __name__ == "__main__":
         "--image-loss", type=str, default="mse", help="Image loss to use: 'mse' or 'cc'"
     )
     parser.add_argument(
-        "--grad_loss", type=str, default="l1", help="Gradient loss to use: 'l1' or 'l2'"
+        "--grad_loss", type=str, default="l2", help="Gradient loss to use: 'l1' or 'l2'"
     )
     parser.add_argument("--workers", type=int, default=0, help="Number of workers")
     parser.add_argument("--batch-size", type=int, default=4, help="Batch size")
-    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
+    parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument(
         "--lambda",
         type=float,
