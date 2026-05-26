@@ -301,12 +301,12 @@ def register_pair_fb(moving, fixed, model, global_min, global_max):
         Normalized fixed image.
     """
     # Interpole/Pad images to HEIGHT, WIDTH if needed
-    moving_resized = interpole_and_pad(moving, [HEIGHT, WIDTH])
-    fixed_resized = interpole_and_pad(fixed, [HEIGHT, WIDTH])
+    # moving_resized = interpole_and_pad(moving, [HEIGHT, WIDTH])
+    # fixed_resized = interpole_and_pad(fixed, [HEIGHT, WIDTH])
 
     # Normalisation
-    input_moving = normalise(moving_resized, global_min, global_max)
-    input_fixed = normalise(fixed_resized, global_min, global_max)
+    input_moving = moving.astype(np.uint8)
+    input_fixed = fixed.astype(np.uint8)
 
     # To tensor
     tensor_moving = (
@@ -318,7 +318,9 @@ def register_pair_fb(moving, fixed, model, global_min, global_max):
     spatial_transformer = vxm.nn.modules.SpatialTransformer(
         interpolation_mode="bilinear"
     ).to(device)
-    tensor_field = torch.from_numpy(field).float().to(device).unsqueeze(0)
+    tensor_field = (
+        torch.from_numpy(field).float().to(device).unsqueeze(0).permute(0, 3, 1, 2)
+    )  # from (B, H, W, ndim) to (B, ndim, H, W)
     moved = spatial_transformer(tensor_moving, tensor_field)
     #  moving_image : torch.Tensor shape: (B, C, *spatial_dims), deformation_field : torch.Tensor shape: (B, ndim, *spatial_dims).
 

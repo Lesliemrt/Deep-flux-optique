@@ -197,7 +197,7 @@ def register_video(args):
             field, fig, input_moving, input_fixed = register_pair_fb(
                 moving, fixed, model, global_min, global_max
             )
-        fig.savefig(viz_dir / f"registration_result_for_paire_{idx}.png")
+        fig.savefig(viz_dir / f"registration_result_for_paire_{idx}-{idx2}.png")
         plt.close(fig)
 
         if args.visualize and args.gap == 1:
@@ -221,17 +221,15 @@ def register_video(args):
                 )
             elif args.model_type == "tvl1":
                 inv_field, _, _, _ = register_pair_tvl1(
-                    fixed, moving, args.model_type, global_min, global_max, config
+                    fixed, moving, global_min, global_max
                 )
             elif args.model_type == "raft":
                 inv_field, _, _, _ = register_pair_raft(
                     frames_path_list[idx2],
                     frames_path_list[idx],
-                    args.model_type,
                     model,
                     global_min,
                     global_max,
-                    config,
                 )
             elif args.model_type == "farnback":
                 inv_field, _, _, _ = register_pair_fb(
@@ -241,7 +239,7 @@ def register_video(args):
 
         if mlflow.active_run():
             mlflow.log_figure(
-                fig, artifact_file=f"viz/registration_result_for_paire_{idx}.png"
+                fig, artifact_file=f"viz/registration_result_for_paire_{idx}-{idx2}.png"
             )
 
         # 4. Evaluation for the pair
@@ -328,7 +326,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--video_path", default=f"{TEST_DATA}", help="Moving image (source) filename"
     )
-    parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
+    parser.add_argument("--gap", default=10, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
         default=TEST_SEG_DATA,
@@ -342,7 +340,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/output_20260522_141042",
+        default="outputs/farnback",
         help="Directory to find model and to save results",
     )
     args = parser.parse_args()

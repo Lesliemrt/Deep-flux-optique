@@ -173,8 +173,6 @@ def transform_points(flow_map: np.ndarray, points: np.ndarray) -> np.ndarray:
     Returns:    np.ndarray: Transformed points"""
     flow = np.empty_like(points)
 
-    print("sjhdfbzejhv", flow_map.shape, points.shape)
-
     for axis in range(flow_map.shape[0]):
         flow[:, axis] = scipy.ndimage.map_coordinates(
             flow_map[axis], points.T, mode="nearest"
