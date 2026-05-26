@@ -10,7 +10,7 @@ import tifffile as tiff
 from skimage.measure import regionprops
 
 # Local imports
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # noqa: PTH100, PTH118, PTH120
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))  # noqa: PTH100, PTH118, PTH120
 
 import voxelmorph_folder.voxelmorph as vxm
 from utils import flow_viz  # raft.core.utils

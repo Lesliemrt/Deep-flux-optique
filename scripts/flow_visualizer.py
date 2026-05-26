@@ -286,8 +286,6 @@ class FlowVisualizer:
             frame = self.video[self._frame_id]
 
             if src_frame_id != self._frame_id:  # Change of frame, let's update
-                print("DEBUGHFHHHHHHHHHHHHHHHHEJISDBFJFKGN")
-                # dst = self.optflow.preprocess(frame)
                 pair = (src_frame_id, self._frame_id)
                 if pair in self.flow_maps:
                     self.points = transform_points(self.flow_maps[pair], self.points)
