@@ -5,145 +5,339 @@ The source and target input images are expected to be affinely registered.
 """  # noqa: EXE001
 
 # Core library imports
-import argparse
 import os
 import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
-import tifffile as tiff
+from skimage.registration import optical_flow_tvl1
+from PIL import Image
 
 # Third-party imports
 import torch
 
 # Local imports
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # noqa: PTH100, PTH118, PTH120
-from utils.configs import HEIGHT, TEST_DATA, TEST_SEG_DATA, WIDTH, device  # noqa: F401
-from utils.utils import create_grid, interpole_and_pad, iou
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
+)  # noqa: PTH100, PTH118, PTH120
+from train_cells import NormalizeMinMax, ThresholdTransform
+from my_utils.configs import HEIGHT, WIDTH, device
+from my_utils.utils import interpole_and_pad, viz, normalise
 
 import voxelmorph_folder.voxelmorph as vxm
 
 
-def register(args):
-    """Register two frames with a VoxelMorph model.
+def register_pair(moving, fixed, model_type, model, global_min, global_max, config):
+    """Register a pair of frames using Voxelmorph model.
 
     Parameters
     ----------
-    args : argparse.Namespace
-        Commandline arguments.
+    moving : numpy.ndarray
+        Moving image.
+    fixed : numpy.ndarray
+        Fixed image.
+    model_type : str
+        Type of model to use for registration.
+    model : torch.nn.Module
+        Model to use for registration.
+    global_min : float
+        Global minimum for normalization.
+    global_max : float
+        Global maximum for normalization.
+    config : dict
+        Configuration dictionary.
+
+    Returns
+    -------
+    field : torch.Tensor
+        Predicted deformation field.
+    fig : matplotlib.figure.Figure
+        Figure showing the fixed image, the moved image, the moving image and the flow field.
+    input_moving : numpy.ndarray
+        Normalized moving image.
+    input_fixed : numpy.ndarray
+        Normalized fixed image.
     """
-    print(f"Using device: {device}")  # noqa: T201
-
-    # Load moving and fixed images
-    moving = tiff.imread(args.moving)
-    fixed = tiff.imread(args.fixed)
-
-    # Normalize
-    global_min = min(np.min(moving), np.min(fixed))
-    global_max = max(np.max(moving), np.max(fixed))
-
-    moving = (moving - global_min) / (global_max - global_min)
-    fixed = (fixed - global_min) / (global_max - global_min)
-
     # Interpole/Pad images to HEIGHT, WIDTH if needed
-    moving = interpole_and_pad(moving, [HEIGHT, WIDTH])
-    fixed = interpole_and_pad(fixed, [HEIGHT, WIDTH])
+    moving_resized = interpole_and_pad(moving, [HEIGHT, WIDTH])
+    fixed_resized = interpole_and_pad(fixed, [HEIGHT, WIDTH])
 
-    # Set up tensors
-    input_moving = torch.from_numpy(moving).to(device).float().unsqueeze(0).unsqueeze(0)
-    input_fixed = torch.from_numpy(fixed).to(device).float().unsqueeze(0).unsqueeze(0)
+    # To tensor
+    input_moving = (
+        torch.from_numpy(moving_resized).float().to(device).unsqueeze(0).unsqueeze(0)
+    )
+    input_fixed = (
+        torch.from_numpy(fixed_resized).float().to(device).unsqueeze(0).unsqueeze(0)
+    )
 
-    # Create model
-    model = vxm.nn.models.VxmPairwise(
-        ndim=2,
-        source_channels=1,
-        target_channels=1,
-        nb_features=[16, 16, 16, 16, 16],
-        integration_steps=0,
-    ).to(device)
-    model.load_state_dict(torch.load(args.model, map_location=device))
-    model.eval()
+    # Normalisation
+    normalise = NormalizeMinMax(global_min=global_min, global_max=global_max)
+    input_moving = normalise(input_moving)
+    input_fixed = normalise(input_fixed)
+
+    # Binarise
+    if config["binarization"]:
+        thr = 0.05
+        binarise = ThresholdTransform(thr_1=thr)
+        input_moving = binarise(input_moving)
+        input_fixed = binarise(input_fixed)
 
     # Predict
     with torch.no_grad():
         field, moved = model(
-            source=input_moving, target=input_fixed, return_warped_source=True, return_field_type="displacement"
+            source=input_moving,
+            target=input_fixed,
+            return_warped_source=True,
+            return_field_type="displacement",
         )
 
-    # Create grid for visualistion of the field
-    grid = create_grid(moving.shape)
-    tensor_grid = torch.from_numpy(grid).to(device).float().unsqueeze(0).unsqueeze(0)
-    warped_grid = model.spatial_transformer(tensor_grid, field)
-
-    results = {"fixed": fixed, "moving": moving, "warped_grid": warped_grid, "moved": moved}
-
-    # If segmentations available, load them and warp the moving segmentation with the predicted field for evaluation
-    if args.seg_available:
-        # Load segmentation masks
-        moving_path = args.moving.replace("02/t0", "02_ERR_SEG_TRA/relabeled_")
-        fixed_path = args.fixed.replace("02/t0", "02_ERR_SEG_TRA/relabeled_")
-        if os.path.isfile(moving_path) and os.path.isfile(fixed_path):  # noqa: PTH113
-            seg_moving = tiff.imread(moving_path)
-            seg_fixed = tiff.imread(fixed_path)
-            # Interpole and pad with zeros to HEIGHT, WIDTH if needed
-            seg_moving = interpole_and_pad(seg_moving, [HEIGHT, WIDTH])
-            seg_fixed = interpole_and_pad(seg_fixed, [HEIGHT, WIDTH])
-            # Warp moving segmentation with the predicted field
-            tensor_seg_moving = torch.from_numpy(seg_moving).to(device).float().unsqueeze(0).unsqueeze(0)
-            spatial_transformer = vxm.nn.modules.SpatialTransformer(interpolation_mode="nearest").to(device)
-            warped_seg_moving = spatial_transformer(tensor_seg_moving, field)
-            # Compute Dice score
-            dice = vxm.py.utils.dice(warped_seg_moving.squeeze().cpu().numpy(), seg_fixed, include_zero=False)
-            ref_dice = vxm.py.utils.dice(
-                seg_moving, seg_fixed, include_zero=False
-            )  # reference dice to compare with the dice after registration
-            results["dice"] = np.mean(dice)
-            results["ref_dice"] = np.mean(ref_dice)
-            # Compute IoU score
-            iou_score = iou(warped_seg_moving.squeeze().cpu().numpy(), seg_fixed, include_zero=False)
-            ref_iou_score = iou(
-                seg_moving, seg_fixed, include_zero=False
-            )  # reference iou to compare with the iou after registration
-            results["iou"] = np.mean(iou_score)
-            results["ref_iou"] = np.mean(ref_iou_score)
-        else:
-            print("Segmentation files not found, skipping segmentation evaluation.")  # noqa: T201
-
-    return results
-
-
-if __name__ == "__main__":
-    # parse commandline args
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--moving", default=f"{TEST_DATA}/t003.tif", help="moving image (source) filename")
-    parser.add_argument("--fixed", default=f"{TEST_DATA}/t004.tif", help="fixed image (target) filename")
-    parser.add_argument(
-        "--model", default="output_seg/best.pt", help="weights of trained model to use for registration"
-    )
-    parser.add_argument("--seg_available", default=True, help="whether segmentation is available for dice evaluation")
-    # TODO : case 3D ?
-    args = parser.parse_args()
-    result = register(args)
-    warped_grid = result["warped_grid"]
-    moved = result["moved"]
-    fixed = result["fixed"]
-    moving = result["moving"]
-    if "dice" in result:
-        print(f"Dice score: {result['dice']}")  # noqa: T201
-        print(f"Reference Dice score: {result['ref_dice']}")  # noqa: T201
-        print(f"IoU score: {result['iou']}")  # noqa: T201
-        print(f"Reference IoU score: {result['ref_iou']}")  # noqa: T201
-    plt.figure(figsize=(12, 12))
+    fig, ax = plt.subplots(2, 2, figsize=(12, 12))
     plt.subplot(2, 2, 1)
-    plt.title("Fixed")
-    plt.imshow(fixed, cmap="gray")
+    ax[0, 0].set_title("Fixed")
+    ax[0, 0].imshow(input_fixed.squeeze().cpu().numpy(), cmap="gray")
     plt.subplot(2, 2, 2)
-    plt.title("Moved")
-    plt.imshow(moved.squeeze().cpu().numpy(), cmap="gray")
+    ax[0, 1].set_title("Moved")
+    ax[0, 1].imshow(moved.squeeze().cpu().numpy(), cmap="gray")
     plt.subplot(2, 2, 3)
-    plt.title("Source")
-    plt.imshow(moving, cmap="gray")
+    ax[1, 0].set_title("Moving")
+    ax[1, 0].imshow(input_moving.squeeze().cpu().numpy(), cmap="gray")
     plt.subplot(2, 2, 4)
-    plt.title("Warped Grid")
-    plt.imshow(warped_grid.squeeze().cpu().numpy(), cmap="gray")
-    plt.show()
+    ax[1, 1].set_title("Flow")
+    viz(img=input_fixed, flo=field, ax=ax[1, 1])
+
+    return (
+        field,
+        fig,
+        input_moving.squeeze().cpu().numpy(),
+        input_fixed.squeeze().cpu().numpy(),
+    )
+
+
+def register_pair_tvl1(moving, fixed, global_min, global_max):
+    """Register a pair of frames using TVL1 optical flow model.
+
+    Parameters
+    ----------
+    moving : numpy.ndarray
+        Moving image.
+    fixed : numpy.ndarray
+        Fixed image.
+    global_min : float
+        Global minimum for normalization.
+    global_max : float
+        Global maximum for normalization.
+
+    Returns
+    -------
+    field : torch.Tensor
+        Predicted deformation field.
+    fig : matplotlib.figure.Figure
+        Figure showing the fixed image, the moved image, the moving image and the flow field.
+    input_moving : numpy.ndarray
+        Normalized moving image.
+    input_fixed : numpy.ndarray
+        Normalized fixed image.
+    """
+    # Interpole/Pad images to HEIGHT, WIDTH if needed
+    moving_resized = interpole_and_pad(moving, [HEIGHT, WIDTH])
+    fixed_resized = interpole_and_pad(fixed, [HEIGHT, WIDTH])
+
+    # Normalisation
+    input_moving = normalise(moving_resized, global_min, global_max)
+    input_fixed = normalise(fixed_resized, global_min, global_max)
+
+    # To tensor
+    tensor_moving = (
+        torch.from_numpy(input_moving).float().to(device).unsqueeze(0).unsqueeze(0)
+    )
+
+    # Predict
+    field = optical_flow_tvl1(
+        reference_image=input_fixed, moving_image=input_moving
+    )  # TODO : verifier s'il faut inverser images pour avoir field dans le bon sens
+    spatial_transformer = vxm.nn.modules.SpatialTransformer(
+        interpolation_mode="bilinear"
+    ).to(device)
+    tensor_field = torch.from_numpy(field).float().to(device).unsqueeze(0)
+    moved = spatial_transformer(tensor_moving, tensor_field)
+    #  moving_image : torch.Tensor shape: (B, C, *spatial_dims), deformation_field : torch.Tensor shape: (B, ndim, *spatial_dims).
+
+    fig, ax = plt.subplots(2, 2, figsize=(12, 12))
+    plt.subplot(2, 2, 1)
+    ax[0, 0].set_title("Fixed")
+    ax[0, 0].imshow(input_fixed, cmap="gray")
+    plt.subplot(2, 2, 2)
+    ax[0, 1].set_title("Moved")
+    ax[0, 1].imshow(moved.squeeze().cpu().numpy(), cmap="gray")
+    plt.subplot(2, 2, 3)
+    ax[1, 0].set_title("Moving")
+    ax[1, 0].imshow(input_moving, cmap="gray")
+    plt.subplot(2, 2, 4)
+    ax[1, 1].set_title("Flow")
+    viz(
+        img=torch.from_numpy(input_fixed).float().to(device).unsqueeze(0).unsqueeze(0),
+        flo=tensor_field,
+        ax=ax[1, 1],
+    )
+
+    return tensor_field, fig, input_moving, input_fixed
+
+
+def register_pair_raft(moving_path, fixed_path, model, global_min, global_max):
+    """Register a pair of frames using RAFT optical flow model.
+
+    Parameters
+    ----------
+    moving_path : str
+        Path to the moving image.
+    fixed_path : str
+        Path to the fixed image.
+    model : torch.nn.Module
+        RAFT optical flow model.
+    global_min : float
+        Global minimum for normalization.
+    global_max : float
+        Global maximum for normalization.
+
+    Returns
+    -------
+    field : torch.Tensor
+        Predicted deformation field.
+    fig : matplotlib.figure.Figure
+        Figure showing the fixed image, the moved image, the moving image and the flow field.
+    input_moving : numpy.ndarray
+        Normalized moving image.
+    input_fixed : numpy.ndarray
+        Normalized fixed image.
+    """
+
+    moving = np.array(Image.open(moving_path).convert("RGB")).astype(np.uint8)
+    fixed = np.array(Image.open(fixed_path).convert("RGB")).astype(np.uint8)
+
+    # Interpole/Pad images to HEIGHT, WIDTH if needed
+    # moving_resized = interpole_and_pad(moving, [HEIGHT, WIDTH])
+    # fixed_resized = interpole_and_pad(fixed, [HEIGHT, WIDTH])
+
+    # To tensor
+    input_moving = (
+        torch.from_numpy(moving).permute(2, 0, 1).float().unsqueeze(0).to(device)
+    )
+    input_fixed = (
+        torch.from_numpy(fixed).permute(2, 0, 1).float().unsqueeze(0).to(device)
+    )
+
+    # Normalisation
+    normalise = NormalizeMinMax(global_min=global_min, global_max=global_max)
+    input_moving = normalise(input_moving)
+    input_fixed = normalise(input_fixed)
+
+    # Predict
+    with torch.no_grad():
+        _, tensor_field = model(
+            input_fixed,  # to get flow in the direction fixed -> moving (like voxelmorph)
+            input_moving,
+            iters=20,
+            test_mode=True,
+        )
+    tensor_field = torch.flip(tensor_field, dims=[1])
+    # tensor_field = torch.fliplr(tensor_field)
+
+    # TODO field dans le bon sens
+
+    spatial_transformer = vxm.nn.modules.SpatialTransformer(
+        interpolation_mode="bilinear"
+    ).to(device)
+    moved = spatial_transformer(input_moving, tensor_field)
+
+    fig, ax = plt.subplots(2, 2, figsize=(12, 12))
+    plt.subplot(2, 2, 1)
+    ax[0, 0].set_title("Fixed")
+    ax[0, 0].imshow(input_fixed.squeeze().cpu().numpy().mean(axis=0), cmap="gray")
+    plt.subplot(2, 2, 2)
+    ax[0, 1].set_title("Moved")
+    ax[0, 1].imshow(moved.squeeze().cpu().numpy().mean(axis=0), cmap="gray")
+    plt.subplot(2, 2, 3)
+    ax[1, 0].set_title("Moving")
+    ax[1, 0].imshow(input_moving.squeeze().cpu().numpy().mean(axis=0), cmap="gray")
+    plt.subplot(2, 2, 4)
+    ax[1, 1].set_title("Flow")
+    viz(img=input_fixed, flo=tensor_field, ax=ax[1, 1])
+
+    return (
+        tensor_field,
+        fig,
+        input_moving.squeeze().cpu().numpy().mean(axis=0),
+        input_fixed.squeeze().cpu().numpy().mean(axis=0),
+    )
+
+
+def register_pair_fb(moving, fixed, model, global_min, global_max):
+    """Register a pair of frames using TVL1 optical flow model.
+
+    Parameters
+    ----------
+    moving : numpy.ndarray
+        Moving image.
+    fixed : numpy.ndarray
+        Fixed image.
+    model : cv2.FarnebackOpticalFlow_create
+        Optical flow model.
+    global_min : float
+        Global minimum for normalization.
+    global_max : float
+        Global maximum for normalization.
+    config : dict
+        Configuration dictionary.
+
+    Returns
+    -------
+    field : torch.Tensor
+        Predicted deformation field.
+    fig : matplotlib.figure.Figure
+        Figure showing the fixed image, the moved image, the moving image and the flow field.
+    input_moving : numpy.ndarray
+        Normalized moving image.
+    input_fixed : numpy.ndarray
+        Normalized fixed image.
+    """
+    # Interpole/Pad images to HEIGHT, WIDTH if needed
+    moving_resized = interpole_and_pad(moving, [HEIGHT, WIDTH])
+    fixed_resized = interpole_and_pad(fixed, [HEIGHT, WIDTH])
+
+    # Normalisation
+    input_moving = normalise(moving_resized, global_min, global_max)
+    input_fixed = normalise(fixed_resized, global_min, global_max)
+
+    # To tensor
+    tensor_moving = (
+        torch.from_numpy(input_moving).float().to(device).unsqueeze(0).unsqueeze(0)
+    )
+
+    # Predict
+    field = model.calc(input_fixed, input_moving, None)
+    spatial_transformer = vxm.nn.modules.SpatialTransformer(
+        interpolation_mode="bilinear"
+    ).to(device)
+    tensor_field = torch.from_numpy(field).float().to(device).unsqueeze(0)
+    moved = spatial_transformer(tensor_moving, tensor_field)
+    #  moving_image : torch.Tensor shape: (B, C, *spatial_dims), deformation_field : torch.Tensor shape: (B, ndim, *spatial_dims).
+
+    fig, ax = plt.subplots(2, 2, figsize=(12, 12))
+    plt.subplot(2, 2, 1)
+    ax[0, 0].set_title("Fixed")
+    ax[0, 0].imshow(input_fixed, cmap="gray")
+    plt.subplot(2, 2, 2)
+    ax[0, 1].set_title("Moved")
+    ax[0, 1].imshow(moved.squeeze().cpu().numpy(), cmap="gray")
+    plt.subplot(2, 2, 3)
+    ax[1, 0].set_title("Moving")
+    ax[1, 0].imshow(input_moving, cmap="gray")
+    plt.subplot(2, 2, 4)
+    ax[1, 1].set_title("Flow")
+    viz(
+        img=torch.from_numpy(input_fixed).float().to(device).unsqueeze(0).unsqueeze(0),
+        flo=tensor_field,
+        ax=ax[1, 1],
+    )
+
+    return tensor_field, fig, input_moving, input_fixed

@@ -9,13 +9,12 @@ import os
 import sys
 from pathlib import Path
 
+import cv2
 import matplotlib.pyplot as plt
 import mlflow
 import numpy as np
 import tifffile as tiff
-from skimage.registration import optical_flow_tvl1
 from argparse import Namespace
-from PIL import Image
 
 # Third-party imports
 import torch
@@ -24,256 +23,18 @@ import torch
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
 )  # noqa: PTH100, PTH118, PTH120
-from train_cells import NormalizeMinMax, ThresholdTransform
 from my_utils.configs import HEIGHT, TEST_DATA, TEST_SEG_DATA, WIDTH, device
-from my_utils.utils import interpole_and_pad, iou, normalisation_params, viz, normalise
+from my_utils.utils import interpole_and_pad, iou, normalisation_params
 from flow_visualizer import FlowVisualizer
 from raft import RAFT
+from register_cells import (
+    register_pair,
+    register_pair_tvl1,
+    register_pair_raft,
+    register_pair_fb,
+)
 
 import voxelmorph_folder.voxelmorph as vxm
-
-
-def register_pair(moving, fixed, model_type, model, global_min, global_max, config):
-    """Register a pair of frames using Voxelmorph model.
-
-    Parameters
-    ----------
-    moving : numpy.ndarray
-        Moving image.
-    fixed : numpy.ndarray
-        Fixed image.
-    model_type : str
-        Type of model to use for registration.
-    model : torch.nn.Module
-        Model to use for registration.
-    global_min : float
-        Global minimum for normalization.
-    global_max : float
-        Global maximum for normalization.
-    config : dict
-        Configuration dictionary.
-
-    Returns
-    -------
-    field : torch.Tensor
-        Predicted deformation field.
-    fig : matplotlib.figure.Figure
-        Figure showing the fixed image, the moved image, the moving image and the flow field.
-    input_moving : numpy.ndarray
-        Normalized moving image.
-    input_fixed : numpy.ndarray
-        Normalized fixed image.
-    """
-    # Interpole/Pad images to HEIGHT, WIDTH if needed
-    moving_resized = interpole_and_pad(moving, [HEIGHT, WIDTH])
-    fixed_resized = interpole_and_pad(fixed, [HEIGHT, WIDTH])
-
-    # To tensor
-    input_moving = (
-        torch.from_numpy(moving_resized).float().to(device).unsqueeze(0).unsqueeze(0)
-    )
-    input_fixed = (
-        torch.from_numpy(fixed_resized).float().to(device).unsqueeze(0).unsqueeze(0)
-    )
-
-    # Normalisation
-    normalise = NormalizeMinMax(global_min=global_min, global_max=global_max)
-    input_moving = normalise(input_moving)
-    input_fixed = normalise(input_fixed)
-
-    # Binarise
-    if config["binarization"]:
-        thr = 0.05
-        binarise = ThresholdTransform(thr_1=thr)
-        input_moving = binarise(input_moving)
-        input_fixed = binarise(input_fixed)
-
-    # Predict
-    with torch.no_grad():
-        field, moved = model(
-            source=input_moving,
-            target=input_fixed,
-            return_warped_source=True,
-            return_field_type="displacement",
-        )
-
-    fig, ax = plt.subplots(2, 2, figsize=(12, 12))
-    plt.subplot(2, 2, 1)
-    ax[0, 0].set_title("Fixed")
-    ax[0, 0].imshow(input_fixed.squeeze().cpu().numpy(), cmap="gray")
-    plt.subplot(2, 2, 2)
-    ax[0, 1].set_title("Moved")
-    ax[0, 1].imshow(moved.squeeze().cpu().numpy(), cmap="gray")
-    plt.subplot(2, 2, 3)
-    ax[1, 0].set_title("Moving")
-    ax[1, 0].imshow(input_moving.squeeze().cpu().numpy(), cmap="gray")
-    plt.subplot(2, 2, 4)
-    ax[1, 1].set_title("Flow")
-    viz(img=input_fixed, flo=field, ax=ax[1, 1])
-
-    return (
-        field,
-        fig,
-        input_moving.squeeze().cpu().numpy(),
-        input_fixed.squeeze().cpu().numpy(),
-    )
-
-
-def register_pair_tvl1(moving, fixed, model_type, global_min, global_max, config):
-    """Register a pair of frames using TVL1 optical flow model.
-
-    Parameters
-    ----------
-    moving : numpy.ndarray
-        Moving image.
-    fixed : numpy.ndarray
-        Fixed image.
-    model_type : str
-        Type of model to use for registration.
-    global_min : float
-        Global minimum for normalization.
-    global_max : float
-        Global maximum for normalization.
-    config : dict
-        Configuration dictionary.
-
-    Returns
-    -------
-    field : torch.Tensor
-        Predicted deformation field.
-    fig : matplotlib.figure.Figure
-        Figure showing the fixed image, the moved image, the moving image and the flow field.
-    input_moving : numpy.ndarray
-        Normalized moving image.
-    input_fixed : numpy.ndarray
-        Normalized fixed image.
-    """
-    # Interpole/Pad images to HEIGHT, WIDTH if needed
-    moving_resized = interpole_and_pad(moving, [HEIGHT, WIDTH])
-    fixed_resized = interpole_and_pad(fixed, [HEIGHT, WIDTH])
-
-    # Normalisation
-    input_moving = normalise(moving_resized, global_min, global_max)
-    input_fixed = normalise(fixed_resized, global_min, global_max)
-
-    # To tensor
-    tensor_moving = (
-        torch.from_numpy(input_moving).float().to(device).unsqueeze(0).unsqueeze(0)
-    )
-
-    # Predict
-    field = optical_flow_tvl1(reference_image=input_fixed, moving_image=input_moving)
-    spatial_transformer = vxm.nn.modules.SpatialTransformer(
-        interpolation_mode="bilinear"
-    ).to(device)
-    tensor_field = torch.from_numpy(field).float().to(device).unsqueeze(0)
-    moved = spatial_transformer(tensor_moving, tensor_field)
-    #  moving_image : torch.Tensor shape: (B, C, *spatial_dims), deformation_field : torch.Tensor shape: (B, ndim, *spatial_dims).
-
-    fig, ax = plt.subplots(2, 2, figsize=(12, 12))
-    plt.subplot(2, 2, 1)
-    ax[0, 0].set_title("Fixed")
-    ax[0, 0].imshow(input_fixed, cmap="gray")
-    plt.subplot(2, 2, 2)
-    ax[0, 1].set_title("Moved")
-    ax[0, 1].imshow(moved.squeeze().cpu().numpy(), cmap="gray")
-    plt.subplot(2, 2, 3)
-    ax[1, 0].set_title("Moving")
-    ax[1, 0].imshow(input_moving, cmap="gray")
-    plt.subplot(2, 2, 4)
-    ax[1, 1].set_title("Flow")
-    viz(
-        img=torch.from_numpy(input_fixed).float().to(device).unsqueeze(0).unsqueeze(0),
-        flo=tensor_field,
-        ax=ax[1, 1],
-    )
-
-    return tensor_field, fig, input_moving, input_fixed
-
-
-def register_pair_raft(
-    moving_path, fixed_path, model_type, model, global_min, global_max, config
-):
-    """Register a pair of frames using RAFT optical flow model.
-
-    Parameters
-    ----------
-    moving_path : str
-        Path to the moving image.
-    fixed_path : str
-        Path to the fixed image.
-    model_type : str
-        Type of model to use for registration.
-    global_min : float
-        Global minimum for normalization.
-    global_max : float
-        Global maximum for normalization.
-    config : dict
-        Configuration dictionary.
-
-    Returns
-    -------
-    field : torch.Tensor
-        Predicted deformation field.
-    fig : matplotlib.figure.Figure
-        Figure showing the fixed image, the moved image, the moving image and the flow field.
-    input_moving : numpy.ndarray
-        Normalized moving image.
-    input_fixed : numpy.ndarray
-        Normalized fixed image.
-    """
-
-    moving = np.array(Image.open(moving_path).convert("RGB")).astype(np.uint8)
-    fixed = np.array(Image.open(fixed_path).convert("RGB")).astype(np.uint8)
-
-    # Interpole/Pad images to HEIGHT, WIDTH if needed
-    moving_resized = interpole_and_pad(moving, [HEIGHT, WIDTH])
-    fixed_resized = interpole_and_pad(fixed, [HEIGHT, WIDTH])
-
-    # To tensor
-    input_moving = torch.from_numpy(moving_resized).permute(2, 0, 1).float()
-    input_fixed = torch.from_numpy(fixed_resized).permute(2, 0, 1).float()
-
-    # Normalisation
-    normalise = NormalizeMinMax(global_min=global_min, global_max=global_max)
-    input_moving = normalise(input_moving)
-    input_fixed = normalise(input_fixed)
-
-    # Predict
-    with torch.no_grad():
-        _, field = model(
-            source=input_moving,
-            target=input_fixed,
-            iters=20,
-            test_mode=True,
-        )
-
-    spatial_transformer = vxm.nn.modules.SpatialTransformer(
-        interpolation_mode="bilinear"
-    ).to(device)
-    tensor_field = torch.from_numpy(field).float().to(device).unsqueeze(0)
-    moved = spatial_transformer(input_moving, tensor_field)
-
-    fig, ax = plt.subplots(2, 2, figsize=(12, 12))
-    plt.subplot(2, 2, 1)
-    ax[0, 0].set_title("Fixed")
-    ax[0, 0].imshow(input_fixed.squeeze().cpu().numpy(), cmap="gray")
-    plt.subplot(2, 2, 2)
-    ax[0, 1].set_title("Moved")
-    ax[0, 1].imshow(moved.squeeze().cpu().numpy(), cmap="gray")
-    plt.subplot(2, 2, 3)
-    ax[1, 0].set_title("Moving")
-    ax[1, 0].imshow(input_moving.squeeze().cpu().numpy(), cmap="gray")
-    plt.subplot(2, 2, 4)
-    ax[1, 1].set_title("Flow")
-    viz(img=input_fixed, flo=field, ax=ax[1, 1])
-
-    return (
-        field,
-        fig,
-        input_moving.squeeze().cpu().numpy(),
-        input_fixed.squeeze().cpu().numpy(),
-    )
 
 
 def evaluate_registration(segmentation_moving, segmentation_fixed, field):
@@ -350,6 +111,8 @@ def create_model(args):
         model = model.module
         model.to(device)
         model.eval()
+    elif args.model_type == "farnback":
+        model = cv2.FarnebackOpticalFlow.create()
     else:
         raise ValueError(f"Unknown model type: {args.model_type}")
     return model
@@ -364,6 +127,10 @@ def register_video(args):
         Commandline arguments.
     """
     print(f"Using device: {device}")  # noqa: T201
+
+    if args.visualize:
+        if args.gap != 1:
+            raise ValueError("Visualization is only available for gap=1")
 
     # 1. Load video and segmentations frames
     frames_path_list = sorted(Path(args.video_path).iterdir())
@@ -393,20 +160,6 @@ def register_video(args):
 
     # 2. Create model
     model = create_model(args)
-    # if args.model_type == "voxelmorph":
-    #     model = vxm.nn.models.VxmPairwise(
-    #         ndim=2,
-    #         source_channels=1,
-    #         target_channels=1,
-    #         nb_features=[16, 16, 16, 16, 16],
-    #         integration_steps=0,
-    #     ).to(device)
-    #     model_path = f"{args.output_dir}/best.pt"
-    #     model.load_state_dict(torch.load(model_path, map_location=device))
-    #     print(f"Load model : {model_path}")  # noqa: T201
-    #     model.eval()
-    #     if mlflow.active_run():
-    #         mlflow.log_param("model_path", model_path)
 
     # Create results directory if it doesn't exist
     results_dir = Path(f"{args.output_dir}/results_gap{args.gap}")
@@ -430,17 +183,19 @@ def register_video(args):
             )
         elif args.model_type == "tvl1":
             field, fig, input_moving, input_fixed = register_pair_tvl1(
-                moving, fixed, args.model_type, global_min, global_max, config
+                moving, fixed, global_min, global_max
             )
         elif args.model_type == "raft":
             field, fig, input_moving, input_fixed = register_pair_raft(
                 frames_path_list[idx],
                 frames_path_list[idx2],
-                args.model_type,
                 model,
                 global_min,
                 global_max,
-                config,
+            )
+        elif args.model_type == "farnback":
+            field, fig, input_moving, input_fixed = register_pair_fb(
+                moving, fixed, model, global_min, global_max
             )
         fig.savefig(viz_dir / f"registration_result_for_paire_{idx}.png")
         plt.close(fig)
@@ -467,6 +222,20 @@ def register_video(args):
             elif args.model_type == "tvl1":
                 inv_field, _, _, _ = register_pair_tvl1(
                     fixed, moving, args.model_type, global_min, global_max, config
+                )
+            elif args.model_type == "raft":
+                inv_field, _, _, _ = register_pair_raft(
+                    frames_path_list[idx2],
+                    frames_path_list[idx],
+                    args.model_type,
+                    model,
+                    global_min,
+                    global_max,
+                    config,
+                )
+            elif args.model_type == "farnback":
+                inv_field, _, _, _ = register_pair_fb(
+                    fixed, moving, model, global_min, global_max
                 )
             flow_maps[(idx, idx2)] = inv_field.squeeze().cpu().numpy()
 
@@ -559,7 +328,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--video_path", default=f"{TEST_DATA}", help="Moving image (source) filename"
     )
-    parser.add_argument("--gap", default=10, help="Temporal gap between 2 frames")
+    parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
         default=TEST_SEG_DATA,
@@ -568,12 +337,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model_type",
         default="voxelmorph",
-        choices=["voxelmorph", "tvl1", "raft"],
+        choices=["voxelmorph", "tvl1", "raft", "farnback"],
         help="Type of model to use for registration",
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/output_20260522_154621",
+        default="outputs/output_20260522_141042",
         help="Directory to find model and to save results",
     )
     args = parser.parse_args()
