@@ -64,7 +64,9 @@ class NormalizeMinMax(nn.Module):
 class VxmVideoDataset(Dataset):
     """PyTorch Dataset for VoxelMorph registration data on video."""
 
-    def __init__(self, video_path, seg_path=None, max_gap=1, binarize=False) -> None:
+    def __init__(
+        self, video_path, seg_path=None, seg_type=None, max_gap=1, binarize=False
+    ) -> None:
         """Parameters
 
         video_path : str
@@ -73,11 +75,13 @@ class VxmVideoDataset(Dataset):
             Path to the segmentation frames (optional).
         max_gap : int
             Maximum gap between the two frames to select for registration (default: 20).
-        augment : bool
-            Apply augmentations if True.
+        seg_type : str
+            Type of segmentation to use for training: None, labels or heatmaps.
+        binarize : bool
         """
         self.video_path = Path(video_path)
         self.seg_path = Path(seg_path) if seg_path is not None else None
+        self.seg_type = seg_type
         self.get_path_list()
         self.binarize = binarize
         self.transform = self.get_transforms(n=len(self.frames_path_list))
@@ -120,6 +124,25 @@ class VxmVideoDataset(Dataset):
         if self.seg_path is not None:
             source_seg = tiff.imread(self.seg_path_list[idx1])
             target_seg = tiff.imread(self.seg_path_list[idx2])
+            if self.seg_type == "binary":
+                source_seg = (source_seg > 0).float()
+                target_seg = (target_seg > 0).float()
+            elif self.seg_type == "labels":
+                target_seg_oh = (  # noqa: F841
+                    torch.nn.functional.one_hot(
+                        target_seg.long(), num_classes=NB_CLASSES
+                    )
+                    .permute(0, 3, 1, 2)
+                    .float()
+                )
+                source_seg_oh = (  # noqa: F841
+                    torch.nn.functional.one_hot(
+                        source_seg.long(), num_classes=NB_CLASSES
+                    )
+                    .permute(0, 3, 1, 2)
+                    .float()
+                )
+                # Not enough memory to use labels (and one hot)
             source_seg = torch.from_numpy(source_seg).float()
             target_seg = torch.from_numpy(target_seg).float()
             return {
@@ -163,7 +186,9 @@ class VxmVideoDataset(Dataset):
         """Create a list with all the frame's path and segmentation's path."""
         self.frames_path_list = sorted(self.video_path.iterdir())
         if self.seg_path is not None:
-            self.seg_path_list = sorted(self.seg_path.iterdir())
+            if self.seg_type == "heatmaps":
+                path = self.seg_path.parent / "SEG_HEATMAP"
+            self.seg_path_list = sorted(path.iterdir())
 
 
 def train_epoch(
@@ -220,28 +245,15 @@ def train_epoch(
 
         loss = loss_weights[0] * img_loss + loss_weights[1] * grad_loss
         if "source_seg" in batch and "target_seg" in batch:
-            source_seg = batch["source_seg"].to(device)
-            target_seg = batch["target_seg"].to(device)
-            source_seg_bi = (source_seg > 0).float().unsqueeze(1)
-            target_seg_bi = (target_seg > 0).float().unsqueeze(1)
-            target_seg_oh = (  # noqa: F841
-                torch.nn.functional.one_hot(target_seg.long(), num_classes=NB_CLASSES)
-                .permute(0, 3, 1, 2)
-                .float()
-            )
-            source_seg_oh = (  # noqa: F841
-                torch.nn.functional.one_hot(source_seg.long(), num_classes=NB_CLASSES)
-                .permute(0, 3, 1, 2)
-                .float()
-            )
-            # Not enough memory to use labels (and one hot)
+            source_seg = batch["source_seg"].to(device).unsqueeze(1)  # add channel dim
+            target_seg = batch["target_seg"].to(device).unsqueeze(1)  # add channel dim
             spatial_transformer = vxm.nn.modules.SpatialTransformer(
                 interpolation_mode="linear"
             ).to(device)
-            warped_source_seg_bi = spatial_transformer(source_seg_bi, displacement)
-            warped_source_seg_bi = torch.clamp(warped_source_seg_bi, 0, 1)
+            warped_source_seg = spatial_transformer(source_seg, displacement)
+            warped_source_seg = torch.clamp(warped_source_seg, 0, 1)
             # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)  # noqa: E501, ERA001
-            seg_loss = seg_loss_fn(target_seg_bi, warped_source_seg_bi).squeeze()
+            seg_loss = seg_loss_fn(target_seg, warped_source_seg).squeeze()
             loss += loss_weights[2] * seg_loss
             epoch_seg_loss += seg_loss.item()
         loss.backward()
@@ -262,6 +274,10 @@ def main(args):
     """Create the dataloader, create the model, train and save."""
     # Set device
     print(f"Using device: {device}")  # noqa: T201
+    if args.seg_path is None:
+        args.seg_type = None
+        args.gamma_param = 0.0
+    print(f"Using segmentation type: {args.seg_type}")  # noqa: T201
     # MLflow set up
     if args.mlflow:
         mlflow.set_tracking_uri("http://127.0.0.1:5000")
@@ -289,7 +305,10 @@ def main(args):
             f"Unsupported image loss: {args.image_loss} use 'mse' or 'CC'."
         )
     grad_loss_fn = ne.nn.modules.SpatialGradient(args.grad_loss)
-    seg_loss_fn = ne.nn.modules.Dice()
+    if args.seg_type == "heatmaps":
+        seg_loss_fn = ne.nn.modules.MSE()
+    else:
+        seg_loss_fn = ne.nn.modules.Dice()
     loss_weights = [1.0, args.lambda_param, args.gamma_param]
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
@@ -297,6 +316,7 @@ def main(args):
     train_dataset = VxmVideoDataset(
         video_path=args.video_path,
         seg_path=args.seg_path,
+        seg_type=args.seg_type,
         max_gap=args.max_gap,
         binarize=args.binarize,
     )
@@ -422,6 +442,13 @@ if __name__ == "__main__":
         help="Path to the segmentation of the training video, if not available set to None",
     )
     parser.add_argument(
+        "--seg_type",
+        type=str,
+        default="labels",
+        choices=["labels", "heatmaps", None],
+        help="Type of segmentation to use for training: None, 'labels' or heatmaps",  # TODO add binary
+    )
+    parser.add_argument(
         "--binarize", type=bool, default=False, help="Binarize images for training"
     )
     parser.add_argument(
@@ -448,7 +475,7 @@ if __name__ == "__main__":
         "--gamma",
         type=float,
         dest="gamma_param",
-        default=0.001,
+        default=0.1,
         help="Regularisation parameter for segmentation loss, not used if seg_path is set to None",
     )
     parser.add_argument("--gpu", type=str, default="0", help="GPU ID")

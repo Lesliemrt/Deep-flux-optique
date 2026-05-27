@@ -113,9 +113,8 @@ def visualize_labels(mask, ax=None):
         )
 
 
-def viz(img, flo, ax=None):
+def viz(flo, ax=None):
     """Visualisation of flow, code from raft."""
-    img = img.squeeze(0).permute(1, 2, 0).cpu().numpy()
     flo = flo.squeeze(0).permute(1, 2, 0).cpu().numpy()
 
     # map flow to rgb image
@@ -129,3 +128,39 @@ def viz(img, flo, ax=None):
 def normalise(image, global_min, global_max):
     """Normalize image to [0, 1] range using global min and max."""
     return (image - global_min) / (global_max - global_min)
+
+
+def mask_to_gaussian(segmentation, sigma_scale=0.5):
+    """Convert a segmentation mask to a Gaussian heatmap.
+
+    Parameters:
+        segmentation: 2D array of shape (H, W) with integer labels for each cell.
+        sigma_scale: Sigma for the Gaussian = radius * sigma_scale."""
+    heatmap = np.zeros_like(segmentation, dtype=np.float32)
+    y_grid, x_grid = np.indices(segmentation.shape)
+    for region in regionprops(segmentation):
+        if region.label == 0:
+            continue
+        y, x = region.centroid
+        cell_sigma = (region.equivalent_diameter_area / 2) * sigma_scale
+        cell_sigma = max(
+            cell_sigma, 1
+        )  # Ensure sigma is at least 1 to avoid very sharp peaks
+        heatmap += np.exp(
+            -((x_grid - x) ** 2 + (y_grid - y) ** 2) / (2 * cell_sigma**2)
+        ).astype(np.float32)
+    return heatmap
+
+
+if __name__ == "__main__":
+    img = tiff.imread(
+        "data/train_data/Fluo-N2DH-GOWT1_train/01_ERR_SEG_TRA/relabeled_00.tif"
+    )
+    hm = mask_to_gaussian(img, sigma_scale=0.5)
+
+    plt.figure(figsize=(16, 8))
+    plt.subplot(1, 2, 1)
+    plt.imshow(img, cmap="gray")
+    plt.subplot(1, 2, 2)
+    plt.imshow(hm, cmap="hot")
+    plt.show()

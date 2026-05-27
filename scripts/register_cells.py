@@ -103,7 +103,7 @@ def register_pair(moving, fixed, model_type, model, global_min, global_max, conf
     ax[1, 0].imshow(input_moving.squeeze().cpu().numpy(), cmap="gray")
     plt.subplot(2, 2, 4)
     ax[1, 1].set_title("Flow")
-    viz(img=input_fixed, flo=field, ax=ax[1, 1])
+    viz(flo=field, ax=ax[1, 1])
 
     return (
         field,
@@ -174,11 +174,7 @@ def register_pair_tvl1(moving, fixed, global_min, global_max):
     ax[1, 0].imshow(input_moving, cmap="gray")
     plt.subplot(2, 2, 4)
     ax[1, 1].set_title("Flow")
-    viz(
-        img=torch.from_numpy(input_fixed).float().to(device).unsqueeze(0).unsqueeze(0),
-        flo=tensor_field,
-        ax=ax[1, 1],
-    )
+    viz(flo=tensor_field, ax=ax[1, 1])
 
     return tensor_field, fig, input_moving, input_fixed
 
@@ -240,9 +236,6 @@ def register_pair_raft(moving_path, fixed_path, model, global_min, global_max):
             test_mode=True,
         )
     tensor_field = torch.flip(tensor_field, dims=[1])
-    # tensor_field = torch.fliplr(tensor_field)
-
-    # TODO field dans le bon sens
 
     spatial_transformer = vxm.nn.modules.SpatialTransformer(
         interpolation_mode="bilinear"
@@ -261,7 +254,7 @@ def register_pair_raft(moving_path, fixed_path, model, global_min, global_max):
     ax[1, 0].imshow(input_moving.squeeze().cpu().numpy().mean(axis=0), cmap="gray")
     plt.subplot(2, 2, 4)
     ax[1, 1].set_title("Flow")
-    viz(img=input_fixed, flo=tensor_field, ax=ax[1, 1])
+    viz(flo=tensor_field, ax=ax[1, 1])
 
     return (
         tensor_field,
@@ -337,7 +330,6 @@ def register_pair_fb(moving, fixed, model, global_min, global_max):
     plt.subplot(2, 2, 4)
     ax[1, 1].set_title("Flow")
     viz(
-        img=torch.from_numpy(input_fixed).float().to(device).unsqueeze(0).unsqueeze(0),
         flo=tensor_field,
         ax=ax[1, 1],
     )

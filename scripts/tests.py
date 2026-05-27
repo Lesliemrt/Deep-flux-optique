@@ -24,7 +24,7 @@ sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
 )  # noqa: PTH100, PTH118, PTH120
 from my_utils.configs import HEIGHT, TEST_DATA, TEST_SEG_DATA, WIDTH, device
-from my_utils.utils import interpole_and_pad, iou, normalisation_params
+from my_utils.utils import interpole_and_pad, iou, normalisation_params, viz
 from flow_visualizer import FlowVisualizer
 from raft import RAFT
 from register_cells import (
@@ -74,7 +74,22 @@ def evaluate_registration(segmentation_moving, segmentation_fixed, field):
     )  # reference iou to compare with the iou after registration
     score["iou"] = np.mean(iou_score)
     score["ref_iou"] = np.mean(ref_iou_score)
-    return score
+
+    # To visulaise seg evaluation
+    fig, ax = plt.subplots(2, 2, figsize=(12, 12))
+    plt.subplot(2, 2, 1)
+    ax[0, 0].set_title("Fixed segmentation")
+    ax[0, 0].imshow(seg_fixed, cmap="gray")
+    plt.subplot(2, 2, 2)
+    ax[0, 1].set_title("Warped moving segmentation")
+    ax[0, 1].imshow(warped_seg_moving.squeeze().cpu().numpy(), cmap="gray")
+    plt.subplot(2, 2, 3)
+    ax[1, 0].set_title("Moving segmentation")
+    ax[1, 0].imshow(seg_moving, cmap="gray")
+    plt.subplot(2, 2, 4)
+    ax[1, 1].set_title("Flow")
+    viz(flo=field, ax=ax[1, 1])
+    return score, fig
 
 
 def create_model(args):
@@ -145,6 +160,7 @@ def register_video(args):
             config = json.load(j)  # To get informations from vxm training
     else:
         config = {}
+        args.output_dir = f"outputs/{args.model_type}"
 
     # MLFLOW
     if args.mlflow:
@@ -248,10 +264,17 @@ def register_video(args):
             # Load segmentation masks
             seg_moving = tiff.imread(seg_path_list[idx])
             seg_fixed = tiff.imread(seg_path_list[idx2])
-            score_pair = evaluate_registration(seg_moving, seg_fixed, field)
-            results.append(score_pair)
-            if score_pair is None:
+            res = evaluate_registration(seg_moving, seg_fixed, field)
+            if res is None:
                 continue
+            score_pair, fig = res
+            results.append(score_pair)
+            fig.savefig(viz_dir / f"seg_eval_for_paire_{idx}-{idx2}.png")
+            if mlflow.active_run():
+                mlflow.log_figure(
+                    fig, artifact_file=f"seg_eval_for_paire_{idx}-{idx2}.png"
+                )
+
         else:
             print("Segmentation files not found, skipping segmentation evaluation.")  # noqa: T201
 
@@ -326,7 +349,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--video_path", default=f"{TEST_DATA}", help="Moving image (source) filename"
     )
-    parser.add_argument("--gap", default=10, help="Temporal gap between 2 frames")
+    parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
         default=TEST_SEG_DATA,
@@ -340,7 +363,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/farnback",
+        default="outputs/output_20260527_162440",
         help="Directory to find model and to save results",
     )
     args = parser.parse_args()
