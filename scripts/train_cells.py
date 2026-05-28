@@ -306,7 +306,9 @@ def main(args):
         )
     grad_loss_fn = ne.nn.modules.SpatialGradient(args.grad_loss)
     if args.seg_type == "heatmaps":
-        seg_loss_fn = ne.nn.modules.MSE()
+        seg_loss_fn = (
+            image_loss_fn  # use the same loss as for the image (MSE or CC) for heatmaps
+        )
     else:
         seg_loss_fn = ne.nn.modules.Dice()
     loss_weights = [1.0, args.lambda_param, args.gamma_param]
@@ -456,7 +458,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--epochs", type=int, default=50, help="Number of epochs")
     parser.add_argument(
-        "--image-loss", type=str, default="mse", help="Image loss to use: 'mse' or 'cc'"
+        "--image-loss", type=str, default="cc", help="Image loss to use: 'mse' or 'cc'"
     )
     parser.add_argument(
         "--grad_loss", type=str, default="l2", help="Gradient loss to use: 'l1' or 'l2'"

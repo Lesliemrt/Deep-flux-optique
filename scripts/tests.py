@@ -23,7 +23,15 @@ import torch
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
 )  # noqa: PTH100, PTH118, PTH120
-from my_utils.configs import HEIGHT, TEST_DATA, TEST_SEG_DATA, WIDTH, device
+from my_utils.configs import (
+    HEIGHT,
+    TEST_DATA,  # noqa: F401
+    TEST_DATA_2,  # noqa: F401
+    TEST_SEG_DATA,  # noqa: F401
+    TEST_SEG_DATA_2,  # noqa: F401
+    WIDTH,
+    device,
+)
 from my_utils.utils import interpole_and_pad, iou, normalisation_params, viz
 from flow_visualizer import FlowVisualizer
 from raft import RAFT
@@ -349,7 +357,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--video_path", default=f"{TEST_DATA}", help="Moving image (source) filename"
     )
-    parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
+    parser.add_argument("--gap", default=10, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
         default=TEST_SEG_DATA,
@@ -363,7 +371,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/output_20260527_162440",
+        default="outputs/output_20260528_154455",
         help="Directory to find model and to save results",
     )
     args = parser.parse_args()
