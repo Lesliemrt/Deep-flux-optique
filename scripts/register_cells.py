@@ -154,7 +154,7 @@ def register_pair_tvl1(moving, fixed, global_min, global_max):
     # Predict
     field = optical_flow_tvl1(
         reference_image=input_fixed, moving_image=input_moving
-    )  # TODO : verifier s'il faut inverser images pour avoir field dans le bon sens
+    )  # Same way as voxelmorph
     spatial_transformer = vxm.nn.modules.SpatialTransformer(
         interpolation_mode="bilinear"
     ).to(device)

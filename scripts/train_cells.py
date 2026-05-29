@@ -125,8 +125,8 @@ class VxmVideoDataset(Dataset):
             source_seg = tiff.imread(self.seg_path_list[idx1])
             target_seg = tiff.imread(self.seg_path_list[idx2])
             if self.seg_type == "binary":
-                source_seg = (source_seg > 0).float()
-                target_seg = (target_seg > 0).float()
+                source_seg = source_seg > 0
+                target_seg = target_seg > 0
             elif self.seg_type == "labels":
                 target_seg_oh = (  # noqa: F841
                     torch.nn.functional.one_hot(
@@ -187,8 +187,8 @@ class VxmVideoDataset(Dataset):
         self.frames_path_list = sorted(self.video_path.iterdir())
         if self.seg_path is not None:
             if self.seg_type == "heatmaps":
-                path = self.seg_path.parent / "SEG_HEATMAP"
-            self.seg_path_list = sorted(path.iterdir())
+                self.seg_path = self.seg_path.parent / "SEG_HEATMAP"
+            self.seg_path_list = sorted(self.seg_path.iterdir())
 
 
 def train_epoch(
@@ -241,7 +241,11 @@ def train_epoch(
         )
 
         img_loss = image_loss_fn(target, warped_source)
+        if str(image_loss_fn) == "NCC()":
+            img_loss = 1 - img_loss  # to minimize ncc loss
         grad_loss = grad_loss_fn(displacement)
+        if str(grad_loss_fn) == "NCC()":
+            grad_loss = 1 - grad_loss  # to minimize ncc loss
 
         loss = loss_weights[0] * img_loss + loss_weights[1] * grad_loss
         if "source_seg" in batch and "target_seg" in batch:
@@ -254,6 +258,8 @@ def train_epoch(
             warped_source_seg = torch.clamp(warped_source_seg, 0, 1)
             # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)  # noqa: E501, ERA001
             seg_loss = seg_loss_fn(target_seg, warped_source_seg).squeeze()
+            if str(seg_loss_fn) == "Dice()":
+                seg_loss = 1 - seg_loss  # to minimize dice loss
             loss += loss_weights[2] * seg_loss
             epoch_seg_loss += seg_loss.item()
         loss.backward()
@@ -299,7 +305,7 @@ def main(args):
     if args.image_loss == "mse":
         image_loss_fn = ne.nn.modules.MSE()
     elif args.image_loss == "cc":
-        image_loss_fn = ne.nn.modules.NCC()
+        image_loss_fn = ne.nn.modules.NCC(window_size=4)
     else:
         raise ValueError(
             f"Unsupported image loss: {args.image_loss} use 'mse' or 'CC'."
@@ -315,6 +321,7 @@ def main(args):
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # Create dataloader
+    print("izbgizgizgizniznvz", args.video_path)
     train_dataset = VxmVideoDataset(
         video_path=args.video_path,
         seg_path=args.seg_path,
@@ -446,9 +453,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--seg_type",
         type=str,
-        default="labels",
-        choices=["labels", "heatmaps", None],
-        help="Type of segmentation to use for training: None, 'labels' or heatmaps",  # TODO add binary
+        default="binary",
+        choices=["binary", "heatmaps", None],
+        help="Type of segmentation to use for training: None, 'binary' or heatmaps",  # TODO add labels
     )
     parser.add_argument(
         "--binarize", type=bool, default=False, help="Binarize images for training"
@@ -458,7 +465,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--epochs", type=int, default=50, help="Number of epochs")
     parser.add_argument(
-        "--image-loss", type=str, default="cc", help="Image loss to use: 'mse' or 'cc'"
+        "--image-loss", type=str, default="mse", help="Image loss to use: 'mse' or 'cc'"
     )
     parser.add_argument(
         "--grad_loss", type=str, default="l2", help="Gradient loss to use: 'l1' or 'l2'"
@@ -470,14 +477,14 @@ if __name__ == "__main__":
         "--lambda",
         type=float,
         dest="lambda_param",
-        default=0.01,
+        default=0.001,
         help="Regularisation parameter for smooth loss",
     )
     parser.add_argument(
         "--gamma",
         type=float,
         dest="gamma_param",
-        default=0.1,
+        default=0.01,
         help="Regularisation parameter for segmentation loss, not used if seg_path is set to None",
     )
     parser.add_argument("--gpu", type=str, default="0", help="GPU ID")
