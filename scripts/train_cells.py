@@ -29,8 +29,20 @@ from torchvision.transforms import v2
 from tqdm import tqdm
 
 # Local imports
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # noqa: PTH100, PTH118, PTH120
-from my_utils.configs import NB_CLASSES, TRAIN_DATA, TRAIN_SEG_DATA, device
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
+)  # noqa: PTH100, PTH118, PTH120
+from my_utils.utils import interpole_and_pad
+from my_utils.configs import (
+    HEIGHT,
+    WIDTH,
+    NB_CLASSES,
+    TRAIN_DATA,  # noqa: F401
+    TRAIN_DATA_HSC,  # noqa: F401
+    TRAIN_SEG_DATA,  # noqa: F401
+    TRAIN_SEG_DATA_HSC,  # noqa: F401
+    device,
+)
 
 import voxelmorph_folder.voxelmorph as vxm
 
@@ -113,9 +125,13 @@ class VxmVideoDataset(Dataset):
         source_img = tiff.imread(self.frames_path_list[idx1])
         target_img = tiff.imread(self.frames_path_list[idx2])
 
+        # Interpole and pad images to HEIGHT, WIDTH if needed
+        moving_resized = interpole_and_pad(source_img, [HEIGHT, WIDTH])
+        fixed_resized = interpole_and_pad(target_img, [HEIGHT, WIDTH])
+
         # To tensor
-        source = torch.from_numpy(source_img).float()
-        target = torch.from_numpy(target_img).float()
+        source = torch.from_numpy(moving_resized).float()
+        target = torch.from_numpy(fixed_resized).float()
 
         # Normalisation + augmentation if augment
         source = self.transform(source)
@@ -124,6 +140,8 @@ class VxmVideoDataset(Dataset):
         if self.seg_path is not None:
             source_seg = tiff.imread(self.seg_path_list[idx1])
             target_seg = tiff.imread(self.seg_path_list[idx2])
+            source_seg = interpole_and_pad(source_seg, [HEIGHT, WIDTH])
+            target_seg = interpole_and_pad(target_seg, [HEIGHT, WIDTH])
             if self.seg_type == "binary":
                 source_seg = source_seg > 0
                 target_seg = target_seg > 0
@@ -179,7 +197,8 @@ class VxmVideoDataset(Dataset):
     def __len__(self):
         """Return nbr of paires to train on per epoch."""
         return (
-            len(self.frames_path_list) * 3  # To have more paires per epoch
+            len(self.frames_path_list)
+            * 1  # To have more paires per epoch TODO: add option to set this multiplier
         )
 
     def get_path_list(self):
@@ -199,7 +218,7 @@ def train_epoch(
     grad_loss_fn: nn.Module,
     seg_loss_fn: nn.Module,
     loss_weights: Sequence[float],
-    # steps_per_epoch: int,
+    bidirectionnal: bool,
 ) -> float:
     """Train for one epoch.
 
@@ -217,7 +236,8 @@ def train_epoch(
         The gradient loss function to use.
     loss_weights : Sequence[float]
         The weights for the image and gradient losses.
-    steps_per_epoch : int
+    bidirectionnal : bool
+        Whether to use bidirectional training.
     """
     model.train()
     total_loss = 0.0
@@ -240,6 +260,7 @@ def train_epoch(
             source, target, return_warped_source=True, return_field_type="displacement"
         )
 
+        # Compute losses
         img_loss = image_loss_fn(target, warped_source)
         if str(image_loss_fn) == "NCC()":
             img_loss = 1 - img_loss  # to minimize ncc loss
@@ -248,12 +269,32 @@ def train_epoch(
             grad_loss = 1 - grad_loss  # to minimize ncc loss
 
         loss = loss_weights[0] * img_loss + loss_weights[1] * grad_loss
+
+        spatial_transformer = vxm.nn.modules.SpatialTransformer(
+            interpolation_mode="linear"
+        ).to(device)
+
+        # If args.bidirectionnal, compute the cycle loss and add it to the total loss
+        if args.bidirectionnal:
+            displacement_inv, warped_target = model(
+                target,
+                source,
+                return_warped_source=True,
+                return_field_type="displacement",
+            )
+
+            half_dis = displacement * (0.5)
+            half_dis_inv = displacement_inv * (0.5)
+            half_warped_source = spatial_transformer(source, half_dis)
+            half_warped_target = spatial_transformer(target, half_dis_inv)
+            cycle_loss = image_loss_fn(half_warped_target, half_warped_source)
+            if str(image_loss_fn) == "NCC()":
+                cycle_loss = 1 - cycle_loss  # to minimize ncc loss
+
+        # If segmentations are available, compute segmentation loss
         if "source_seg" in batch and "target_seg" in batch:
             source_seg = batch["source_seg"].to(device).unsqueeze(1)  # add channel dim
             target_seg = batch["target_seg"].to(device).unsqueeze(1)  # add channel dim
-            spatial_transformer = vxm.nn.modules.SpatialTransformer(
-                interpolation_mode="linear"
-            ).to(device)
             warped_source_seg = spatial_transformer(source_seg, displacement)
             warped_source_seg = torch.clamp(warped_source_seg, 0, 1)
             # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)  # noqa: E501, ERA001
@@ -287,7 +328,7 @@ def main(args):
     # MLflow set up
     if args.mlflow:
         mlflow.set_tracking_uri("http://127.0.0.1:5000")
-        mlflow.start_run(run_name=f"train_cells_{timestamp}")  # noqa: DTZ005
+        mlflow.start_run(run_name=f"train_cells_{timestamp}_{args.video_path}")  # noqa: DTZ005
         print("MLflow tracking enabled.")  # noqa: T201
         mlflow.log_params(vars(args))
 
@@ -321,7 +362,6 @@ def main(args):
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # Create dataloader
-    print("izbgizgizgizniznvz", args.video_path)
     train_dataset = VxmVideoDataset(
         video_path=args.video_path,
         seg_path=args.seg_path,
@@ -357,6 +397,7 @@ def main(args):
             grad_loss_fn=grad_loss_fn,
             seg_loss_fn=seg_loss_fn,
             loss_weights=loss_weights,
+            bidirectionnal=args.bidirectionnal,
         )
         # Save loss for visualisation
         loss_during_training.append(avg_loss["loss"])
@@ -443,11 +484,11 @@ if __name__ == "__main__":
         help="Output directory",
     )
     parser.add_argument(
-        "--video-path", default=TRAIN_DATA, help="Path to the training video"
+        "--video-path", default=TRAIN_DATA_HSC, help="Path to the training video"
     )
     parser.add_argument(
         "--seg-path",
-        default=TRAIN_SEG_DATA,
+        default=TRAIN_SEG_DATA_HSC,
         help="Path to the segmentation of the training video, if not available set to None",
     )
     parser.add_argument(
@@ -455,7 +496,7 @@ if __name__ == "__main__":
         type=str,
         default="binary",
         choices=["binary", "heatmaps", None],
-        help="Type of segmentation to use for training: None, 'binary' or heatmaps",  # TODO add labels
+        help="Type of segmentation to use for training: None, 'binary' or heatmaps",  # TODO add labels/tra?
     )
     parser.add_argument(
         "--binarize", type=bool, default=False, help="Binarize images for training"
@@ -463,7 +504,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--max_gap", type=int, default=20, help="Max temporal gap between 2 frames"
     )
-    parser.add_argument("--epochs", type=int, default=50, help="Number of epochs")
+    parser.add_argument("--epochs", type=int, default=30, help="Number of epochs")
     parser.add_argument(
         "--image-loss", type=str, default="mse", help="Image loss to use: 'mse' or 'cc'"
     )
@@ -477,15 +518,18 @@ if __name__ == "__main__":
         "--lambda",
         type=float,
         dest="lambda_param",
-        default=0.001,
+        default=0.01,
         help="Regularisation parameter for smooth loss",
     )
     parser.add_argument(
         "--gamma",
         type=float,
         dest="gamma_param",
-        default=0.01,
+        default=0.001,
         help="Regularisation parameter for segmentation loss, not used if seg_path is set to None",
+    )
+    parser.add_argument(
+        "--bidirectionnal", action="store_true", help="Train a bidirectional model"
     )
     parser.add_argument("--gpu", type=str, default="0", help="GPU ID")
     parser.add_argument(

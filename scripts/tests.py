@@ -27,8 +27,10 @@ from my_utils.configs import (
     HEIGHT,
     TEST_DATA,  # noqa: F401
     TEST_DATA_2,  # noqa: F401
+    TEST_DATA_HSC,  # noqa: F401
     TEST_SEG_DATA,  # noqa: F401
     TEST_SEG_DATA_2,  # noqa: F401
+    TEST_SEG_DATA_HSC,  # noqa: F401
     WIDTH,
     device,
 )
@@ -196,7 +198,7 @@ def register_video(args):
     for idx in range(len(frames_path_list) - args.gap):
         # Load moving and fixed images
         idx2 = idx + args.gap
-        print(f"Registering pair: {idx} and {idx2}")  # noqa: T201
+        print(f"Registering pair : {idx} and {idx2}")  # noqa: T201
         moving = tiff.imread(frames_path_list[idx])
         fixed = tiff.imread(frames_path_list[idx2])
 
@@ -355,12 +357,14 @@ if __name__ == "__main__":
         help="Enable visualization of flow maps (only for gap=1)",
     )
     parser.add_argument(
-        "--video_path", default=f"{TEST_DATA}", help="Moving image (source) filename"
+        "--video_path",
+        default=f"{TEST_DATA_HSC}",
+        help="Moving image (source) filename",
     )
-    parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
+    parser.add_argument("--gap", default=10, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
-        default=TEST_SEG_DATA,
+        default=TEST_SEG_DATA_HSC,
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
@@ -371,7 +375,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/output_20260529_154719",
+        default="outputs/output_20260602_154824",
         help="Directory to find model and to save results",
     )
     args = parser.parse_args()

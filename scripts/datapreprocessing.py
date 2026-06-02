@@ -1,5 +1,4 @@
 # To do once on segmentation dataset
-from scripts.my_utils.configs import TRAIN_SEG_DATA
 from pathlib import Path
 import tifffile as tiff
 from collections import Counter
@@ -7,6 +6,7 @@ from collections import Counter
 
 from skimage.measure import regionprops
 import numpy as np
+from tqdm import tqdm
 
 
 def relabel_cells(array, with_labels):
@@ -27,23 +27,17 @@ def relabel_cells(array, with_labels):
     return relabeled
 
 
-# err_seg_path_list = sorted(
-#     f
-#     for f in Path("data/train_data/Fluo-N2DH-GOWT1_train/02_ERR_SEG").iterdir()
-#     if f.suffix == ".tif"
-# )
-# tra_path_list = sorted(
-#     f
-#     for f in Path("data/train_data/Fluo-N2DH-GOWT1_train/02_GT/TRA").iterdir()
-#     if f.suffix == ".tif"
-# )
-# output_path = Path("data/train_data/Fluo-N2DH-GOWT1_train/02_ERR_SEG_TRA")
-# output_path.mkdir(exist_ok=True)
-# for idx in range(len(err_seg_path_list)):
-#     err_seg = tiff.imread(err_seg_path_list[idx])
-#     tra = tiff.imread(tra_path_list[idx])
-#     relabeled = relabel_cells(err_seg, tra)
-#     tiff.imwrite(output_path / f"relabeled_{idx:02d}.tif", relabeled)
+def relabel_video(seg_video_path, tra_video_path, output_path):
+    """Relabel a segmentation video with labels from a tra video."""
+    err_seg_path_list = sorted(
+        f for f in seg_video_path.iterdir() if f.suffix == ".tif"
+    )
+    tra_path_list = sorted(f for f in tra_video_path.iterdir() if f.suffix == ".tif")
+    for idx in tqdm(range(len(err_seg_path_list)), desc="Relabeling video..."):
+        err_seg = tiff.imread(err_seg_path_list[idx])
+        tra = tiff.imread(tra_path_list[idx])
+        relabeled = relabel_cells(err_seg, tra)
+        tiff.imwrite(output_path / f"relabeled_{idx:04d}.tif", relabeled)
 
 
 def mask_to_gaussian(segmentation, sigma_scale=0.25):
@@ -68,11 +62,30 @@ def mask_to_gaussian(segmentation, sigma_scale=0.25):
     return heatmap
 
 
-path = Path(TRAIN_SEG_DATA)
-video = sorted(path.iterdir())
-out_path = path.parent / "SEG_HEATMAP"
-out_path.mkdir(exist_ok=True)
-for idx in range(len(video)):
-    img = tiff.imread(video[idx])
-    hm = mask_to_gaussian(img)
-    tiff.imwrite(f"{str(out_path)}/heatmap_{idx:02d}.tif", hm)
+# path = Path(TRAIN_SEG_DATA)
+# video = sorted(path.iterdir())
+# out_path = path.parent / "SEG_HEATMAP"
+# out_path.mkdir(exist_ok=True)
+# for idx in range(len(video)):
+#     img = tiff.imread(video[idx])
+#     hm = mask_to_gaussian(img)
+#     tiff.imwrite(f"{str(out_path)}/heatmap_{idx:02d}.tif", hm)
+
+
+if __name__ == "__main__":
+    # Relabel the segmentation videos with the labels from the tra videos
+    name = "BF-C2DL-MuSC"
+    output_path = Path(f"data/data/{name}/01_ERR_SEG_TRA")
+    output_path.mkdir(exist_ok=True)
+    relabel_video(
+        seg_video_path=Path(f"data/data/{name}/01_ERR_SEG"),
+        tra_video_path=Path(f"data/data/{name}/01_GT/TRA"),
+        output_path=output_path,
+    )
+    output_path = Path(f"data/data/{name}/02_ERR_SEG_TRA")
+    output_path.mkdir(exist_ok=True)
+    relabel_video(
+        seg_video_path=Path(f"data/data/{name}/02_ERR_SEG"),
+        tra_video_path=Path(f"data/data/{name}/02_GT/TRA"),
+        output_path=output_path,
+    )

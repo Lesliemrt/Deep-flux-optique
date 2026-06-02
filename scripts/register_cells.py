@@ -153,8 +153,13 @@ def register_pair_tvl1(moving, fixed, global_min, global_max):
 
     # Predict
     field = optical_flow_tvl1(
-        reference_image=input_fixed, moving_image=input_moving
-    )  # Same way as voxelmorph
+        reference_image=input_fixed,
+        moving_image=input_moving,
+        attachment=20,
+        tightness=0.5,
+        num_warp=1,
+    )  # Best params from grid search on the training set
+    # Same way as voxelmorph
     spatial_transformer = vxm.nn.modules.SpatialTransformer(
         interpolation_mode="bilinear"
     ).to(device)
