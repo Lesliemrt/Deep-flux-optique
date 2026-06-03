@@ -34,6 +34,8 @@ sys.path.append(
 from my_utils.utils import interpole_and_pad
 from my_utils.configs import (
     HEIGHT,
+    TRAIN_DATA_MUSC,
+    TRAIN_SEG_DATA_MUSC,
     WIDTH,
     NB_CLASSES,
     TRAIN_DATA,  # noqa: F401
@@ -379,7 +381,8 @@ def main(args):
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
-        num_workers=args.workers,
+        num_workers=4,
+        pin_memory=True,  # to speed up loading since data is not too big, set to False if not enough RAM
     )
 
     # Create output directory
@@ -492,11 +495,11 @@ if __name__ == "__main__":
         help="Output directory",
     )
     parser.add_argument(
-        "--video-path", default=TRAIN_DATA_HSC, help="Path to the training video"
+        "--video-path", default=TRAIN_DATA_MUSC, help="Path to the training video"
     )
     parser.add_argument(
         "--seg-path",
-        default=TRAIN_SEG_DATA_HSC,
+        default=TRAIN_SEG_DATA_MUSC,
         help="Path to the segmentation of the training video, if not available set to None",
     )
     parser.add_argument(
@@ -510,7 +513,7 @@ if __name__ == "__main__":
         "--binarize", type=bool, default=False, help="Binarize images for training"
     )
     parser.add_argument(
-        "--max_gap", type=int, default=20, help="Max temporal gap between 2 frames"
+        "--max_gap", type=int, default=1, help="Max temporal gap between 2 frames"
     )
     parser.add_argument("--epochs", type=int, default=30, help="Number of epochs")
     parser.add_argument(
@@ -526,7 +529,7 @@ if __name__ == "__main__":
         "--lambda",
         type=float,
         dest="lambda_param",
-        default=0.01,
+        default=0.1,
         help="Regularisation parameter for smooth loss",
     )
     parser.add_argument(

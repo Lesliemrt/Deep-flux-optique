@@ -62,30 +62,32 @@ def mask_to_gaussian(segmentation, sigma_scale=0.25):
     return heatmap
 
 
-# path = Path(TRAIN_SEG_DATA)
-# video = sorted(path.iterdir())
-# out_path = path.parent / "SEG_HEATMAP"
-# out_path.mkdir(exist_ok=True)
-# for idx in range(len(video)):
-#     img = tiff.imread(video[idx])
-#     hm = mask_to_gaussian(img)
-#     tiff.imwrite(f"{str(out_path)}/heatmap_{idx:02d}.tif", hm)
-
-
 if __name__ == "__main__":
-    # Relabel the segmentation videos with the labels from the tra videos
     name = "BF-C2DL-MuSC"
-    output_path = Path(f"data/data/{name}/01_ERR_SEG_TRA")
-    output_path.mkdir(exist_ok=True)
-    relabel_video(
-        seg_video_path=Path(f"data/data/{name}/01_ERR_SEG"),
-        tra_video_path=Path(f"data/data/{name}/01_GT/TRA"),
-        output_path=output_path,
-    )
-    output_path = Path(f"data/data/{name}/02_ERR_SEG_TRA")
-    output_path.mkdir(exist_ok=True)
-    relabel_video(
-        seg_video_path=Path(f"data/data/{name}/02_ERR_SEG"),
-        tra_video_path=Path(f"data/data/{name}/02_GT/TRA"),
-        output_path=output_path,
-    )
+    # # Relabel the segmentation videos with the labels from the tra videos
+    # output_path = Path(f"data/data/{name}/01_ERR_SEG_TRA")
+    # output_path.mkdir(exist_ok=True)
+    # relabel_video(
+    #     seg_video_path=Path(f"data/data/{name}/01_ERR_SEG"),
+    #     tra_video_path=Path(f"data/data/{name}/01_GT/TRA"),
+    #     output_path=output_path,
+    # )
+    # output_path = Path(f"data/data/{name}/02_ERR_SEG_TRA")
+    # output_path.mkdir(exist_ok=True)
+    # relabel_video(
+    #     seg_video_path=Path(f"data/data/{name}/02_ERR_SEG"),
+    #     tra_video_path=Path(f"data/data/{name}/02_GT/TRA"),
+    #     output_path=output_path,
+    # )
+
+    # Create Gaussian heatmaps from the relabeled segmentation videos
+    path = Path(f"data/data/{name}/01_ERR_SEG_TRA")
+    video = sorted(path.iterdir())
+    out_path = path.parent / "SEG_HEATMAP"
+    out_path.mkdir(exist_ok=True)
+    idx = 0
+    for img_path in tqdm(video, desc="Creating heatmaps..."):
+        idx += 1
+        img = tiff.imread(img_path)
+        hm = mask_to_gaussian(img)
+        tiff.imwrite(f"{str(out_path)}/heatmap_{idx:02d}.tif", hm)

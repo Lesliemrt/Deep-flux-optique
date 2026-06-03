@@ -28,9 +28,11 @@ from my_utils.configs import (
     TEST_DATA,  # noqa: F401
     TEST_DATA_2,  # noqa: F401
     TEST_DATA_HSC,  # noqa: F401
+    TEST_DATA_MUSC,  # noqa: F401
     TEST_SEG_DATA,  # noqa: F401
     TEST_SEG_DATA_2,  # noqa: F401
     TEST_SEG_DATA_HSC,  # noqa: F401
+    TEST_SEG_DATA_MUSC,  # noqa: F401
     WIDTH,
     device,
 )
@@ -195,7 +197,7 @@ def register_video(args):
     results = []
     flow_maps = {}
     video = []  # list of frames to visualize the flow maps on (only for gap=1 and if args.visualize is True)
-    for idx in range(len(frames_path_list) - args.gap):
+    for idx in range(min((len(frames_path_list) - args.gap), 100)):
         # Load moving and fixed images
         idx2 = idx + args.gap
         print(f"Registering pair : {idx} and {idx2}")  # noqa: T201
@@ -341,7 +343,7 @@ def register_video(args):
     if args.visualize:
         if args.gap != 1:
             raise ValueError("Visualization is only available for gap=1")
-        visualizer = FlowVisualizer(video, flow_maps, grid_step=20)
+        visualizer = FlowVisualizer(video, flow_maps, grid_step=10)
         visualizer.run()
 
 
@@ -358,13 +360,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--video_path",
-        default=f"{TEST_DATA_HSC}",
+        default=f"{TEST_DATA_MUSC}",
         help="Moving image (source) filename",
     )
-    parser.add_argument("--gap", default=10, help="Temporal gap between 2 frames")
+    parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
-        default=TEST_SEG_DATA_HSC,
+        default=TEST_SEG_DATA_MUSC,
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
@@ -375,7 +377,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/output_20260602_154824",
+        default="outputs/output_20260603_143603",
         help="Directory to find model and to save results",
     )
     args = parser.parse_args()

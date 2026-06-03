@@ -119,7 +119,7 @@ def register_pair_tvl1(moving, fixed, global_min, global_max):
     Parameters
     ----------
     moving : numpy.ndarray
-        Moving image.
+        Moving image.moved = spatial_transformer(tensor_moving, tensor_field)
     fixed : numpy.ndarray
         Fixed image.
     global_min : float

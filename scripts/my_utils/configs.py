@@ -3,6 +3,7 @@
 import torch
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+NUM_WORKERS = 4
 
 # Seed for reproductability
 SEED = 42
