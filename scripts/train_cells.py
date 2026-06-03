@@ -17,7 +17,6 @@ os.environ["VXM_BACKEND"] = "pytorch"
 # Third-party imports
 import datetime
 
-import matplotlib.pyplot as plt
 import mlflow
 import neurite as ne
 import numpy as np
@@ -219,6 +218,7 @@ def train_epoch(
     seg_loss_fn: nn.Module,
     loss_weights: Sequence[float],
     bidirectionnal: bool,
+    background: bool,
 ) -> float:
     """Train for one epoch.
 
@@ -275,7 +275,7 @@ def train_epoch(
         ).to(device)
 
         # If args.bidirectionnal, compute the cycle loss and add it to the total loss
-        if args.bidirectionnal:
+        if bidirectionnal:
             displacement_inv, warped_target = model(
                 target,
                 source,
@@ -301,6 +301,13 @@ def train_epoch(
             seg_loss = seg_loss_fn(target_seg, warped_source_seg).squeeze()
             if str(seg_loss_fn) == "Dice()":
                 seg_loss = 1 - seg_loss  # to minimize dice loss
+            if background:
+                # Add loss to avoid field in the background
+                background_mask = (target_seg == 0).float()
+                background_loss = torch.mean(
+                    torch.abs(displacement) * background_mask
+                )  # L1 loss on the displacement in the background
+                loss += loss_weights[2] * background_loss  # TODO loss weight
             loss += loss_weights[2] * seg_loss
             epoch_seg_loss += seg_loss.item()
         loss.backward()
@@ -383,10 +390,10 @@ def main(args):
     # Training loop
     print(f"Training for {args.epochs} epochs...")  # noqa: T201
     best_loss = float("inf")
-    loss_during_training = []
-    img_loss_during_training = []
-    grad_loss_during_training = []
-    seg_loss_during_training = []
+    # loss_during_training = []
+    # img_loss_during_training = []
+    # grad_loss_during_training = []
+    # seg_loss_during_training = []
     for epoch in tqdm(range(args.epochs), desc="Epochs"):
         # Train for one epoch
         avg_loss = train_epoch(
@@ -398,13 +405,14 @@ def main(args):
             seg_loss_fn=seg_loss_fn,
             loss_weights=loss_weights,
             bidirectionnal=args.bidirectionnal,
+            background=args.background,
         )
         # Save loss for visualisation
-        loss_during_training.append(avg_loss["loss"])
-        img_loss_during_training.append(avg_loss["img_loss"])
-        grad_loss_during_training.append(avg_loss["grad_loss"])
-        if avg_loss["seg_loss"] is not None:
-            seg_loss_during_training.append(avg_loss["seg_loss"])
+        # loss_during_training.append(avg_loss["loss"])
+        # img_loss_during_training.append(avg_loss["img_loss"])
+        # grad_loss_during_training.append(avg_loss["grad_loss"])
+        # if avg_loss["seg_loss"] is not None:
+        #     seg_loss_during_training.append(avg_loss["seg_loss"])
         if mlflow.active_run():
             mlflow.log_metric("Train_loss", avg_loss["loss"], step=epoch)
             mlflow.log_metric("Train_img_loss", avg_loss["img_loss"], step=epoch)
@@ -430,15 +438,15 @@ def main(args):
             if mlflow.active_run():
                 mlflow.pytorch.log_model(model)
 
-    # Loss visualisation
-    plt.plot(loss_during_training, label="Total Loss")
-    plt.plot(img_loss_during_training, label="Image Loss")
-    plt.plot(grad_loss_during_training, label="Gradient Loss")
-    if seg_loss_during_training:
-        plt.plot(seg_loss_during_training, label="Segmentation Loss")
-    plt.title("Training loss")
-    plt.legend()
-    plt.savefig(output_dir / "loss.png")
+    # # Loss visualisation
+    # plt.plot(loss_during_training, label="Total Loss")
+    # plt.plot(img_loss_during_training, label="Image Loss")
+    # plt.plot(grad_loss_during_training, label="Gradient Loss")
+    # if seg_loss_during_training:
+    #     plt.plot(seg_loss_during_training, label="Segmentation Loss")
+    # plt.title("Training loss")
+    # plt.legend()
+    # plt.savefig(output_dir / "loss.png")
     # Save final model
     final_path = output_dir / "final.pt"
     torch.save(model.state_dict(), final_path)
@@ -530,6 +538,11 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--bidirectionnal", action="store_true", help="Train a bidirectional model"
+    )
+    parser.add_argument(
+        "--background",
+        action="store_true",
+        help="Add loss to avoid field in the background, only available if segmentations available",
     )
     parser.add_argument("--gpu", type=str, default="0", help="GPU ID")
     parser.add_argument(
