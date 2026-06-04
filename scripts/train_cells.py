@@ -410,19 +410,19 @@ def main(args):
             mlflow.log_metric("Train_loss", avg_loss["loss"], step=epoch)
             mlflow.log_metric("Train_img_loss", avg_loss["img_loss"], step=epoch)
             mlflow.log_metric(
-                f"Train_grad_loss, lambda={args.lambda_param}",
+                f"Train_grad_loss lambda:{args.lambda_param}",
                 avg_loss["grad_loss"],
                 step=epoch,
             )
             if avg_loss["seg_loss"] is not None:
                 mlflow.log_metric(
-                    f"Train_seg_loss, gamma={args.gamma_param}",
+                    f"Train_seg_loss gamma:{args.gamma_param}",
                     avg_loss["seg_loss"],
                     step=epoch,
                 )
             if avg_loss["background_loss"] is not None:
                 mlflow.log_metric(
-                    f"Train_background_loss, gamma={args.gamma_param}",
+                    f"Train_background_loss gamma:{args.gamma_param}",
                     avg_loss["background_loss"],
                     step=epoch,
                 )
@@ -534,7 +534,7 @@ if __name__ == "__main__":
         "--lambda",
         type=float,
         dest="lambda_param",
-        default=0.01,
+        default=0.1,
         help="Regularisation parameter for smooth loss",
     )
     parser.add_argument(

@@ -27,7 +27,7 @@ from my_utils.utils import interpole_and_pad, viz, normalise
 import voxelmorph_folder.voxelmorph as vxm
 
 
-def register_pair(moving, fixed, model_type, model, global_min, global_max, config):
+def register_pair(moving, fixed, model, global_min, global_max):
     """Register a pair of frames using Voxelmorph model.
 
     Parameters
@@ -36,16 +36,12 @@ def register_pair(moving, fixed, model_type, model, global_min, global_max, conf
         Moving image.
     fixed : numpy.ndarray
         Fixed image.
-    model_type : str
-        Type of model to use for registration.
     model : torch.nn.Module
         Model to use for registration.
     global_min : float
         Global minimum for normalization.
     global_max : float
         Global maximum for normalization.
-    config : dict
-        Configuration dictionary.
 
     Returns
     -------
@@ -305,7 +301,7 @@ def register_pair_fb(moving, fixed, model, global_min, global_max):
     )
 
     # Predict
-    field = model.calc(input_fixed, input_moving, None)
+    field = model.calc(input_fixed, input_moving, None)  # prev = fixed, next = moving)
     spatial_transformer = vxm.nn.modules.SpatialTransformer(
         interpolation_mode="bilinear"
     ).to(device)

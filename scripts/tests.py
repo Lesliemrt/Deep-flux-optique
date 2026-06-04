@@ -203,7 +203,7 @@ def register_video(args):
         # 3. Compute registration
         if args.model_type == "voxelmorph":
             field, fig, input_moving, input_fixed = register_pair(
-                moving, fixed, args.model_type, model, global_min, global_max, config
+                moving, fixed, model, global_min, global_max
             )
         elif args.model_type == "tvl1":
             field, fig, input_moving, input_fixed = register_pair_tvl1(
@@ -224,7 +224,7 @@ def register_video(args):
         fig.savefig(viz_dir / f"registration_result_for_paire_{idx}-{idx2}.png")
         plt.close(fig)
 
-        if args.visualize and args.gap == 1:
+        if args.visualize:
             flow_maps[(idx2, idx)] = field.squeeze().cpu().numpy()
             if idx == 0:
                 video.append(
@@ -235,13 +235,7 @@ def register_video(args):
             )  # channel dimension neededfor visualization
             if args.model_type == "voxelmorph":
                 inv_field, _, _, _ = register_pair(
-                    fixed,
-                    moving,
-                    args.model_type,
-                    model,
-                    global_min,
-                    global_max,
-                    config,
+                    fixed, moving, model, global_min, global_max
                 )
             elif args.model_type == "tvl1":
                 inv_field, _, _, _ = register_pair_tvl1(
@@ -337,7 +331,7 @@ def register_video(args):
         mlflow.end_run()
 
     if args.visualize:
-        visualizer = FlowVisualizer(video, flow_maps, grid_step=20)
+        visualizer = FlowVisualizer(video, flow_maps, grid_step=20, gap=args.gap)
         visualizer.run()
 
 
@@ -371,7 +365,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/output_20260604_113602",
+        default="outputs/output_20260604_152701",
         help="Directory to find model and to save results",
     )
     args = parser.parse_args()

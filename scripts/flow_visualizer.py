@@ -232,9 +232,11 @@ class FlowVisualizer:
         video: Sequence[np.ndarray] | np.ndarray,
         flow_maps: dict[tuple[int, int], np.ndarray],
         grid_step=20,
+        gap=1,
     ):
         self.video = video
         self.flow_maps = flow_maps
+        self.gap = gap
         self.grid_step = grid_step
         self.frame_shape = video[0].shape[:-1]
         print("frame shape", self.frame_shape)
@@ -344,10 +346,10 @@ class FlowVisualizer:
             self._running = not self._running
 
         if not self._running and key == ord(self.keys["LEFT"]):  # Prev
-            self._frame_id = (self._frame_id - 1) % self.n_frames
+            self._frame_id = (self._frame_id - self.gap) % self.n_frames
 
         if not self._running and key == ord(self.keys["RIGHT"]):  # Next
-            self._frame_id = (self._frame_id + 1) % self.n_frames
+            self._frame_id = (self._frame_id + self.gap) % self.n_frames
 
         if key == ord(self.keys["GRID"]):
             self.points = self._grid
