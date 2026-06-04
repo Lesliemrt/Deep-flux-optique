@@ -34,8 +34,8 @@ sys.path.append(
 from my_utils.utils import interpole_and_pad
 from my_utils.configs import (
     HEIGHT,
-    TRAIN_DATA_MUSC,
-    TRAIN_SEG_DATA_MUSC,
+    TRAIN_DATA_MUSC,  # noqa: F401
+    TRAIN_SEG_DATA_MUSC,  # noqa: F401
     WIDTH,
     NB_CLASSES,
     TRAIN_DATA,  # noqa: F401
@@ -48,16 +48,16 @@ from my_utils.configs import (
 import voxelmorph_folder.voxelmorph as vxm
 
 
-class ThresholdTransform(nn.Module):
-    """Return binarised object with a threshold and in the same type."""
+# class ThresholdTransform(nn.Module):
+#     """Return binarised object with a threshold and in the same type."""
 
-    def __init__(self, thr_1):
-        super().__init__()
-        self.thr = thr_1
+#     def __init__(self, thr_1):
+#         super().__init__()
+#         self.thr = thr_1
 
-    def forward(self, x):
-        """Forward."""
-        return (x > self.thr).to(x.dtype)  # do not change the data type
+#     def forward(self, x):
+#         """Forward."""
+#         return (x > self.thr).to(x.dtype)  # do not change the data type
 
 
 class NormalizeMinMax(nn.Module):
@@ -78,7 +78,7 @@ class VxmVideoDataset(Dataset):
     """PyTorch Dataset for VoxelMorph registration data on video."""
 
     def __init__(
-        self, video_path, seg_path=None, seg_type=None, max_gap=1, binarize=False
+        self, video_path, seg_path=None, seg_type=None, max_gap=1, multiplier=3
     ) -> None:
         """Parameters
 
@@ -90,19 +90,18 @@ class VxmVideoDataset(Dataset):
             Maximum gap between the two frames to select for registration (default: 20).
         seg_type : str
             Type of segmentation to use for training: None, labels or heatmaps.
-        binarize : bool
         """
         self.video_path = Path(video_path)
         self.seg_path = Path(seg_path) if seg_path is not None else None
         self.seg_type = seg_type
         self.get_path_list()
-        self.binarize = binarize
         self.transform = self.get_transforms(n=len(self.frames_path_list))
         if not max_gap < len(self.frames_path_list) // 2:
             raise ValueError(
                 f"max_gap {max_gap} should be smaller than frames number // 2 {len(self.frames_path_list) // 2}."
             )
         self.max_gap = max_gap
+        self.multiplier = multiplier
 
     def __getitem__(self, idx):
         """Normalize video and generate pairs of frame from a single video.
@@ -189,17 +188,13 @@ class VxmVideoDataset(Dataset):
             NormalizeMinMax(global_min=global_min, global_max=global_max)
         ]
 
-        if self.binarize:
-            # base_transforms += [v2.RandomApply(v2.ColorJitter, 0.3)]  # noqa: ERA001
-            base_transforms += [ThresholdTransform(thr_1=0.05)]
-
         return v2.Compose(base_transforms)
 
     def __len__(self):
         """Return nbr of paires to train on per epoch."""
         return (
             len(self.frames_path_list)
-            * 1  # To have more paires per epoch TODO: add option to set this multiplier
+            * self.multiplier  # To have more paires per epoch TODO: add option to set this multiplier
         )
 
     def get_path_list(self):
@@ -246,6 +241,7 @@ def train_epoch(
     epoch_img_loss = 0.0
     epoch_grad_loss = 0.0
     epoch_seg_loss = 0.0
+    epoch_background_loss = 0.0
 
     # Si get_iter dans dataset : for _ in range(steps_per_epoch): puis batch = next(dataloader)
     for batch in tqdm(dataloader, total=len(dataloader), desc="Training"):
@@ -310,6 +306,7 @@ def train_epoch(
                     torch.abs(displacement) * background_mask
                 )  # L1 loss on the displacement in the background
                 loss += loss_weights[2] * background_loss  # TODO loss weight
+                epoch_background_loss += background_loss.item()
             loss += loss_weights[2] * seg_loss
             epoch_seg_loss += seg_loss.item()
         loss.backward()
@@ -323,6 +320,9 @@ def train_epoch(
         "img_loss": epoch_img_loss / len(dataloader),
         "grad_loss": epoch_grad_loss / len(dataloader),
         "seg_loss": epoch_seg_loss / len(dataloader) if epoch_seg_loss > 0 else None,
+        "background_loss": epoch_background_loss / len(dataloader)
+        if epoch_background_loss > 0
+        else None,
     }
 
 
@@ -358,7 +358,7 @@ def main(args):
         image_loss_fn = ne.nn.modules.NCC(window_size=4)
     else:
         raise ValueError(
-            f"Unsupported image loss: {args.image_loss} use 'mse' or 'CC'."
+            f"Unsupported image loss: {args.image_loss} use 'mse' or 'cc'."
         )
     grad_loss_fn = ne.nn.modules.SpatialGradient(args.grad_loss)
     if args.seg_type == "heatmaps":
@@ -376,13 +376,13 @@ def main(args):
         seg_path=args.seg_path,
         seg_type=args.seg_type,
         max_gap=args.max_gap,
-        binarize=args.binarize,
+        multiplier=args.multiplier,
     )
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
-        num_workers=4,
-        pin_memory=True,  # to speed up loading since data is not too big, set to False if not enough RAM
+        num_workers=args.workers,
+        pin_memory=True,  # To speed up, if not enough RAM, set to False
     )
 
     # Create output directory
@@ -393,10 +393,6 @@ def main(args):
     # Training loop
     print(f"Training for {args.epochs} epochs...")  # noqa: T201
     best_loss = float("inf")
-    # loss_during_training = []
-    # img_loss_during_training = []
-    # grad_loss_during_training = []
-    # seg_loss_during_training = []
     for epoch in tqdm(range(args.epochs), desc="Epochs"):
         # Train for one epoch
         avg_loss = train_epoch(
@@ -410,19 +406,26 @@ def main(args):
             bidirectionnal=args.bidirectionnal,
             background=args.background,
         )
-        # Save loss for visualisation
-        # loss_during_training.append(avg_loss["loss"])
-        # img_loss_during_training.append(avg_loss["img_loss"])
-        # grad_loss_during_training.append(avg_loss["grad_loss"])
-        # if avg_loss["seg_loss"] is not None:
-        #     seg_loss_during_training.append(avg_loss["seg_loss"])
         if mlflow.active_run():
             mlflow.log_metric("Train_loss", avg_loss["loss"], step=epoch)
             mlflow.log_metric("Train_img_loss", avg_loss["img_loss"], step=epoch)
-            mlflow.log_metric("Train_grad_loss", avg_loss["grad_loss"], step=epoch)
+            mlflow.log_metric(
+                f"Train_grad_loss, lambda={args.lambda_param}",
+                avg_loss["grad_loss"],
+                step=epoch,
+            )
             if avg_loss["seg_loss"] is not None:
-                mlflow.log_metric("Train_seg_loss", avg_loss["seg_loss"], step=epoch)
-
+                mlflow.log_metric(
+                    f"Train_seg_loss, gamma={args.gamma_param}",
+                    avg_loss["seg_loss"],
+                    step=epoch,
+                )
+            if avg_loss["background_loss"] is not None:
+                mlflow.log_metric(
+                    f"Train_background_loss, gamma={args.gamma_param}",
+                    avg_loss["background_loss"],
+                    step=epoch,
+                )
         # Print progress
         # if (epoch + 1) % 10 == 0:
         print(f"Epoch {epoch + 1}/{args.epochs}, Loss: {avg_loss['loss']:.6f}")  # noqa: T201
@@ -441,15 +444,6 @@ def main(args):
             if mlflow.active_run():
                 mlflow.pytorch.log_model(model)
 
-    # # Loss visualisation
-    # plt.plot(loss_during_training, label="Total Loss")
-    # plt.plot(img_loss_during_training, label="Image Loss")
-    # plt.plot(grad_loss_during_training, label="Gradient Loss")
-    # if seg_loss_during_training:
-    #     plt.plot(seg_loss_during_training, label="Segmentation Loss")
-    # plt.title("Training loss")
-    # plt.legend()
-    # plt.savefig(output_dir / "loss.png")
     # Save final model
     final_path = output_dir / "final.pt"
     torch.save(model.state_dict(), final_path)
@@ -458,7 +452,6 @@ def main(args):
         "max_gap": args.max_gap,
         "segmentations": args.seg_path is not None,
         "dataset": args.video_path,
-        "binarization": args.binarize,
         "epochs": args.epochs,
         "image_loss": args.image_loss,
         "grad_loss": args.grad_loss,
@@ -488,6 +481,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--mlflow", action="store_true", help="Enable mlflow tracking during training"
     )
+    parser.add_argument("--workers", type=int, default=4, help="Number of workers")
+    # Directory and paths
     parser.add_argument(
         "--output-dir",
         type=str,
@@ -495,12 +490,22 @@ if __name__ == "__main__":
         help="Output directory",
     )
     parser.add_argument(
-        "--video-path", default=TRAIN_DATA_MUSC, help="Path to the training video"
+        "--video-path", default=TRAIN_DATA, help="Path to the training video"
     )
     parser.add_argument(
         "--seg-path",
-        default=TRAIN_SEG_DATA_MUSC,
+        default=TRAIN_SEG_DATA,
         help="Path to the segmentation of the training video, if not available set to None",
+    )
+    # Dataset parameters
+    parser.add_argument(
+        "--max_gap", type=int, default=20, help="Max temporal gap between 2 frames"
+    )
+    parser.add_argument(
+        "--multiplier",
+        type=int,
+        default=3,
+        help="Multiplier to have more pairs per epoch",
     )
     parser.add_argument(
         "--seg_type",
@@ -509,47 +514,46 @@ if __name__ == "__main__":
         choices=["binary", "heatmaps", None],
         help="Type of segmentation to use for training: None, 'binary' or heatmaps",  # TODO add labels/tra?
     )
-    parser.add_argument(
-        "--binarize", type=bool, default=False, help="Binarize images for training"
-    )
-    parser.add_argument(
-        "--max_gap", type=int, default=1, help="Max temporal gap between 2 frames"
-    )
+    # Training parameters
     parser.add_argument("--epochs", type=int, default=30, help="Number of epochs")
+    parser.add_argument("--batch-size", type=int, default=4, help="Batch size")
+    parser.add_argument(
+        "--save-every", type=int, default=10, help="Checkpoint every N epochs"
+    )
+    parser.add_argument(
+        "--bidirectionnal", action="store_true", help="Train a bidirectional model"
+    )
     parser.add_argument(
         "--image-loss", type=str, default="mse", help="Image loss to use: 'mse' or 'cc'"
     )
     parser.add_argument(
         "--grad_loss", type=str, default="l2", help="Gradient loss to use: 'l1' or 'l2'"
     )
-    parser.add_argument("--workers", type=int, default=0, help="Number of workers")
-    parser.add_argument("--batch-size", type=int, default=4, help="Batch size")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument(
         "--lambda",
         type=float,
         dest="lambda_param",
-        default=0.1,
+        default=0.01,
         help="Regularisation parameter for smooth loss",
     )
     parser.add_argument(
         "--gamma",
         type=float,
         dest="gamma_param",
-        default=0.001,
+        default=0.01,
         help="Regularisation parameter for segmentation loss, not used if seg_path is set to None",
-    )
-    parser.add_argument(
-        "--bidirectionnal", action="store_true", help="Train a bidirectional model"
     )
     parser.add_argument(
         "--background",
         action="store_true",
         help="Add loss to avoid field in the background, only available if segmentations available",
     )
-    parser.add_argument("--gpu", type=str, default="0", help="GPU ID")
     parser.add_argument(
-        "--save-every", type=int, default=10, help="Checkpoint every N epochs"
+        "--background_param",
+        type=float,
+        default=0.01,
+        help="Parameter for background loss, only available if segmentations available",
     )
     args = parser.parse_args()
     main(args)

@@ -155,10 +155,6 @@ def register_video(args):
     """
     print(f"Using device: {device}")  # noqa: T201
 
-    if args.visualize:
-        if args.gap != 1:
-            raise ValueError("Visualization is only available for gap=1")
-
     # 1. Load video and segmentations frames
     frames_path_list = sorted(Path(args.video_path).iterdir())
     seg_path_list = (
@@ -341,9 +337,7 @@ def register_video(args):
         mlflow.end_run()
 
     if args.visualize:
-        if args.gap != 1:
-            raise ValueError("Visualization is only available for gap=1")
-        visualizer = FlowVisualizer(video, flow_maps, grid_step=10)
+        visualizer = FlowVisualizer(video, flow_maps, grid_step=20)
         visualizer.run()
 
 
@@ -360,13 +354,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--video_path",
-        default=f"{TEST_DATA_MUSC}",
+        default=f"{TEST_DATA}",
         help="Moving image (source) filename",
     )
-    parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
+    parser.add_argument("--gap", default=10, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
-        default=TEST_SEG_DATA_MUSC,
+        default=TEST_SEG_DATA,
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
@@ -377,7 +371,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/output_20260603_143603",
+        default="outputs/output_20260604_113602",
         help="Directory to find model and to save results",
     )
     args = parser.parse_args()

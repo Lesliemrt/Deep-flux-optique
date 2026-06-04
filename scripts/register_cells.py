@@ -20,7 +20,7 @@ import torch
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
 )  # noqa: PTH100, PTH118, PTH120
-from train_cells import NormalizeMinMax, ThresholdTransform
+from train_cells import NormalizeMinMax
 from my_utils.configs import HEIGHT, WIDTH, device
 from my_utils.utils import interpole_and_pad, viz, normalise
 
@@ -74,13 +74,6 @@ def register_pair(moving, fixed, model_type, model, global_min, global_max, conf
     normalise = NormalizeMinMax(global_min=global_min, global_max=global_max)
     input_moving = normalise(input_moving)
     input_fixed = normalise(input_fixed)
-
-    # Binarise
-    if config["binarization"]:
-        thr = 0.05
-        binarise = ThresholdTransform(thr_1=thr)
-        input_moving = binarise(input_moving)
-        input_fixed = binarise(input_fixed)
 
     # Predict
     with torch.no_grad():
