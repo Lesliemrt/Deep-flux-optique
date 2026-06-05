@@ -242,6 +242,7 @@ def train_epoch(
     epoch_grad_loss = 0.0
     epoch_seg_loss = 0.0
     epoch_background_loss = 0.0
+    epoch_cycle_loss = 0.0
 
     # Si get_iter dans dataset : for _ in range(steps_per_epoch): puis batch = next(dataloader)
     for batch in tqdm(dataloader, total=len(dataloader), desc="Training"):
@@ -266,8 +267,7 @@ def train_epoch(
         if str(grad_loss_fn) == "NCC()":
             grad_loss = 1 - grad_loss  # to minimize ncc loss
 
-        loss = loss_weights[0] * img_loss + loss_weights[1] * grad_loss
-
+        loss = loss_weights[1] * grad_loss
         spatial_transformer = vxm.nn.modules.SpatialTransformer(
             interpolation_mode="linear"
         ).to(device)
@@ -288,6 +288,10 @@ def train_epoch(
             cycle_loss = image_loss_fn(half_warped_target, half_warped_source)
             if str(image_loss_fn) == "NCC()":
                 cycle_loss = 1 - cycle_loss  # to minimize ncc loss
+            loss += loss_weights[0] * cycle_loss
+            epoch_cycle_loss += cycle_loss.item()
+
+        loss += loss_weights[0] * img_loss
 
         # If segmentations are available, compute segmentation loss
         if "source_seg" in batch and "target_seg" in batch:
@@ -305,7 +309,7 @@ def train_epoch(
                 background_loss = torch.mean(
                     torch.abs(displacement) * background_mask
                 )  # L1 loss on the displacement in the background
-                loss += loss_weights[2] * background_loss  # TODO loss weight
+                loss += loss_weights[3] * background_loss
                 epoch_background_loss += background_loss.item()
             loss += loss_weights[2] * seg_loss
             epoch_seg_loss += seg_loss.item()
@@ -322,6 +326,9 @@ def train_epoch(
         "seg_loss": epoch_seg_loss / len(dataloader) if epoch_seg_loss > 0 else None,
         "background_loss": epoch_background_loss / len(dataloader)
         if epoch_background_loss > 0
+        else None,
+        "cycle_loss": epoch_cycle_loss / len(dataloader)
+        if epoch_cycle_loss > 0
         else None,
     }
 
@@ -367,7 +374,7 @@ def main(args):
         )
     else:
         seg_loss_fn = ne.nn.modules.Dice()
-    loss_weights = [1.0, args.lambda_param, args.gamma_param]
+    loss_weights = [1.0, args.lambda_param, args.gamma_param, args.background_param]
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # Create dataloader
@@ -426,6 +433,12 @@ def main(args):
                     avg_loss["background_loss"],
                     step=epoch,
                 )
+            if avg_loss["cycle_loss"] is not None:
+                mlflow.log_metric(
+                    "Train_cycle_loss",
+                    avg_loss["cycle_loss"],
+                    step=epoch,
+                )
         # Print progress
         # if (epoch + 1) % 10 == 0:
         print(f"Epoch {epoch + 1}/{args.epochs}, Loss: {avg_loss['loss']:.6f}")  # noqa: T201
@@ -459,6 +472,7 @@ def main(args):
         "learning_rate": args.lr,
         "lambda": args.lambda_param,
         "gamma": args.gamma_param,
+        "background_param": args.background_param,
         "device": str(device),
         "date": timestamp,
     }
@@ -534,7 +548,7 @@ if __name__ == "__main__":
         "--lambda",
         type=float,
         dest="lambda_param",
-        default=0.1,
+        default=0.001,
         help="Regularisation parameter for smooth loss",
     )
     parser.add_argument(
