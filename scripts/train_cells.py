@@ -23,6 +23,7 @@ import numpy as np
 import tifffile as tiff
 import torch
 from torch import nn
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import v2
 from tqdm import tqdm
@@ -142,7 +143,7 @@ class VxmVideoDataset(Dataset):
             target_seg = tiff.imread(self.seg_path_list[idx2])
             source_seg = interpole_and_pad(source_seg, [HEIGHT, WIDTH])
             target_seg = interpole_and_pad(target_seg, [HEIGHT, WIDTH])
-            if self.seg_type == "binary":
+            if self.seg_type == "binary" or self.seg_type is None:
                 source_seg = source_seg > 0
                 target_seg = target_seg > 0
             elif self.seg_type == "labels":
@@ -206,6 +207,50 @@ class VxmVideoDataset(Dataset):
             self.seg_path_list = sorted(self.seg_path.iterdir())
 
 
+def pyramidal_flow(source, target, model, level=3):
+    """Compute the pyramidal flow to allow the model to understand bigger movements."""
+    current_field = None
+    spatial_transformer = vxm.nn.modules.SpatialTransformer(
+        interpolation_mode="linear"
+    ).to(device)
+    # Start from the lowest resolution and upsample the field at each level to use it as initial field for the next level
+    for i in range(level):
+        scale_factor = 1 / (2 ** (level - i - 1))  # 1/4, 1/2, 1 for 3 levels
+        source_down = F.interpolate(
+            source, scale_factor=scale_factor, mode="bilinear", align_corners=False
+        )
+        target_down = F.interpolate(
+            target, scale_factor=scale_factor, mode="bilinear", align_corners=False
+        )
+
+        if current_field is None:
+            current_field = model(
+                source_down,
+                target_down,
+                return_warped_source=False,
+                return_field_type="displacement",
+            )
+        else:
+            field_up = (
+                F.interpolate(
+                    current_field,
+                    scale_factor=2,
+                    mode="bilinear",
+                    align_corners=False,
+                )
+                * 2
+            )  # because the field is in the original resolution, we need to multiply by 2 to get the correct field in the downsampled resolution
+            warped_source_down = spatial_transformer(source_down, field_up)
+            field = model(
+                warped_source_down,
+                target_down,
+                return_warped_source=False,
+                return_field_type="displacement",
+            )
+            current_field = field + field_up  # composition of the two fields
+    return field
+
+
 def train_epoch(
     model: nn.Module,
     dataloader: torch.utils.data.DataLoader,
@@ -248,6 +293,11 @@ def train_epoch(
     for batch in tqdm(dataloader, total=len(dataloader), desc="Training"):
         optimizer.zero_grad()
 
+        # Define warper for later use
+        spatial_transformer = vxm.nn.modules.SpatialTransformer(
+            interpolation_mode="linear"
+        ).to(device)
+
         # Move to device in training loop (not dataloader/dataset!)
         source = batch["source"]
         target = batch["target"]
@@ -255,9 +305,16 @@ def train_epoch(
         target = target.to(device).unsqueeze(1)  # Add channel dimension
 
         # Get the displacement and the warped source image from the model
-        displacement, warped_source = model(
-            source, target, return_warped_source=True, return_field_type="displacement"
-        )
+        if args.pyramidal:
+            displacement = pyramidal_flow(source, target, model, level=3)
+            warped_source = spatial_transformer(source, displacement)
+        else:
+            displacement, warped_source = model(
+                source,
+                target,
+                return_warped_source=True,
+                return_field_type="displacement",
+            )
 
         # Compute losses
         img_loss = image_loss_fn(target, warped_source)
@@ -268,9 +325,6 @@ def train_epoch(
             grad_loss = 1 - grad_loss  # to minimize ncc loss
 
         loss = loss_weights[1] * grad_loss
-        spatial_transformer = vxm.nn.modules.SpatialTransformer(
-            interpolation_mode="linear"
-        ).to(device)
 
         # If args.bidirectionnal, compute the cycle loss and add it to the total loss
         if bidirectionnal:
@@ -290,7 +344,6 @@ def train_epoch(
                 cycle_loss = 1 - cycle_loss  # to minimize ncc loss
             loss += loss_weights[0] * cycle_loss
             epoch_cycle_loss += cycle_loss.item()
-
         loss += loss_weights[0] * img_loss
 
         # If segmentations are available, compute segmentation loss
@@ -311,8 +364,9 @@ def train_epoch(
                 )  # L1 loss on the displacement in the background
                 loss += loss_weights[3] * background_loss
                 epoch_background_loss += background_loss.item()
-            loss += loss_weights[2] * seg_loss
-            epoch_seg_loss += seg_loss.item()
+            if args.seg_type is not None:
+                loss += loss_weights[2] * seg_loss
+                epoch_seg_loss += seg_loss.item()
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
@@ -566,8 +620,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--background_param",
         type=float,
-        default=0.01,
+        default=0.1,
         help="Parameter for background loss, only available if segmentations available",
+    )
+    parser.add_argument(
+        "--pyramidal",
+        action="store_true",
+        help="Use pyramidal method for training, to allow the model to understand bigger movements",
     )
     args = parser.parse_args()
     main(args)

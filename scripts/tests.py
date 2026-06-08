@@ -26,11 +26,11 @@ sys.path.append(
 from my_utils.configs import (
     HEIGHT,
     TEST_DATA,  # noqa: F401
-    TEST_DATA_2,  # noqa: F401
+    TEST_DATA_HELA,  # noqa: F401
     TEST_DATA_HSC,  # noqa: F401
     TEST_DATA_MUSC,  # noqa: F401
     TEST_SEG_DATA,  # noqa: F401
-    TEST_SEG_DATA_2,  # noqa: F401
+    TEST_SEG_DATA_HELA,  # noqa: F401
     TEST_SEG_DATA_HSC,  # noqa: F401
     TEST_SEG_DATA_MUSC,  # noqa: F401
     WIDTH,
@@ -365,7 +365,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/output_20260605_162219",
+        default="outputs/output_20260608_140003",
         help="Directory to find model and to save results",
     )
     args = parser.parse_args()
