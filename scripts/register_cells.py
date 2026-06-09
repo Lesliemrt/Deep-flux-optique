@@ -27,7 +27,7 @@ from my_utils.utils import interpole_and_pad, viz, normalise
 import voxelmorph_folder.voxelmorph as vxm
 
 
-def register_pair(moving, fixed, model, global_min, global_max):
+def register_pair(moving, fixed, model):
     """Register a pair of frames using Voxelmorph model.
 
     Parameters
