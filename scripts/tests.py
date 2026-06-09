@@ -36,7 +36,7 @@ from my_utils.configs import (
     WIDTH,
     device,
 )
-from my_utils.utils import interpole_and_pad, iou, normalisation_params, viz
+from my_utils.utils import interpole_and_pad, iou, viz, normalisation_params
 from flow_visualizer import FlowVisualizer
 from raft import RAFT
 from register_cells import (
@@ -162,15 +162,14 @@ def register_video(args):
     )
     global_min, global_max = normalisation_params(frames_path_list)
 
+    # MLFLOW
     if args.model_type == "voxelmorph":
-        # Open config file
         with Path(f"{args.output_dir}/config.json").open() as j:
             config = json.load(j)  # To get informations from vxm training
     else:
         config = {}
         args.output_dir = f"outputs/{args.model_type}"
 
-    # MLFLOW
     if args.mlflow:
         mlflow.set_tracking_uri("http://127.0.0.1:5000")
         parent_run_id = config.get("mlflow_run_id", None)
@@ -348,13 +347,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--video_path",
-        default=f"{TEST_DATA}",
+        default=f"{TEST_DATA_MUSC}",
         help="Moving image (source) filename",
     )
     parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
-        default=TEST_SEG_DATA,
+        default=TEST_SEG_DATA_MUSC,
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
@@ -365,7 +364,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/output_20260608_140003",
+        default="outputs/output_20260609_132015",
         help="Directory to find model and to save results",
     )
     args = parser.parse_args()

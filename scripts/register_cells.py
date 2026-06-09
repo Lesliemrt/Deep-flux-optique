@@ -54,22 +54,25 @@ def register_pair(moving, fixed, model, global_min, global_max):
     input_fixed : numpy.ndarray
         Normalized fixed image.
     """
-    # Interpole/Pad images to HEIGHT, WIDTH if needed
-    moving_resized = interpole_and_pad(moving, [HEIGHT, WIDTH])
-    fixed_resized = interpole_and_pad(fixed, [HEIGHT, WIDTH])
+    # # Interpole/Pad images to HEIGHT, WIDTH if needed
+    # moving_resized = interpole_and_pad(moving, [HEIGHT, WIDTH])
+    # fixed_resized = interpole_and_pad(fixed, [HEIGHT, WIDTH])
 
-    # To tensor
-    input_moving = (
-        torch.from_numpy(moving_resized).float().to(device).unsqueeze(0).unsqueeze(0)
-    )
-    input_fixed = (
-        torch.from_numpy(fixed_resized).float().to(device).unsqueeze(0).unsqueeze(0)
-    )
+    # # To tensor
+    # input_moving = (
+    #     torch.from_numpy(moving_resized).float().to(device).unsqueeze(0).unsqueeze(0)
+    # )
+    # input_fixed = (
+    #     torch.from_numpy(fixed_resized).float().to(device).unsqueeze(0).unsqueeze(0)
+    # )
 
-    # Normalisation
-    normalise = NormalizeMinMax(global_min=global_min, global_max=global_max)
-    input_moving = normalise(input_moving)
-    input_fixed = normalise(input_fixed)
+    # # Normalisation
+    # normalise = NormalizeMinMax(global_min=global_min, global_max=global_max)
+    # input_moving = normalise(input_moving)
+    # input_fixed = normalise(input_fixed)
+
+    input_moving = moving
+    input_fixed = fixed
 
     # Predict
     with torch.no_grad():

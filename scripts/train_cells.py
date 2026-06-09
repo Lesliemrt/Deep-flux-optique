@@ -19,26 +19,20 @@ import datetime
 
 import mlflow
 import neurite as ne
-import numpy as np
-import tifffile as tiff
 import torch
 from torch import nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, Dataset
-from torchvision.transforms import v2
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 # Local imports
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
 )  # noqa: PTH100, PTH118, PTH120
-from my_utils.utils import interpole_and_pad
+from dataset import VxmVideoDataset
 from my_utils.configs import (
-    HEIGHT,
     TRAIN_DATA_MUSC,  # noqa: F401
     TRAIN_SEG_DATA_MUSC,  # noqa: F401
-    WIDTH,
-    NB_CLASSES,
     TRAIN_DATA,  # noqa: F401
     TRAIN_DATA_HSC,  # noqa: F401
     TRAIN_SEG_DATA,  # noqa: F401
@@ -47,18 +41,6 @@ from my_utils.configs import (
 )
 
 import voxelmorph_folder.voxelmorph as vxm
-
-
-# class ThresholdTransform(nn.Module):
-#     """Return binarised object with a threshold and in the same type."""
-
-#     def __init__(self, thr_1):
-#         super().__init__()
-#         self.thr = thr_1
-
-#     def forward(self, x):
-#         """Forward."""
-#         return (x > self.thr).to(x.dtype)  # do not change the data type
 
 
 class NormalizeMinMax(nn.Module):
@@ -75,139 +57,7 @@ class NormalizeMinMax(nn.Module):
         return (x - self.min) / (self.max - self.min + self.eps)
 
 
-class VxmVideoDataset(Dataset):
-    """PyTorch Dataset for VoxelMorph registration data on video."""
-
-    def __init__(
-        self, video_path, seg_path=None, seg_type=None, max_gap=1, multiplier=3
-    ) -> None:
-        """Parameters
-
-        video_path : str
-            Path to the video frames.
-        seg_path : str
-            Path to the segmentation frames (optional).
-        max_gap : int
-            Maximum gap between the two frames to select for registration (default: 20).
-        seg_type : str
-            Type of segmentation to use for training: None, labels or heatmaps.
-        """
-        self.video_path = Path(video_path)
-        self.seg_path = Path(seg_path) if seg_path is not None else None
-        self.seg_type = seg_type
-        self.get_path_list()
-        self.transform = self.get_transforms(n=len(self.frames_path_list))
-        if not max_gap < len(self.frames_path_list) // 2:
-            raise ValueError(
-                f"max_gap {max_gap} should be smaller than frames number // 2 {len(self.frames_path_list) // 2}."
-            )
-        self.max_gap = max_gap
-        self.multiplier = multiplier
-
-    def __getitem__(self, idx):
-        """Normalize video and generate pairs of frame from a single video.
-
-        dict
-            A dictionary containing the source and target frames.
-        """
-        # Select 2 frames with a random gap (maximum 10 frames gap)
-        gap = np.random.randint(-self.max_gap, self.max_gap + 1)  # noqa: NPY002
-        if gap == 0:
-            gap = 1
-        idx1 = idx % (
-            len(self.frames_path_list) - 1
-        )  # to avoid out of index error when selecting pairs of frames
-        idx2 = (
-            idx1 - gap
-            if (idx1 + gap > (len(self.frames_path_list) - 1) or idx1 + gap < 0)
-            else idx1 + gap
-        )
-
-        source_img = tiff.imread(self.frames_path_list[idx1])
-        target_img = tiff.imread(self.frames_path_list[idx2])
-
-        # Interpole and pad images to HEIGHT, WIDTH if needed
-        moving_resized = interpole_and_pad(source_img, [HEIGHT, WIDTH])
-        fixed_resized = interpole_and_pad(target_img, [HEIGHT, WIDTH])
-
-        # To tensor
-        source = torch.from_numpy(moving_resized).float()
-        target = torch.from_numpy(fixed_resized).float()
-
-        # Normalisation + augmentation if augment
-        source = self.transform(source)
-        target = self.transform(target)
-
-        if self.seg_path is not None:
-            source_seg = tiff.imread(self.seg_path_list[idx1])
-            target_seg = tiff.imread(self.seg_path_list[idx2])
-            source_seg = interpole_and_pad(source_seg, [HEIGHT, WIDTH])
-            target_seg = interpole_and_pad(target_seg, [HEIGHT, WIDTH])
-            if self.seg_type == "binary" or self.seg_type is None:
-                source_seg = source_seg > 0
-                target_seg = target_seg > 0
-            elif self.seg_type == "labels":
-                target_seg_oh = (  # noqa: F841
-                    torch.nn.functional.one_hot(
-                        target_seg.long(), num_classes=NB_CLASSES
-                    )
-                    .permute(0, 3, 1, 2)
-                    .float()
-                )
-                source_seg_oh = (  # noqa: F841
-                    torch.nn.functional.one_hot(
-                        source_seg.long(), num_classes=NB_CLASSES
-                    )
-                    .permute(0, 3, 1, 2)
-                    .float()
-                )
-                # Not enough memory to use labels (and one hot)
-            source_seg = torch.from_numpy(source_seg).float()
-            target_seg = torch.from_numpy(target_seg).float()
-            return {
-                "source": source,
-                "target": target,
-                "source_seg": source_seg,
-                "target_seg": target_seg,
-            }
-
-        return {"source": source, "target": target}
-
-    def get_transforms(self, n):
-        """Get global min and global max from n frames and return normalisation and transformation functions."""
-        global_min = np.min(tiff.imread(str(self.frames_path_list[0])))
-        global_max = np.max(tiff.imread(str(self.frames_path_list[0])))
-
-        for i in range(1, n):
-            current_min = np.min(tiff.imread(str(self.frames_path_list[i])))
-            current_max = np.max(tiff.imread(str(self.frames_path_list[i])))
-
-            global_min = min(global_min, current_min)
-            global_max = max(global_max, current_max)
-
-        base_transforms = [
-            NormalizeMinMax(global_min=global_min, global_max=global_max)
-        ]
-
-        return v2.Compose(base_transforms)
-
-    def __len__(self):
-        """Return nbr of paires to train on per epoch."""
-        return (
-            len(self.frames_path_list)
-            * self.multiplier  # To have more paires per epoch TODO: add option to set this multiplier
-        )
-
-    def get_path_list(self):
-        """Create a list with all the frame's path and segmentation's path."""
-        self.frames_path_list = sorted(self.video_path.iterdir())
-        if self.seg_path is not None:
-            if self.seg_type == "heatmaps":
-                self.seg_path = self.seg_path.parent / "SEG_HEATMAP"
-            self.seg_path_list = sorted(self.seg_path.iterdir())
-
-
-def pyramidal_flow(source, target, model, level=3):
+def pyramidal_flow(source, target, model, level=2):
     """Compute the pyramidal flow to allow the model to understand bigger movements."""
     current_field = None
     spatial_transformer = vxm.nn.modules.SpatialTransformer(
@@ -306,7 +156,7 @@ def train_epoch(
 
         # Get the displacement and the warped source image from the model
         if args.pyramidal:
-            displacement = pyramidal_flow(source, target, model, level=3)
+            displacement = pyramidal_flow(source, target, model, level=2)
             warped_source = spatial_transformer(source, displacement)
         else:
             displacement, warped_source = model(
@@ -436,7 +286,8 @@ def main(args):
         video_path=args.video_path,
         seg_path=args.seg_path,
         seg_type=args.seg_type,
-        max_gap=args.max_gap,
+        mode="train",
+        gap=args.max_gap,
         multiplier=args.multiplier,
     )
     train_loader = DataLoader(
@@ -483,7 +334,7 @@ def main(args):
                 )
             if avg_loss["background_loss"] is not None:
                 mlflow.log_metric(
-                    f"Train_background_loss gamma:{args.gamma_param}",
+                    f"Train_background_loss:{args.background_param}",
                     avg_loss["background_loss"],
                     step=epoch,
                 )
@@ -558,21 +409,21 @@ if __name__ == "__main__":
         help="Output directory",
     )
     parser.add_argument(
-        "--video-path", default=TRAIN_DATA, help="Path to the training video"
+        "--video-path", default=TRAIN_DATA_MUSC, help="Path to the training video"
     )
     parser.add_argument(
         "--seg-path",
-        default=TRAIN_SEG_DATA,
+        default=TRAIN_SEG_DATA_MUSC,
         help="Path to the segmentation of the training video, if not available set to None",
     )
     # Dataset parameters
     parser.add_argument(
-        "--max_gap", type=int, default=20, help="Max temporal gap between 2 frames"
+        "--max_gap", type=int, default=1, help="Maximum temporal gap between 2 frames"
     )
     parser.add_argument(
         "--multiplier",
         type=int,
-        default=3,
+        default=1,
         help="Multiplier to have more pairs per epoch",
     )
     parser.add_argument(
