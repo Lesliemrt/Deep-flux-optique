@@ -208,9 +208,10 @@ def train_epoch(
                 seg_loss = 1 - seg_loss  # to minimize dice loss
             if background:
                 # Add loss to avoid field in the background
-                background_mask = (target_seg == 0).float()
+                union_seg = torch.clamp(target_seg + source_seg, 0.0, 1.0)
+                background_mask = 1.0 - union_seg
                 background_loss = torch.mean(
-                    torch.abs(displacement) * background_mask
+                    torch.abs(displacement) * background_mask #TODO retest
                 )  # L1 loss on the displacement in the background
                 loss += loss_weights[3] * background_loss
                 epoch_background_loss += background_loss.item()
