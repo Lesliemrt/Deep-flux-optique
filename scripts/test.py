@@ -61,9 +61,7 @@ def evaluate_registration(segmentation_moving, segmentation_fixed, field):
     if moving_labels != fixed_labels:
         return None
     # Warp moving segmentation with the predicted field
-    tensor_seg_moving = (
-        torch.from_numpy(seg_moving).to(device).float().unsqueeze(0).unsqueeze(0)
-    )
+    tensor_seg_moving = torch.from_numpy(seg_moving).to(device).float().unsqueeze(0)
     spatial_transformer = vxm.nn.modules.SpatialTransformer(
         interpolation_mode="nearest"
     ).to(device)
@@ -91,13 +89,13 @@ def evaluate_registration(segmentation_moving, segmentation_fixed, field):
     fig, ax = plt.subplots(2, 2, figsize=(12, 12))
     plt.subplot(2, 2, 1)
     ax[0, 0].set_title("Fixed segmentation")
-    ax[0, 0].imshow(seg_fixed, cmap="gray")
+    ax[0, 0].imshow(np.squeeze(seg_fixed), cmap="gray")
     plt.subplot(2, 2, 2)
     ax[0, 1].set_title("Warped moving segmentation")
     ax[0, 1].imshow(warped_seg_moving.squeeze().cpu().numpy(), cmap="gray")
     plt.subplot(2, 2, 3)
     ax[1, 0].set_title("Moving segmentation")
-    ax[1, 0].imshow(seg_moving, cmap="gray")
+    ax[1, 0].imshow(np.squeeze(seg_moving), cmap="gray")
     plt.subplot(2, 2, 4)
     ax[1, 1].set_title("Flow")
     viz(flo=field, ax=ax[1, 1])
@@ -203,10 +201,10 @@ def register_video(args):
     video = []  # list of frames to visualize the flow maps on (only for gap=1 and if args.visualize is True)
     for batch in tqdm(test_loader, desc="Registering pairs of frames"):
         # Load moving and fixed images
-        moving = batch["source"].to(device).unsqueeze(0).unsqueeze(0)
-        fixed = batch["target"].to(device).unsqueeze(0).unsqueeze(0)
-        idx = batch["idx1"]
-        idx2 = batch["idx2"]
+        moving = batch["source"].to(device).unsqueeze(0)
+        fixed = batch["target"].to(device).unsqueeze(0)
+        idx = batch["idx1"].numpy().item()
+        idx2 = batch["idx2"].numpy().item()
 
         # 3. Compute registration
         if args.model_type == "voxelmorph":
@@ -252,8 +250,8 @@ def register_video(args):
         # If segmentations available, load them and warp the moving segmentation with the predicted field for evaluation
         if args.seg_path is not None:
             # Load segmentation masks
-            seg_moving = batch["source_seg"]
-            seg_fixed = batch["target_seg"]
+            seg_moving = batch["source_seg"].numpy()
+            seg_fixed = batch["target_seg"].numpy()
             res = evaluate_registration(seg_moving, seg_fixed, field)
             if res is None:
                 continue
@@ -264,6 +262,7 @@ def register_video(args):
                 mlflow.log_figure(
                     fig, artifact_file=f"seg_eval_for_paire_{idx}-{idx2}.png"
                 )
+            plt.close(fig)
 
         else:
             print("Segmentation files not found, skipping segmentation evaluation.")  # noqa: T201
@@ -336,13 +335,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--video_path",
-        default=f"{TEST_DATA}",
+        default=f"{TEST_DATA_MUSC}",
         help="Moving image (source) filename",
     )
     parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
-        default=TEST_SEG_DATA,
+        default=TEST_SEG_DATA_MUSC,
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
@@ -353,7 +352,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/output_20260605_151118",
+        default="outputs/output_20260611_105251",
         help="Directory to find model and to save results",
     )
     args = parser.parse_args()

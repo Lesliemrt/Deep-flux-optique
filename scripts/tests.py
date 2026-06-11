@@ -39,7 +39,7 @@ from my_utils.configs import (
 from my_utils.utils import interpole_and_pad, iou, viz, normalisation_params
 from flow_visualizer import FlowVisualizer
 from raft import RAFT
-from register_cells import (
+from register_cells_old import (
     register_pair,
     register_pair_tvl1,
     register_pair_raft,
@@ -275,6 +275,7 @@ def register_video(args):
                 mlflow.log_figure(
                     fig, artifact_file=f"seg_eval_for_paire_{idx}-{idx2}.png"
                 )
+            plt.close(fig)
 
         else:
             print("Segmentation files not found, skipping segmentation evaluation.")  # noqa: T201
@@ -364,7 +365,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/output_20260609_132015",
+        default="outputs/output_20260611_163848",
         help="Directory to find model and to save results",
     )
     args = parser.parse_args()

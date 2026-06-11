@@ -194,7 +194,7 @@ def train_epoch(
                 cycle_loss = 1 - cycle_loss  # to minimize ncc loss
             loss += loss_weights[0] * cycle_loss
             epoch_cycle_loss += cycle_loss.item()
-        loss += loss_weights[0] * img_loss
+        # loss += loss_weights[0] * img_loss
 
         # If segmentations are available, compute segmentation loss
         if "source_seg" in batch and "target_seg" in batch:
@@ -211,7 +211,7 @@ def train_epoch(
                 union_seg = torch.clamp(target_seg + source_seg, 0.0, 1.0)
                 background_mask = 1.0 - union_seg
                 background_loss = torch.mean(
-                    torch.abs(displacement) * background_mask #TODO retest
+                    torch.abs(displacement) * background_mask
                 )  # L1 loss on the displacement in the background
                 loss += loss_weights[3] * background_loss
                 epoch_background_loss += background_loss.item()
@@ -447,21 +447,21 @@ if __name__ == "__main__":
         "--image-loss", type=str, default="mse", help="Image loss to use: 'mse' or 'cc'"
     )
     parser.add_argument(
-        "--grad_loss", type=str, default="l2", help="Gradient loss to use: 'l1' or 'l2'"
+        "--grad_loss", type=str, default="l1", help="Gradient loss to use: 'l1' or 'l2'"
     )
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument(
         "--lambda",
         type=float,
         dest="lambda_param",
-        default=0.001,
+        default=0.01,
         help="Regularisation parameter for smooth loss",
     )
     parser.add_argument(
         "--gamma",
         type=float,
         dest="gamma_param",
-        default=0.01,
+        default=0.0005,
         help="Regularisation parameter for segmentation loss, not used if seg_path is set to None",
     )
     parser.add_argument(
@@ -472,7 +472,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--background_param",
         type=float,
-        default=0.1,
+        default=0.01,
         help="Parameter for background loss, only available if segmentations available",
     )
     parser.add_argument(
