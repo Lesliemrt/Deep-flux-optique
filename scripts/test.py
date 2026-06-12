@@ -1,5 +1,6 @@
 # personnal tetst file # noqa: INP001
-"""Example script to test registration of frames of a video with VoxelMorph models."""
+"""Script to test registration of frames of a video with VoxelMorph models.
+Method with testloader and register_cells (but slower than tests.py)."""
 
 # Core library imports
 import argparse
