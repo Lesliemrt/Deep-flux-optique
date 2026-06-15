@@ -2,6 +2,7 @@ from typing import List, Optional, Sequence, Tuple, Union
 
 import torch
 from torch import nn
+import torch.nn.functional as F
 
 
 class UNet(nn.Module):
@@ -127,60 +128,54 @@ class UNet(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
 
-        # Symmetric
-        downsampling_features = tuple(nb_features)
-        upsampling_features = tuple(reversed(nb_features))
+        # Symmetric Unet
+        nb_downsampling_features = tuple(nb_features)
+        nb_upsampling_features = tuple(reversed(nb_features))
 
-        assert all(isinstance(f, int) for f in downsampling_features), (
-            "All elements in nb_features must be integers"
-        )
-
-        # Store feature specs as immutables
-        self.downsampling_features = tuple(downsampling_features)
-        self.upsampling_features = tuple(upsampling_features)
-
-        # Downsampling conv blocks
-        self.downsampling_conv_blocks, down_actual_channels = downsampling_conv_blocks(
+        # -------- Encoder ---------
+        self.downsampling_conv_blocks = downsampling_conv_blocks(
             ndim=ndim,
-            nb_features=self.nb_features_fwd,
+            in_channels=self.in_channels,
+            nb_features=nb_downsampling_features,
         )
 
-        # Store actual downsampling channels for reference
-        self.down_actual_channels = down_actual_channels
-
-        # Convolutional block between downsampling and upsampling arms (lowest resolution)
-        down_output_channels = down_actual_channels[-1]
-
-        # Determine first upsampling feature (0 is falsy)
-        bottleneck_out_channels = self.upsampling_features[0] or down_output_channels
-
+        # -------- Bottleneck---------
+        bottleneck_channels = nb_downsampling_features[-1]
         self.lowest_resolution_conv_block = ConvBlock(
             ndim=ndim,
-            in_channels=down_output_channels,
-            out_channels=bottleneck_out_channels,
+            in_channels=bottleneck_channels,
+            out_channels=bottleneck_channels,
         )
 
-        # Upsampling convolutional blocks (returns blocks and actual channel counts)
-        self.upsampling_conv_blocks, up_actual_channels = upsampling_conv_blocks(
-            ndim=ndim,
-            nb_features=self.upsampling_features,
-            in_channels=bottleneck_out_channels,
-        )
-
+        # Upsampling
         self.upsample = nn.Upsample(scale_factor=2, mode="bilinear")
+        final_channels = nb_upsampling_features[-1]
 
-        # Store actual upsampling channels for reference
-        self.up_actual_channels = up_actual_channels
-
-        # Final convolutional block - use actual upsampling output channels
-        if up_actual_channels:
-            up_output_channels = up_actual_channels[-1]
-        else:
-            up_output_channels = bottleneck_out_channels
-
-        self.out_layer = ConvBlock(
+        # -------- Decoder FWD ---------
+        self.upsampling_conv_blocks_fwd = upsampling_conv_blocks(
             ndim=ndim,
-            in_channels=up_output_channels,
+            nb_features=nb_upsampling_features,
+            in_channels=bottleneck_channels,
+        )
+
+        self.fwd_out_layer = ConvBlock(
+            ndim=ndim,
+            in_channels=final_channels,
+            out_channels=out_channels,
+            kernel_size=1,
+            padding=0,
+        )
+
+        # -------- Decoder BWD ---------
+        self.upsampling_conv_blocks_bwd = upsampling_conv_blocks(
+            ndim=ndim,
+            nb_features=nb_upsampling_features,
+            in_channels=bottleneck_channels,
+        )
+
+        self.bwd_out_layer = ConvBlock(
+            ndim=ndim,
+            in_channels=final_channels,
             out_channels=out_channels,
             kernel_size=1,
             padding=0,
@@ -204,33 +199,41 @@ class UNet(nn.Module):
 
         # -------------------------- Downsampling path ----------------------------------------
         for block in self.downsampling_conv_blocks:
-            skip = block(feature_tensor)
-            feature_tensor = nn.MaxPool2d(skip)
-            skip_connections.append(skip)
+            feature_tensor = block(feature_tensor)
+            skip_connections.append(feature_tensor)
+            feature_tensor = F.max_pool2d(feature_tensor)  # TODO kernel size?
 
+        # -------------------------- Bottleneck ----------------------------------------
         feature_tensor = self.lowest_resolution_conv_block(feature_tensor)
 
         # -------------------------- Upsampling path FWD ----------------------------------------
-        for block, skip in zip(self.upsampling_conv_blocks, reversed(skip_connections)):
+        feature_tensor_fwd = feature_tensor
+        for block, skip in zip(
+            self.upsampling_conv_blocks_fwd, reversed(skip_connections)
+        ):
             feature_tensor_fwd = self.upsample(feature_tensor)
             feature_tensor_fwd = torch.cat([feature_tensor_fwd, skip], dim=1)
             feature_tensor_fwd = block(feature_tensor_fwd)
-            feature_tensor_fwd = self.out_layer(feature_tensor_fwd)
+        feature_tensor_fwd = self.out_layer_fwd(feature_tensor_fwd)
 
         # -------------------------- Upsampling path BWD ----------------------------------------
-        for block, skip in zip(self.upsampling_conv_blocks, reversed(skip_connections)):
+        feature_tensor_bwd = feature_tensor
+        for block, skip in zip(
+            self.upsampling_conv_blocks_bwd, reversed(skip_connections)
+        ):
             feature_tensor_bwd = self.upsample(feature_tensor)
             feature_tensor_bwd = torch.cat([feature_tensor_bwd, skip], dim=1)
             feature_tensor_bwd = block(feature_tensor_bwd, skip)
-            feature_tensor_bwd = self.out_layer(feature_tensor_bwd)
+        feature_tensor_bwd = self.out_layer_bwd(feature_tensor_bwd)
 
         return feature_tensor_fwd, feature_tensor_bwd
 
 
 def downsampling_conv_blocks(
     ndim: int,
+    in_channels: int,
     nb_features: Sequence[int],
-    kernel_size: int = 2,
+    kernel_size: int = 3,
 ) -> Tuple[nn.ModuleList, List[int]]:
     """
     Create an `nn.ModuleList` of downsampling conv blocks based the number of features per layer.
@@ -266,36 +269,21 @@ def downsampling_conv_blocks(
     ... )
     >>> actual_ch
     [16, 32]
-
-    >>> # With pass-through (0) at first level
-    >>> blocks, actual_ch = downsampling_conv_blocks(
-    ...     ndim=2,
-    ...     nb_features=[3, 0, 32],  # Skip conv at first level
-    ...     return_skip=True
-    ... )
-    >>> actual_ch
-    [3, 32]  # First level preserves input channels (3)
     """
 
     # Init container for downsampling convs and track actual channels
     blocks = nn.ModuleList()
 
-    # Important for pass through connections
-    actual_channels = [nb_features[0]]  # Start with input channels
+    in_ch = in_channels
 
     # Make downsampling conv block and append to list of them
-    for i in range(len(nb_features) - 1):
-        in_ch = actual_channels[-1]  # Use actual channels from previous block
-        out_ch = nb_features[i + 1]
-
+    for out_ch in nb_features:
         block = ConvBlock(in_ch, out_ch, kernel_size)
         blocks.append(block)
 
-        # Track actual output channels (passthrough preserves input channels)
-        actual_channels.append(out_ch)
+        in_ch = out_ch
 
-    # Return blocks and actual output channels (excluding input channels)
-    return blocks, actual_channels[1:]
+    return blocks
 
 
 def upsampling_conv_blocks(
@@ -331,83 +319,33 @@ def upsampling_conv_blocks(
 
     Returns
     -------
-    tuple[nn.ModuleList, list[int]]
-        A tuple of (blocks, actual_channels) where:
-        - blocks: ModuleList of upsampling blocks (UpsampleConvBlock or UpsamplePassthrough)
-        - actual_channels: List of actual output channel counts for each block, accounting for
-          pass-through levels where output = upsampled + skip channels
-
-    Notes
-    -----
-    - If `normalizations` or `activations` are a list, they must be the same length as the
-    nb_features.
-
-    Examples
-    --------
-    >>> # Standard usage
-    >>> blocks, actual_ch = upsampling_conv_blocks(
-    ...     ndim=2,
-    ...     nb_features=[32, 16, 4],
-    ...     upsample_kernel_size=4,
-    ...     normalizations=["batch", "instance", "batch"],
-    ...     activations="relu"
-    ... )
-    >>> actual_ch
-    [16, 4, 4]
-
-    >>> # With pass-through (0) at last level
-    >>> blocks, actual_ch = upsampling_conv_blocks(
-    ...     ndim=2,
-    ...     nb_features=[32, 16, 0],  # Pass-through at last level
-    ...     skip_channels=[16, 8, 4],
-    ...     accepts_skip=True
-    ... )
-    >>> actual_ch
-    [16, 0 + skip, ...]  # Last level: upsampled + skip channels
+    nn.ModuleList
+        blocks: ModuleList of upsampling blocks (UpsampleConvBlock or UpsamplePassthrough)
     """
 
     # Init upsampling conv blocks container and track actual channels
     blocks = nn.ModuleList()
-    # Use in_channels if provided, otherwise use nb_features[0]
-    # This handles the case where nb_features[0] is 0 (pass-through) but actual input
-    # comes from a bottleneck with non-zero channels
-    initial_channels = in_channels if in_channels is not None else nb_features[0]
-    actual_channels = [initial_channels]
 
-    # make the number of features for the upsampling conv blocks
-    nb_features_extended = [*nb_features, nb_features[-1]]
-
-    # Validate skip_channels length if provided
-    num_blocks = len(nb_features_extended) - 1
-    assert skip_channels is None or len(skip_channels) == num_blocks, (
-        f"skip_channels must have length {num_blocks} "
-        f"(one per upsampling block), got {len(skip_channels)}"
-    )
+    in_ch = in_channels
 
     # Make upsampling conv block and append to list of them
-    for i in range(num_blocks):
-        in_ch = actual_channels[-1]  # Use actual channels from previous block
-        out_ch = nb_features_extended[i + 1]
-        skip_ch = skip_channels[i]
-
+    for out_ch, skip_ch in zip(nb_features, skip_channels):
         block = ConvBlock(in_ch + skip_ch, out_ch)
         blocks.append(block)
 
-        actual_out = in_ch + (skip_ch or in_ch)
-        actual_channels.append(actual_out)
+        in_ch = out_ch
 
-    # Return blocks and actual output channels (excluding input channels)
-    return blocks, actual_channels[1:]
+    return blocks
 
 
 class ConvBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size=2, padding=1):
+    def __init__(self, in_channels, out_channels, kernel_size=3, padding=1):
         super().__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(
                 in_channels, out_channels, kernel_size=kernel_size, padding=padding
             ),
-            nn.Relu(),  # the one used by default in vxm
+            nn.ReLU(),  # the one used by default in vxm
             nn.BatchNorm2d(out_channels),  # None by default in vxm
         )
 
