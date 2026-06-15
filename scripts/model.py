@@ -1,4 +1,4 @@
-from typing import Callable, List, Literal, Optional, Sequence, Tuple, Union
+from typing import List, Optional, Sequence, Tuple, Union
 
 import torch
 from torch import nn
@@ -212,13 +212,19 @@ class UNet(nn.Module):
 
         # -------------------------- Upsampling path FWD ----------------------------------------
         for block, skip in zip(self.upsampling_conv_blocks, reversed(skip_connections)):
-            feature_tensor = self.upsample(feature_tensor)
-            # TODO torch cat ?
-            feature_tensor = block(feature_tensor, skip)
+            feature_tensor_fwd = self.upsample(feature_tensor)
+            feature_tensor_fwd = torch.cat([feature_tensor_fwd, skip], dim=1)
+            feature_tensor_fwd = block(feature_tensor_fwd)
+            feature_tensor_fwd = self.out_layer(feature_tensor_fwd)
 
         # -------------------------- Upsampling path BWD ----------------------------------------
+        for block, skip in zip(self.upsampling_conv_blocks, reversed(skip_connections)):
+            feature_tensor_bwd = self.upsample(feature_tensor)
+            feature_tensor_bwd = torch.cat([feature_tensor_bwd, skip], dim=1)
+            feature_tensor_bwd = block(feature_tensor_bwd, skip)
+            feature_tensor_bwd = self.out_layer(feature_tensor_bwd)
 
-        return self.out_layer(feature_tensor)
+        return feature_tensor_fwd, feature_tensor_bwd
 
 
 def downsampling_conv_blocks(
