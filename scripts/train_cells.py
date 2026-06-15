@@ -30,6 +30,7 @@ sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
 )  # noqa: PTH100, PTH118, PTH120
 from dataset import VxmVideoDataset
+from model import TwoHeadsVxm
 from my_utils.configs import (
     TRAIN_DATA_MUSC,  # noqa: F401
     TRAIN_SEG_DATA_MUSC,  # noqa: F401
@@ -154,10 +155,40 @@ def train_epoch(
         source = source.to(device).unsqueeze(1)  # Add channel dimension
         target = target.to(device).unsqueeze(1)  # Add channel dimension
 
+        loss = 0.0
+        img_loss = 0.0
+        seg_loss = 0.0
+        grad_loss = 0.0
+
         # Get the displacement and the warped source image from the model
         if args.pyramidal:
             displacement = pyramidal_flow(source, target, model, level=2)
             warped_source = spatial_transformer(source, displacement)
+        if bidirectionnal:
+            displacement, displacement_inv, warped_source = model(
+                target, source, return_warped_source=True
+            )
+            warped_target = spatial_transformer(target, displacement_inv)
+
+            # Image loss for backward displacement
+            if str(image_loss_fn) == "NCC()":
+                img_loss += 1 - image_loss_fn(
+                    source, warped_target
+                )  # to minimize ncc loss
+            else:
+                img_loss += image_loss_fn(source, warped_target)
+
+            # Grad loss for backward displacement
+            if str(grad_loss_fn) == "NCC()":
+                grad_loss += 1 - grad_loss_fn(displacement_inv)  # to minimize ncc loss
+            else:
+                grad_loss += grad_loss_fn(displacement_inv)
+
+            # Cycle loss
+            warped_flow_inv = spatial_transformer(displacement_inv, displacement)
+            cycle_loss = torch.norm(displacement + warped_flow_inv, p=2, dim=1).mean()
+            loss += loss_weights[4] * cycle_loss
+            epoch_cycle_loss += cycle_loss.item()
         else:
             displacement, warped_source = model(
                 source,
@@ -166,46 +197,65 @@ def train_epoch(
                 return_field_type="displacement",
             )
 
-        # Compute losses
-        img_loss = image_loss_fn(target, warped_source)
+        # Image loss for forward displacement
         if str(image_loss_fn) == "NCC()":
-            img_loss = 1 - img_loss  # to minimize ncc loss
-        grad_loss = grad_loss_fn(displacement)
-        if str(grad_loss_fn) == "NCC()":
-            grad_loss = 1 - grad_loss  # to minimize ncc loss
+            img_loss += 1 - image_loss_fn(target, warped_source)  # to minimize ncc loss
+        else:
+            img_loss += image_loss_fn(target, warped_source)
 
-        loss = loss_weights[1] * grad_loss
+        # Grad loss (smoothness)
+        if str(grad_loss_fn) == "NCC()":
+            grad_loss += 1 - grad_loss_fn(displacement)  # to minimize ncc loss
+        else:
+            grad_loss += grad_loss_fn(displacement)
+
+        # Add to the total loss
+        loss += loss_weights[0] * img_loss + loss_weights[1] * grad_loss
 
         # If args.bidirectionnal, compute the cycle loss and add it to the total loss
-        if bidirectionnal:
-            displacement_inv, warped_target = model(
-                target,
-                source,
-                return_warped_source=True,
-                return_field_type="displacement",
-            )
+        # if bidirectionnal:
+        #     displacement_inv, warped_target = model(
+        #         target,
+        #         source,
+        #         return_warped_source=True,
+        #         return_field_type="displacement",
+        #     )
 
-            half_dis = displacement * (0.5)
-            half_dis_inv = displacement_inv * (0.5)
-            half_warped_source = spatial_transformer(source, half_dis)
-            half_warped_target = spatial_transformer(target, half_dis_inv)
-            cycle_loss = image_loss_fn(half_warped_target, half_warped_source)
-            if str(image_loss_fn) == "NCC()":
-                cycle_loss = 1 - cycle_loss  # to minimize ncc loss
-            loss += loss_weights[0] * cycle_loss
-            epoch_cycle_loss += cycle_loss.item()
+        #     half_dis = displacement * (0.5)
+        #     half_dis_inv = displacement_inv * (0.5)
+        #     half_warped_source = spatial_transformer(source, half_dis)
+        #     half_warped_target = spatial_transformer(target, half_dis_inv)
+        #     cycle_loss = image_loss_fn(half_warped_target, half_warped_source)
+        #     if str(image_loss_fn) == "NCC()":
+        #         cycle_loss = 1 - cycle_loss  # to minimize ncc loss
+        #     loss += loss_weights[0] * cycle_loss
+        #     epoch_cycle_loss += cycle_loss.item()
         # loss += loss_weights[0] * img_loss
 
         # If segmentations are available, compute segmentation loss
         if "source_seg" in batch and "target_seg" in batch:
+            seg_loss = 0.0
             source_seg = batch["source_seg"].to(device).unsqueeze(1)  # add channel dim
             target_seg = batch["target_seg"].to(device).unsqueeze(1)  # add channel dim
             warped_source_seg = spatial_transformer(source_seg, displacement)
             warped_source_seg = torch.clamp(warped_source_seg, 0, 1)
             # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)  # noqa: E501, ERA001
-            seg_loss = seg_loss_fn(target_seg, warped_source_seg).squeeze()
             if str(seg_loss_fn) == "Dice()":
-                seg_loss = 1 - seg_loss  # to minimize dice loss
+                seg_loss += (
+                    1 - seg_loss_fn(target_seg, warped_source_seg).squeeze()
+                )  # to minimize dice loss
+            else:
+                seg_loss += seg_loss_fn(target_seg, warped_source_seg).squeeze()
+            if bidirectionnal:
+                warped_target_seg = spatial_transformer(target_seg, displacement_inv)
+                warped_target_seg = torch.clamp(warped_target_seg, 0, 1)
+                # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)  # noqa: E501, ERA001
+                if str(seg_loss_fn) == "Dice()":
+                    seg_loss += (
+                        1 - seg_loss_fn(source_seg, warped_target_seg).squeeze()
+                    )  # to minimize dice loss
+                else:
+                    seg_loss += seg_loss_fn(source_seg, warped_target_seg).squeeze()
             if background:
                 # Add loss to avoid field in the background
                 union_seg = torch.clamp(target_seg + source_seg, 0.0, 1.0)
@@ -254,14 +304,23 @@ def main(args):
         mlflow.log_params(vars(args))
 
     # Create model
-    model = vxm.nn.models.VxmPairwise(
-        ndim=2,
-        source_channels=1,
-        target_channels=1,
-        nb_features=[16, 16, 16, 16, 16],
-        integration_steps=0,
-        device=device,
-    ).to(device)
+    if args.bidirectionnal:
+        model = model = TwoHeadsVxm(
+            ndim=2,
+            source_channels=1,
+            target_channels=1,
+            nb_features=[16, 16, 16, 16, 16],
+            device=device,
+        ).to(device)
+    else:
+        model = vxm.nn.models.VxmPairwise(
+            ndim=2,
+            source_channels=1,
+            target_channels=1,
+            nb_features=[16, 16, 16, 16, 16],
+            integration_steps=0,
+            device=device,
+        ).to(device)
 
     # Setup losses and optimizer
     if args.image_loss == "mse":
@@ -279,7 +338,13 @@ def main(args):
         )
     else:
         seg_loss_fn = ne.nn.modules.Dice()
-    loss_weights = [1.0, args.lambda_param, args.gamma_param, args.background_param]
+    loss_weights = [
+        1.0,
+        args.lambda_param,
+        args.gamma_param,
+        args.background_param,
+        args.cycle_param,
+    ]
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # Create dataloader
@@ -341,7 +406,7 @@ def main(args):
                 )
             if avg_loss["cycle_loss"] is not None:
                 mlflow.log_metric(
-                    "Train_cycle_loss",
+                    f"Train_cycle_loss:{args.cycle_param}",
                     avg_loss["cycle_loss"],
                     step=epoch,
                 )
@@ -379,6 +444,7 @@ def main(args):
         "lambda": args.lambda_param,
         "gamma": args.gamma_param,
         "background_param": args.background_param,
+        "cycle_param": args.cycle_param,
         "device": str(device),
         "date": timestamp,
     }
@@ -442,6 +508,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--bidirectionnal", action="store_true", help="Train a bidirectional model"
+    )
+    parser.add_argument(
+        "--cycle_param",
+        type=float,
+        dest="cycle_param",
+        default=0.01,
+        help="Regularisation parameter for cycle loss",
     )
     parser.add_argument(
         "--image-loss", type=str, default="mse", help="Image loss to use: 'mse' or 'cc'"

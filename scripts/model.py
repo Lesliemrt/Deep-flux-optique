@@ -117,7 +117,7 @@ def upsampling_conv_blocks(
 
 
 class ConvBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size=3, padding=1):
+    def __init__(self, in_channels, out_channels, ndim=2, kernel_size=3, padding=1):
         super().__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(
@@ -358,7 +358,7 @@ class TwoHeadsUNet(nn.Module):
         return feature_tensor_fwd, feature_tensor_bwd
 
 
-class VxmPairwise(nn.Module):
+class TwoHeadsVxm(nn.Module):
     """A network architecture built on `BasicUNet` to perform nD image registration using a flow field.
 
     Parameters
@@ -407,10 +407,10 @@ class VxmPairwise(nn.Module):
         nb_features: Sequence[int] = (16, 16, 16, 16, 16),
         # activations: list[Callable | str] | Callable | str | None = nn.ReLU,
         # final_activation: str | nn.Module | None = None,
-        # flow_initializer: float = 1e-5,
+        flow_initializer: float = 1e-5,
         # integration_steps: int = 5,
         # resize_integrated_fields: bool = False,
-        # device: str = "cpu",
+        device: str = "cpu",
         # unet_kwargs: dict | None = None,
     ):
         """Initialize the `VxmPairwise`.
@@ -439,7 +439,7 @@ class VxmPairwise(nn.Module):
         """
         super().__init__()
 
-        self._init_flow_layer(ndim, ndim, 1e-5)
+        self.device = device
 
         self.model = TwoHeadsUNet(
             ndim=ndim,
@@ -447,6 +447,8 @@ class VxmPairwise(nn.Module):
             out_channels=ndim,
             nb_features=nb_features,
         ).to(self.device)
+
+        self._init_flow_layer(ndim, 1e-5)
 
         # Initialize the spatial transformer
         self.spatial_transformer = vxm.nn.modules.SpatialTransformer().to(self.device)
@@ -514,24 +516,17 @@ class VxmPairwise(nn.Module):
 
         # Pass combined features through the model's backbone & flow layer
         combined_features = torch.cat([source, target], dim=1)
-        combined_features_fwd, combined_features_bwd = self.model(combined_features)
-        displacement_fwd = self.flow_layer(combined_features_fwd)
-        displacement_bwd = self.flow_layer(combined_features_bwd)
+        displacement_fwd, displacement_bwd = self.model(combined_features)
 
         if return_warped_source:
             warped_source = self.spatial_transformer(source, displacement_fwd)
-
+            return (displacement_fwd, displacement_bwd, warped_source)
         # if return_warped_target:
         #     warped_target = self.spatial_transformer(target, neg_displacement)
         #     outputs.append(warped_target)
-        else:
-            return (displacement_fwd, displacement_bwd)
+        return (displacement_fwd, displacement_bwd)
 
-        return (displacement_fwd, displacement_bwd, warped_source)
-
-    def _init_flow_layer(
-        self, ndim: int, features: int, flow_initializer: float = 1e-5
-    ) -> None:
+    def _init_flow_layer(self, ndim: int, flow_initializer: float = 1e-5) -> None:
         """Initialize the flow layer with custom weight initialization.
 
         This layer is a convolutional block that produces a displacement (flow)
@@ -549,18 +544,19 @@ class VxmPairwise(nn.Module):
             Standard deviation for initializing the flow layer weights with a
             normal distribution (mean=0). Default is `1e-5`.
         """
-        # Initialize the conv ("flow") layer with congruent in and out features
-        flow_layer = ConvBlock(ndim, features, features).to(self.device)
+        # Initialize weights from Normal(mean=0, std=flow_initializer)
+        with torch.no_grad():
+            torch.nn.init.normal_(
+                self.model.fwd_out_layer.conv[0].weight, mean=0.0, std=flow_initializer
+            )
+            # Set the bias term(s) to zero for the first (and only) conv
+            if self.model.fwd_out_layer.conv[0].bias is not None:
+                self.model.fwd_out_layer.conv[0].bias.zero_()
 
-        # Apply custom initialization using PyTorch's native init
-        if flow_initializer is not None:
-            # Initialize weights from Normal(mean=0, std=flow_initializer)
-            with torch.no_grad():
-                torch.nn.init.normal_(
-                    flow_layer.conv0.weight, mean=0.0, std=flow_initializer
-                )
-                # Set the bias term(s) to zero for the first (and only) conv
-                if flow_layer.conv0.bias is not None:
-                    flow_layer.conv0.bias.zero_()
-        # Register the flow layer as a submodule
-        self.add_module("flow_layer", flow_layer)
+        with torch.no_grad():
+            torch.nn.init.normal_(
+                self.model.bwd_out_layer.conv[0].weight, mean=0.0, std=flow_initializer
+            )
+            # Set the bias term(s) to zero for the first (and only) conv
+            if self.model.bwd_out_layer.conv[0].bias is not None:
+                self.model.bwd_out_layer.conv[0].bias.zero_()
