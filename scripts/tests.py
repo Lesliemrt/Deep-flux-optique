@@ -41,10 +41,12 @@ from flow_visualizer import FlowVisualizer
 from raft import RAFT
 from register_cells_old import (
     register_pair,
+    register_pair_twoheads_vxm,
     register_pair_tvl1,
     register_pair_raft,
     register_pair_fb,
 )
+from model import TwoHeadsVxm
 
 import voxelmorph_folder.voxelmorph as vxm
 
@@ -121,6 +123,20 @@ def create_model(args):
         model.eval()
         if mlflow.active_run():
             mlflow.log_param("model_path", model_path)
+    elif args.model_type == "twoheads_vxm":
+        model = TwoHeadsVxm(
+            ndim=2,
+            source_channels=1,
+            target_channels=1,
+            nb_features=[16, 16, 16, 16, 16],
+            device=device,
+        ).to(device)
+        model_path = f"{args.output_dir}/best.pt"
+        model.load_state_dict(torch.load(model_path, map_location=device))
+        print(f"Load model : {model_path}")  # noqa: T201
+        model.eval()
+        if mlflow.active_run():
+            mlflow.log_param("model_path", model_path)
     elif args.model_type == "tvl1":
         model = None
     elif args.model_type == "raft":
@@ -163,7 +179,7 @@ def register_video(args):
     global_min, global_max = normalisation_params(frames_path_list)
 
     # MLFLOW
-    if args.model_type == "voxelmorph":
+    if args.model_type == "voxelmorph" or args.model_type == "twoheads_vxm":
         with Path(f"{args.output_dir}/config.json").open() as j:
             config = json.load(j)  # To get informations from vxm training
     else:
@@ -203,6 +219,10 @@ def register_video(args):
         if args.model_type == "voxelmorph":
             field, fig, input_moving, input_fixed = register_pair(
                 moving, fixed, model, global_min, global_max
+            )
+        if args.model_type == "twoheads_vxm":
+            field, inv_field, fig, input_moving, input_fixed = (
+                register_pair_twoheads_vxm(moving, fixed, model, global_min, global_max)
             )
         elif args.model_type == "tvl1":
             field, fig, input_moving, input_fixed = register_pair_tvl1(
@@ -348,24 +368,24 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--video_path",
-        default=f"{TEST_DATA_MUSC}",
+        default=f"{TEST_DATA}",
         help="Moving image (source) filename",
     )
     parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
-        default=TEST_SEG_DATA_MUSC,
+        default=None,  # TEST_SEG_DATA,
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
         "--model_type",
         default="voxelmorph",
-        choices=["voxelmorph", "tvl1", "raft", "farnback"],
+        choices=["voxelmorph", "twoheads_vxm", "tvl1", "raft", "farnback"],
         help="Type of model to use for registration",
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/output_20260611_163848",
+        default="outputs/output_20260616_132633",
         help="Directory to find model and to save results",
     )
     args = parser.parse_args()

@@ -40,6 +40,7 @@ from my_utils.configs import (
     TRAIN_SEG_DATA_HSC,  # noqa: F401
     device,
 )
+from my_utils.utils import linear_augment
 
 import voxelmorph_folder.voxelmorph as vxm
 
@@ -103,6 +104,7 @@ def pyramidal_flow(source, target, model, level=2):
 
 
 def train_epoch(
+    epoch: int,
     model: nn.Module,
     dataloader: torch.utils.data.DataLoader,
     optimizer: torch.optim.Optimizer,
@@ -187,7 +189,11 @@ def train_epoch(
             # Cycle loss
             warped_flow_inv = spatial_transformer(displacement_inv, displacement)
             cycle_loss = torch.norm(displacement + warped_flow_inv, p=2, dim=1).mean()
-            loss += loss_weights[4] * cycle_loss
+            # Add a progressiv weight to loss (start at 0, max at loss_weights[4])
+            cycle_weight = linear_augment(
+                start=5, end=15, max_weight=loss_weights[4], epoch=epoch
+            )
+            loss += cycle_weight * cycle_loss
             epoch_cycle_loss += cycle_loss.item()
         else:
             displacement, warped_source = model(
@@ -199,7 +205,9 @@ def train_epoch(
 
         # Image loss for forward displacement
         if str(image_loss_fn) == "NCC()":
-            img_loss += 1 - image_loss_fn(target, warped_source)  # to minimize ncc loss
+            img_loss += (
+                1 - image_loss_fn(target, warped_source)[0][0]
+            )  # to minimize ncc loss
         else:
             img_loss += image_loss_fn(target, warped_source)
 
@@ -305,7 +313,7 @@ def main(args):
 
     # Create model
     if args.bidirectionnal:
-        model = model = TwoHeadsVxm(
+        model = TwoHeadsVxm(
             ndim=2,
             source_channels=1,
             target_channels=1,
@@ -374,6 +382,7 @@ def main(args):
     for epoch in tqdm(range(args.epochs), desc="Epochs"):
         # Train for one epoch
         avg_loss = train_epoch(
+            epoch=epoch,
             model=model,
             dataloader=train_loader,
             optimizer=optimizer,
@@ -476,21 +485,21 @@ if __name__ == "__main__":
         help="Output directory",
     )
     parser.add_argument(
-        "--video-path", default=TRAIN_DATA_MUSC, help="Path to the training video"
+        "--video-path", default=TRAIN_DATA, help="Path to the training video"
     )
     parser.add_argument(
         "--seg-path",
-        default=TRAIN_SEG_DATA_MUSC,
+        default=TRAIN_SEG_DATA,
         help="Path to the segmentation of the training video, if not available set to None",
     )
     # Dataset parameters
     parser.add_argument(
-        "--max_gap", type=int, default=1, help="Maximum temporal gap between 2 frames"
+        "--max_gap", type=int, default=20, help="Maximum temporal gap between 2 frames"
     )
     parser.add_argument(
         "--multiplier",
         type=int,
-        default=1,
+        default=3,
         help="Multiplier to have more pairs per epoch",
     )
     parser.add_argument(
@@ -513,7 +522,7 @@ if __name__ == "__main__":
         "--cycle_param",
         type=float,
         dest="cycle_param",
-        default=0.01,
+        default=0.005,
         help="Regularisation parameter for cycle loss",
     )
     parser.add_argument(
@@ -527,14 +536,14 @@ if __name__ == "__main__":
         "--lambda",
         type=float,
         dest="lambda_param",
-        default=0.01,
+        default=0.001,
         help="Regularisation parameter for smooth loss",
     )
     parser.add_argument(
         "--gamma",
         type=float,
         dest="gamma_param",
-        default=0.0005,
+        default=0.01,
         help="Regularisation parameter for segmentation loss, not used if seg_path is set to None",
     )
     parser.add_argument(
@@ -545,7 +554,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--background_param",
         type=float,
-        default=0.01,
+        default=0.002,
         help="Parameter for background loss, only available if segmentations available",
     )
     parser.add_argument(

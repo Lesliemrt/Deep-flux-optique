@@ -4,7 +4,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-import voxelmorph as vxm
+import voxelmorph_folder.voxelmorph as vxm
 
 
 def downsampling_conv_blocks(
@@ -286,7 +286,7 @@ class TwoHeadsUNet(nn.Module):
             skip_channels=nb_skip_channels,
         )
 
-        self.fwd_out_layer = ConvBlock(
+        self.out_layer_fwd = ConvBlock(
             ndim=ndim,
             in_channels=final_channels,
             out_channels=out_channels,
@@ -302,7 +302,7 @@ class TwoHeadsUNet(nn.Module):
             skip_channels=nb_skip_channels,
         )
 
-        self.bwd_out_layer = ConvBlock(
+        self.out_layer_bwd = ConvBlock(
             ndim=ndim,
             in_channels=final_channels,
             out_channels=out_channels,
@@ -547,16 +547,16 @@ class TwoHeadsVxm(nn.Module):
         # Initialize weights from Normal(mean=0, std=flow_initializer)
         with torch.no_grad():
             torch.nn.init.normal_(
-                self.model.fwd_out_layer.conv[0].weight, mean=0.0, std=flow_initializer
+                self.model.out_layer_fwd.conv[0].weight, mean=0.0, std=flow_initializer
             )
             # Set the bias term(s) to zero for the first (and only) conv
-            if self.model.fwd_out_layer.conv[0].bias is not None:
-                self.model.fwd_out_layer.conv[0].bias.zero_()
+            if self.model.out_layer_fwd.conv[0].bias is not None:
+                self.model.out_layer_fwd.conv[0].bias.zero_()
 
         with torch.no_grad():
             torch.nn.init.normal_(
-                self.model.bwd_out_layer.conv[0].weight, mean=0.0, std=flow_initializer
+                self.model.out_layer_bwd.conv[0].weight, mean=0.0, std=flow_initializer
             )
             # Set the bias term(s) to zero for the first (and only) conv
-            if self.model.bwd_out_layer.conv[0].bias is not None:
-                self.model.bwd_out_layer.conv[0].bias.zero_()
+            if self.model.out_layer_bwd.conv[0].bias is not None:
+                self.model.out_layer_bwd.conv[0].bias.zero_()

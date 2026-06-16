@@ -152,6 +152,15 @@ def mask_to_gaussian(segmentation, sigma_scale=0.5):
     return heatmap
 
 
+def linear_augment(start, end, max_weight, epoch):
+    if epoch < 5:
+        return 0.0
+    elif epoch >= 15:
+        return max_weight
+    else:
+        return max_weight * ((epoch - start) / (end - start))
+
+
 if __name__ == "__main__":
     img = tiff.imread(
         "data/train_data/Fluo-N2DH-GOWT1_train/01_ERR_SEG_TRA/relabeled_00.tif"
