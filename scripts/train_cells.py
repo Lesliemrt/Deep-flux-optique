@@ -30,7 +30,7 @@ sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
 )  # noqa: PTH100, PTH118, PTH120
 from dataset import VxmVideoDataset
-from model import TwoHeadsVxm
+from model import TwoHeadsVxm  # noqa: F401
 from my_utils.configs import (
     TRAIN_DATA_MUSC,  # noqa: F401
     TRAIN_SEG_DATA_MUSC,  # noqa: F401
@@ -40,7 +40,7 @@ from my_utils.configs import (
     TRAIN_SEG_DATA_HSC,  # noqa: F401
     device,
 )
-from my_utils.utils import linear_augment
+from my_utils.utils import linear_augment  # noqa: F401
 
 import voxelmorph_folder.voxelmorph as vxm
 
@@ -163,14 +163,23 @@ def train_epoch(
         grad_loss = 0.0
 
         # Get the displacement and the warped source image from the model
+        displacement, warped_source = model(
+            source,
+            target,
+            return_warped_source=True,
+            return_field_type="displacement",
+        )  # TODO
         if args.pyramidal:
             displacement = pyramidal_flow(source, target, model, level=2)
             warped_source = spatial_transformer(source, displacement)
         if bidirectionnal:
-            displacement, displacement_inv, warped_source = model(
+            # displacement, displacement_inv, warped_source = model(
+            #     source, target, return_warped_source=True
+            # )
+            # warped_target = spatial_transformer(target, displacement_inv) #TODO
+            displacement_inv, warped_target = model(
                 target, source, return_warped_source=True
             )
-            warped_target = spatial_transformer(target, displacement_inv)
 
             # Image loss for backward displacement
             if str(image_loss_fn) == "NCC()":
@@ -195,13 +204,13 @@ def train_epoch(
             )
             loss += cycle_weight * cycle_loss
             epoch_cycle_loss += cycle_loss.item()
-        else:
-            displacement, warped_source = model(
-                source,
-                target,
-                return_warped_source=True,
-                return_field_type="displacement",
-            )
+        # else:
+        #     displacement, warped_source = model(
+        #         source,
+        #         target,
+        #         return_warped_source=True,
+        #         return_field_type="displacement",
+        #     ) #TODO
 
         # Image loss for forward displacement
         if str(image_loss_fn) == "NCC()":
@@ -312,23 +321,23 @@ def main(args):
         mlflow.log_params(vars(args))
 
     # Create model
-    if args.bidirectionnal:
-        model = TwoHeadsVxm(
-            ndim=2,
-            source_channels=1,
-            target_channels=1,
-            nb_features=[16, 16, 16, 16, 16],
-            device=device,
-        ).to(device)
-    else:
-        model = vxm.nn.models.VxmPairwise(
-            ndim=2,
-            source_channels=1,
-            target_channels=1,
-            nb_features=[16, 16, 16, 16, 16],
-            integration_steps=0,
-            device=device,
-        ).to(device)
+    # if args.bidirectionnal:
+    #     model = TwoHeadsVxm(
+    #         ndim=2,
+    #         source_channels=1,
+    #         target_channels=1,
+    #         nb_features=[16, 16, 16, 16, 16],
+    #         device=device,
+    #     ).to(device)
+    # else: # TODO
+    model = vxm.nn.models.VxmPairwise(
+        ndim=2,
+        source_channels=1,
+        target_channels=1,
+        nb_features=[16, 16, 16, 16, 16],
+        integration_steps=0,
+        device=device,
+    ).to(device)
 
     # Setup losses and optimizer
     if args.image_loss == "mse":
@@ -522,7 +531,7 @@ if __name__ == "__main__":
         "--cycle_param",
         type=float,
         dest="cycle_param",
-        default=0.005,
+        default=0.001,
         help="Regularisation parameter for cycle loss",
     )
     parser.add_argument(
@@ -536,7 +545,7 @@ if __name__ == "__main__":
         "--lambda",
         type=float,
         dest="lambda_param",
-        default=0.001,
+        default=0.0005,
         help="Regularisation parameter for smooth loss",
     )
     parser.add_argument(

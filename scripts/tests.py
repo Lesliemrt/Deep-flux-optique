@@ -374,7 +374,7 @@ if __name__ == "__main__":
     parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
-        default=None,  # TEST_SEG_DATA,
+        default=TEST_SEG_DATA,
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
@@ -385,7 +385,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/output_20260616_132633",
+        default="outputs/output_20260616_170657",
         help="Directory to find model and to save results",
     )
     args = parser.parse_args()
