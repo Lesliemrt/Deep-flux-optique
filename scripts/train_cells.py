@@ -156,6 +156,9 @@ def train_epoch(
         target = batch["target"]
         source = source.to(device).unsqueeze(1)  # Add channel dimension
         target = target.to(device).unsqueeze(1)  # Add channel dimension
+        if "source_seg" in batch and "target_seg" in batch:
+            source_seg = batch["source_seg"].to(device).unsqueeze(1)  # add channel dim
+            target_seg = batch["target_seg"].to(device).unsqueeze(1)  # add channel dim
 
         loss = 0.0
         img_loss = 0.0
@@ -213,12 +216,19 @@ def train_epoch(
         #     ) #TODO
 
         # Image loss for forward displacement
+        if background:
+            # Multiply image * mask to focus only on cells not background
+            warped_source_seg = spatial_transformer(source_seg, displacement)
+            warped_source_seg = torch.clamp(warped_source_seg, 0, 1)
+            target = target * target_seg
+            warped_source = warped_source * warped_source_seg
         if str(image_loss_fn) == "NCC()":
             img_loss += (
                 1 - image_loss_fn(target, warped_source)[0][0]
             )  # to minimize ncc loss
         else:
             img_loss += image_loss_fn(target, warped_source)
+
 
         # Grad loss (smoothness)
         if str(grad_loss_fn) == "NCC()":
@@ -252,10 +262,6 @@ def train_epoch(
         # If segmentations are available, compute segmentation loss
         if "source_seg" in batch and "target_seg" in batch:
             seg_loss = 0.0
-            source_seg = batch["source_seg"].to(device).unsqueeze(1)  # add channel dim
-            target_seg = batch["target_seg"].to(device).unsqueeze(1)  # add channel dim
-            warped_source_seg = spatial_transformer(source_seg, displacement)
-            warped_source_seg = torch.clamp(warped_source_seg, 0, 1)
             # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)  # noqa: E501, ERA001
             if str(seg_loss_fn) == "Dice()":
                 seg_loss += (
@@ -273,15 +279,15 @@ def train_epoch(
                     )  # to minimize dice loss
                 else:
                     seg_loss += seg_loss_fn(source_seg, warped_target_seg).squeeze()
-            if background:
-                # Add loss to avoid field in the background
-                union_seg = torch.clamp(target_seg + source_seg, 0.0, 1.0)
-                background_mask = 1.0 - union_seg
-                background_loss = torch.mean(
-                    torch.abs(displacement) * background_mask
-                )  # L1 loss on the displacement in the background
-                loss += loss_weights[3] * background_loss
-                epoch_background_loss += background_loss.item()
+            # if background:
+            #     # Add loss to avoid field in the background
+            #     union_seg = torch.clamp(target_seg + source_seg, 0.0, 1.0)
+            #     background_mask = 1.0 - union_seg
+            #     background_loss = torch.mean(
+            #         torch.abs(displacement) * background_mask
+            #     )  # L1 loss on the displacement in the background
+            #     loss += loss_weights[3] * background_loss
+            #     epoch_background_loss += background_loss.item()
             if args.seg_type is not None:
                 loss += loss_weights[2] * seg_loss
                 epoch_seg_loss += seg_loss.item()
