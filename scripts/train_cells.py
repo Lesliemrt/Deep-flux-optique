@@ -29,9 +29,9 @@ from tqdm import tqdm
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
 )  # noqa: PTH100, PTH118, PTH120
-from dataset import VxmVideoDataset
-from model import TwoHeadsVxm  # noqa: F401
-from my_utils.configs import (
+from src.dataset import VxmVideoDataset
+from src.model import TwoHeadsVxm  # noqa: F401
+from src.my_utils.configs import (
     TRAIN_DATA_MUSC,  # noqa: F401
     TRAIN_SEG_DATA_MUSC,  # noqa: F401
     TRAIN_DATA,  # noqa: F401
@@ -40,7 +40,7 @@ from my_utils.configs import (
     TRAIN_SEG_DATA_HSC,  # noqa: F401
     device,
 )
-from my_utils.utils import linear_augment  # noqa: F401
+from src.my_utils.utils import linear_augment  # noqa: F401
 
 import voxelmorph_folder.voxelmorph as vxm
 
@@ -59,7 +59,7 @@ class NormalizeMinMax(nn.Module):
         return (x - self.min) / (self.max - self.min + self.eps)
 
 
-def pyramidal_flow(source, target, model, level=2):
+def pyramidal_flow(source, target, model, model_type, level=2):
     """Compute the pyramidal flow to allow the model to understand bigger movements."""
     current_field = None
     spatial_transformer = vxm.nn.modules.SpatialTransformer(
@@ -76,12 +76,19 @@ def pyramidal_flow(source, target, model, level=2):
         )
 
         if current_field is None:
-            current_field = model(
-                source_down,
-                target_down,
-                return_warped_source=False,
-                return_field_type="displacement",
-            )
+            if model_type == "voxelmorph":
+                current_field = model(
+                    source_down,
+                    target_down,
+                    return_warped_source=False,
+                    return_field_type="displacement",
+                )
+            elif model_type == "twoheads_vxm":
+                current_field, current_field_inv = model(
+                    source_down,
+                    target_down,
+                    return_warped_source=False,
+                )
         else:
             field_up = (
                 F.interpolate(
@@ -93,14 +100,33 @@ def pyramidal_flow(source, target, model, level=2):
                 * 2
             )  # because the field is in the original resolution, we need to multiply by 2 to get the correct field in the downsampled resolution
             warped_source_down = spatial_transformer(source_down, field_up)
-            field = model(
-                warped_source_down,
-                target_down,
-                return_warped_source=False,
-                return_field_type="displacement",
-            )
+            if model_type == "voxelmorph":
+                field = model(
+                    warped_source_down,
+                    target_down,
+                    return_warped_source=False,
+                    return_field_type="displacement",
+                )
+            elif model_type == "twoheads_vxm":
+                field, field_inv = model(
+                    warped_source_down,
+                    target_down,
+                    return_warped_source=False,
+                )
+                field_inv_up = (
+                    F.interpolate(
+                        current_field_inv,
+                        scale_factor=2,
+                        mode="bilinear",
+                        align_corners=False,
+                    )
+                    * 2
+                )
+                current_field_inv = field_inv + field_inv_up
             current_field = field + field_up  # composition of the two fields
-    return field
+    if model_type == "voxelmorph":
+        return field
+    return field, field_inv
 
 
 def train_epoch(
@@ -166,23 +192,25 @@ def train_epoch(
         grad_loss = 0.0
 
         # Get the displacement and the warped source image from the model
-        displacement, warped_source = model(
-            source,
-            target,
-            return_warped_source=True,
-            return_field_type="displacement",
-        )  # TODO
+        # displacement, warped_source = model(
+        #     source,
+        #     target,
+        #     return_warped_source=True,
+        #     return_field_type="displacement",
+        # )  # TODO
         if args.pyramidal:
-            displacement = pyramidal_flow(source, target, model, level=2)
+            displacement = pyramidal_flow(
+                source, target, model, model_type="voxelmorph", level=2
+            )
             warped_source = spatial_transformer(source, displacement)
         if bidirectionnal:
-            # displacement, displacement_inv, warped_source = model(
-            #     source, target, return_warped_source=True
-            # )
-            # warped_target = spatial_transformer(target, displacement_inv) #TODO
-            displacement_inv, warped_target = model(
-                target, source, return_warped_source=True
+            displacement, displacement_inv, warped_source = model(
+                source, target, return_warped_source=True
             )
+            warped_target = spatial_transformer(target, displacement_inv)  # TODO
+            # displacement_inv, warped_target = model(
+            #     target, source, return_warped_source=True
+            # )
 
             # Image loss for backward displacement
             if str(image_loss_fn) == "NCC()":
@@ -207,13 +235,13 @@ def train_epoch(
             )
             loss += cycle_weight * cycle_loss
             epoch_cycle_loss += cycle_loss.item()
-        # else:
-        #     displacement, warped_source = model(
-        #         source,
-        #         target,
-        #         return_warped_source=True,
-        #         return_field_type="displacement",
-        #     ) #TODO
+        else:
+            displacement, warped_source = model(
+                source,
+                target,
+                return_warped_source=True,
+                return_field_type="displacement",
+            )  # TODO
 
         # Image loss for forward displacement
         if background:
@@ -228,7 +256,6 @@ def train_epoch(
             )  # to minimize ncc loss
         else:
             img_loss += image_loss_fn(target, warped_source)
-
 
         # Grad loss (smoothness)
         if str(grad_loss_fn) == "NCC()":
@@ -262,6 +289,8 @@ def train_epoch(
         # If segmentations are available, compute segmentation loss
         if "source_seg" in batch and "target_seg" in batch:
             seg_loss = 0.0
+            warped_source_seg = spatial_transformer(source_seg, displacement)
+            warped_source_seg = torch.clamp(warped_source_seg, 0, 1)
             # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)  # noqa: E501, ERA001
             if str(seg_loss_fn) == "Dice()":
                 seg_loss += (
@@ -327,23 +356,23 @@ def main(args):
         mlflow.log_params(vars(args))
 
     # Create model
-    # if args.bidirectionnal:
-    #     model = TwoHeadsVxm(
-    #         ndim=2,
-    #         source_channels=1,
-    #         target_channels=1,
-    #         nb_features=[16, 16, 16, 16, 16],
-    #         device=device,
-    #     ).to(device)
-    # else: # TODO
-    model = vxm.nn.models.VxmPairwise(
-        ndim=2,
-        source_channels=1,
-        target_channels=1,
-        nb_features=[16, 16, 16, 16, 16],
-        integration_steps=0,
-        device=device,
-    ).to(device)
+    if args.bidirectionnal:
+        model = TwoHeadsVxm(
+            ndim=2,
+            source_channels=1,
+            target_channels=1,
+            nb_features=[16, 16, 16, 16, 16],
+            device=device,
+        ).to(device)
+    else:  # TODO
+        model = vxm.nn.models.VxmPairwise(
+            ndim=2,
+            source_channels=1,
+            target_channels=1,
+            nb_features=[16, 16, 16, 16, 16],
+            integration_steps=0,
+            device=device,
+        ).to(device)
 
     # Setup losses and optimizer
     if args.image_loss == "mse":
@@ -500,21 +529,21 @@ if __name__ == "__main__":
         help="Output directory",
     )
     parser.add_argument(
-        "--video-path", default=TRAIN_DATA, help="Path to the training video"
+        "--video-path", default=TRAIN_DATA_MUSC, help="Path to the training video"
     )
     parser.add_argument(
         "--seg-path",
-        default=TRAIN_SEG_DATA,
+        default=TRAIN_SEG_DATA_MUSC,
         help="Path to the segmentation of the training video, if not available set to None",
     )
     # Dataset parameters
     parser.add_argument(
-        "--max_gap", type=int, default=20, help="Maximum temporal gap between 2 frames"
+        "--max_gap", type=int, default=1, help="Maximum temporal gap between 2 frames"
     )
     parser.add_argument(
         "--multiplier",
         type=int,
-        default=3,
+        default=1,
         help="Multiplier to have more pairs per epoch",
     )
     parser.add_argument(
@@ -537,21 +566,21 @@ if __name__ == "__main__":
         "--cycle_param",
         type=float,
         dest="cycle_param",
-        default=0.001,
+        default=0.005,
         help="Regularisation parameter for cycle loss",
     )
     parser.add_argument(
         "--image-loss", type=str, default="mse", help="Image loss to use: 'mse' or 'cc'"
     )
     parser.add_argument(
-        "--grad_loss", type=str, default="l1", help="Gradient loss to use: 'l1' or 'l2'"
+        "--grad_loss", type=str, default="l2", help="Gradient loss to use: 'l1' or 'l2'"
     )
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument(
         "--lambda",
         type=float,
         dest="lambda_param",
-        default=0.0005,
+        default=0.01,
         help="Regularisation parameter for smooth loss",
     )
     parser.add_argument(

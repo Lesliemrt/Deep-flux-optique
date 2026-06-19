@@ -25,7 +25,7 @@ from tqdm import tqdm
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
 )  # noqa: PTH100, PTH118, PTH120
-from my_utils.configs import (
+from src.my_utils.configs import (
     TEST_DATA,  # noqa: F401
     TEST_DATA_HELA,  # noqa: F401
     TEST_DATA_HSC,  # noqa: F401
@@ -36,11 +36,11 @@ from my_utils.configs import (
     TEST_SEG_DATA_MUSC,  # noqa: F401
     device,
 )
-from dataset import VxmVideoDataset
-from my_utils.utils import iou, viz
-from flow_visualizer import FlowVisualizer
+from src.dataset import VxmVideoDataset
+from src.my_utils.utils import iou, viz
+from src.flow_visualizer import FlowVisualizer
 from raft import RAFT
-from register_cells import (
+from src.register_cells import (
     register_pair,
     register_pair_tvl1,
     register_pair_raft,

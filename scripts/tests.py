@@ -23,7 +23,7 @@ import torch
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
 )  # noqa: PTH100, PTH118, PTH120
-from my_utils.configs import (
+from src.my_utils.configs import (
     HEIGHT,
     TEST_DATA,  # noqa: F401
     TEST_DATA_HELA,  # noqa: F401
@@ -36,17 +36,17 @@ from my_utils.configs import (
     WIDTH,
     device,
 )
-from my_utils.utils import interpole_and_pad, iou, viz, normalisation_params
-from flow_visualizer import FlowVisualizer
+from src.my_utils.utils import interpole_and_pad, iou, viz, normalisation_params
+from src.flow_visualizer import FlowVisualizer
 from raft import RAFT
-from register_cells_old import (
+from src.register_cells_old import (
     register_pair,
     register_pair_twoheads_vxm,
     register_pair_tvl1,
     register_pair_raft,
     register_pair_fb,
 )
-from model import TwoHeadsVxm
+from src.model import TwoHeadsVxm
 
 import voxelmorph_folder.voxelmorph as vxm
 
@@ -368,13 +368,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--video_path",
-        default=f"{TEST_DATA}",
+        default=f"{TEST_DATA_MUSC}",
         help="Moving image (source) filename",
     )
     parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
-        default=TEST_SEG_DATA,
+        default=TEST_SEG_DATA_MUSC,
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
@@ -385,7 +385,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/output_20260616_170657",
+        default="outputs/output_20260618_143836",
         help="Directory to find model and to save results",
     )
     args = parser.parse_args()
