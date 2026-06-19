@@ -43,3 +43,10 @@ check_untyped_defs = true
 
 [tool.ruff.lint.pylint]
 max-statements = 75
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

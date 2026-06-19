@@ -29,9 +29,10 @@ from tqdm import tqdm
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
 )  # noqa: PTH100, PTH118, PTH120
-from src.dataset import VxmVideoDataset
-from src.model import TwoHeadsVxm  # noqa: F401
-from src.my_utils.configs import (
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+from dataset import VxmVideoDataset
+from model import TwoHeadsVxm  # noqa: F401
+from my_utils.configs import (
     TRAIN_DATA_MUSC,  # noqa: F401
     TRAIN_SEG_DATA_MUSC,  # noqa: F401
     TRAIN_DATA,  # noqa: F401
@@ -40,7 +41,7 @@ from src.my_utils.configs import (
     TRAIN_SEG_DATA_HSC,  # noqa: F401
     device,
 )
-from src.my_utils.utils import linear_augment  # noqa: F401
+from my_utils.utils import linear_augment  # noqa: F401
 
 import voxelmorph_folder.voxelmorph as vxm
 
@@ -129,14 +130,45 @@ def pyramidal_flow(source, target, model, model_type, level=2):
     return field, field_inv
 
 
+class LossComputer(nn.Module):
+    def __init__(self, image_loss_fn, grad_loss_fn, seg_loss_fn):
+        super().__init__()
+        self.image_loss_fn = image_loss_fn
+        self.seg_loss_fn = seg_loss_fn
+        self.grad_loss_fn = grad_loss_fn
+
+    def compute_image_loss(self, img1, img2):
+        if isinstance(self.image_loss_fn, ne.nn.modules.NCC):
+            return 1 - self.image_loss_fn(img1, img2)  # to minimize ncc loss
+        else:
+            return self.image_loss_fn(img1, img2)
+
+    def compute_seg_loss(self, img1, img2):
+        if isinstance(self.seg_loss_fn, ne.nn.modules.Dice):
+            return 1 - self.seg_loss_fn(img1, img2)  # to minimize dice loss
+        else:
+            return self.seg_loss_fn(img1, img2)
+
+    def compute_grad_loss(self, flow):
+        return self.grad_loss_fn(flow)
+
+    def compute_cycle_loss(self, flow, warped_flow_inv):
+        return torch.norm(flow + warped_flow_inv, p=2, dim=1).mean()
+
+    def compute_background_loss(self, source_seg, target_seg, displacement):
+        union_seg = torch.clamp(target_seg + source_seg, 0.0, 1.0)
+        background_mask = 1.0 - union_seg
+        return torch.mean(
+            torch.abs(displacement) * background_mask
+        )  # L1 loss on the displacement in the background
+
+
 def train_epoch(
     epoch: int,
     model: nn.Module,
     dataloader: torch.utils.data.DataLoader,
     optimizer: torch.optim.Optimizer,
-    image_loss_fn: nn.Module,
-    grad_loss_fn: nn.Module,
-    seg_loss_fn: nn.Module,
+    loss_computer: nn.Module,
     loss_weights: Sequence[float],
     bidirectionnal: bool,
     background: bool,
@@ -213,22 +245,14 @@ def train_epoch(
             # )
 
             # Image loss for backward displacement
-            if str(image_loss_fn) == "NCC()":
-                img_loss += 1 - image_loss_fn(
-                    source, warped_target
-                )  # to minimize ncc loss
-            else:
-                img_loss += image_loss_fn(source, warped_target)
+            img_loss += loss_computer.compute_image_loss(source, warped_target)
 
             # Grad loss for backward displacement
-            if str(grad_loss_fn) == "NCC()":
-                grad_loss += 1 - grad_loss_fn(displacement_inv)  # to minimize ncc loss
-            else:
-                grad_loss += grad_loss_fn(displacement_inv)
+            grad_loss += loss_computer.compute_grad_loss(displacement_inv)
 
             # Cycle loss
             warped_flow_inv = spatial_transformer(displacement_inv, displacement)
-            cycle_loss = torch.norm(displacement + warped_flow_inv, p=2, dim=1).mean()
+            cycle_loss = loss_computer.compute_cycle_loss(displacement, warped_flow_inv)
             # Add a progressiv weight to loss (start at 0, max at loss_weights[4])
             cycle_weight = linear_augment(
                 start=5, end=15, max_weight=loss_weights[4], epoch=epoch
@@ -244,24 +268,17 @@ def train_epoch(
             )  # TODO
 
         # Image loss for forward displacement
-        if background:
-            # Multiply image * mask to focus only on cells not background
-            warped_source_seg = spatial_transformer(source_seg, displacement)
-            warped_source_seg = torch.clamp(warped_source_seg, 0, 1)
-            target = target * target_seg
-            warped_source = warped_source * warped_source_seg
-        if str(image_loss_fn) == "NCC()":
-            img_loss += (
-                1 - image_loss_fn(target, warped_source)[0][0]
-            )  # to minimize ncc loss
-        else:
-            img_loss += image_loss_fn(target, warped_source)
+        # if background:
+        #     # Multiply image * mask to focus only on cells not background
+        #     warped_source_seg = spatial_transformer(source_seg, displacement)
+        #     warped_source_seg = torch.clamp(warped_source_seg, 0, 1)
+        #     target = target * target_seg
+        #     warped_source = warped_source * warped_source_seg
+
+        img_loss += loss_computer.compute_image_loss(target, warped_source)
 
         # Grad loss (smoothness)
-        if str(grad_loss_fn) == "NCC()":
-            grad_loss += 1 - grad_loss_fn(displacement)  # to minimize ncc loss
-        else:
-            grad_loss += grad_loss_fn(displacement)
+        grad_loss += loss_computer.compute_grad_loss(displacement)
 
         # Add to the total loss
         loss += loss_weights[0] * img_loss + loss_weights[1] * grad_loss
@@ -292,31 +309,23 @@ def train_epoch(
             warped_source_seg = spatial_transformer(source_seg, displacement)
             warped_source_seg = torch.clamp(warped_source_seg, 0, 1)
             # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)  # noqa: E501, ERA001
-            if str(seg_loss_fn) == "Dice()":
-                seg_loss += (
-                    1 - seg_loss_fn(target_seg, warped_source_seg).squeeze()
-                )  # to minimize dice loss
-            else:
-                seg_loss += seg_loss_fn(target_seg, warped_source_seg).squeeze()
+            seg_loss += loss_computer.compute_seg_loss(
+                target_seg, warped_source_seg
+            ).squeeze()
             if bidirectionnal:
                 warped_target_seg = spatial_transformer(target_seg, displacement_inv)
                 warped_target_seg = torch.clamp(warped_target_seg, 0, 1)
                 # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)  # noqa: E501, ERA001
-                if str(seg_loss_fn) == "Dice()":
-                    seg_loss += (
-                        1 - seg_loss_fn(source_seg, warped_target_seg).squeeze()
-                    )  # to minimize dice loss
-                else:
-                    seg_loss += seg_loss_fn(source_seg, warped_target_seg).squeeze()
-            # if background:
-            #     # Add loss to avoid field in the background
-            #     union_seg = torch.clamp(target_seg + source_seg, 0.0, 1.0)
-            #     background_mask = 1.0 - union_seg
-            #     background_loss = torch.mean(
-            #         torch.abs(displacement) * background_mask
-            #     )  # L1 loss on the displacement in the background
-            #     loss += loss_weights[3] * background_loss
-            #     epoch_background_loss += background_loss.item()
+                seg_loss += loss_computer.compute_seg_loss(
+                    source_seg, warped_target_seg
+                ).squeeze()
+            if background:
+                # Add loss to avoid field in the background
+                background_loss = loss_computer.compute_background_loss(
+                    source_seg, target_seg, displacement
+                )
+                loss += loss_weights[3] * background_loss
+                epoch_background_loss += background_loss.item()
             if args.seg_type is not None:
                 loss += loss_weights[2] * seg_loss
                 epoch_seg_loss += seg_loss.item()
@@ -390,6 +399,8 @@ def main(args):
         )
     else:
         seg_loss_fn = ne.nn.modules.Dice()
+
+    # Reguralisation parameters for each loss
     loss_weights = [
         1.0,
         args.lambda_param,
@@ -397,6 +408,7 @@ def main(args):
         args.background_param,
         args.cycle_param,
     ]
+    loss_computer = LossComputer(image_loss_fn, grad_loss_fn, seg_loss_fn)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # Create dataloader
@@ -430,9 +442,7 @@ def main(args):
             model=model,
             dataloader=train_loader,
             optimizer=optimizer,
-            image_loss_fn=image_loss_fn,
-            grad_loss_fn=grad_loss_fn,
-            seg_loss_fn=seg_loss_fn,
+            loss_computer=loss_computer,
             loss_weights=loss_weights,
             bidirectionnal=args.bidirectionnal,
             background=args.background,
@@ -529,21 +539,21 @@ if __name__ == "__main__":
         help="Output directory",
     )
     parser.add_argument(
-        "--video-path", default=TRAIN_DATA_MUSC, help="Path to the training video"
+        "--video-path", default=TRAIN_DATA, help="Path to the training video"
     )
     parser.add_argument(
         "--seg-path",
-        default=TRAIN_SEG_DATA_MUSC,
+        default=TRAIN_SEG_DATA,
         help="Path to the segmentation of the training video, if not available set to None",
     )
     # Dataset parameters
     parser.add_argument(
-        "--max_gap", type=int, default=1, help="Maximum temporal gap between 2 frames"
+        "--max_gap", type=int, default=20, help="Maximum temporal gap between 2 frames"
     )
     parser.add_argument(
         "--multiplier",
         type=int,
-        default=1,
+        default=3,
         help="Multiplier to have more pairs per epoch",
     )
     parser.add_argument(
@@ -580,7 +590,7 @@ if __name__ == "__main__":
         "--lambda",
         type=float,
         dest="lambda_param",
-        default=0.01,
+        default=0.001,
         help="Regularisation parameter for smooth loss",
     )
     parser.add_argument(
@@ -598,7 +608,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--background_param",
         type=float,
-        default=0.002,
+        default=0.01,
         help="Parameter for background loss, only available if segmentations available",
     )
     parser.add_argument(

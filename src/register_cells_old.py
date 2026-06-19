@@ -20,7 +20,7 @@ import torch
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
 )  # noqa: PTH100, PTH118, PTH120
-from scripts.train_cells import NormalizeMinMax, pyramidal_flow
+from scripts.train_cells import NormalizeMinMax
 from my_utils.configs import HEIGHT, WIDTH, device
 from my_utils.utils import interpole_and_pad, viz, normalise
 
@@ -77,13 +77,13 @@ def register_pair(moving, fixed, model, global_min, global_max):
 
     # Predict
     with torch.no_grad():
-        #     field, moved = model(
-        #         source=input_moving,
-        #         target=input_fixed,
-        #         return_warped_source=True,
-        #         return_field_type="displacement",
-        #     )
-        field = pyramidal_flow(input_moving, input_fixed, model, level=2)
+        field, moved = model(
+            source=input_moving,
+            target=input_fixed,
+            return_warped_source=True,
+            return_field_type="displacement",
+        )
+        # field = pyramidal_flow(input_moving, input_fixed, model, level=2)
         moved = spatial_transformer(input_moving, field)
 
     fig, ax = plt.subplots(2, 2, figsize=(12, 12))
