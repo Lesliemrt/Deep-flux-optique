@@ -23,7 +23,8 @@ import torch
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
 )  # noqa: PTH100, PTH118, PTH120
-from my_utils.configs import (
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+from my_utils.configs import (  # type: ignore
     HEIGHT,
     TEST_DATA,  # noqa: F401
     TEST_DATA_HELA,  # noqa: F401
@@ -385,7 +386,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/output_20260616_170657",
+        default="outputs/output_20260619_160959",
         help="Directory to find model and to save results",
     )
     args = parser.parse_args()

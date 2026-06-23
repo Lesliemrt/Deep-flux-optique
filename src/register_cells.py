@@ -20,7 +20,7 @@ import torch
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
 )  # noqa: PTH100, PTH118, PTH120
-from train_cells import NormalizeMinMax
+from scripts.train_cells import NormalizeMinMax
 from my_utils.configs import HEIGHT, WIDTH, device
 from my_utils.utils import interpole_and_pad, viz, normalise
 
