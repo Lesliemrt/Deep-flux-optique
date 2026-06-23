@@ -3,6 +3,7 @@ from typing import List, Optional, Sequence, Tuple, Union
 import torch
 from torch import nn
 import torch.nn.functional as F
+import neurite as ne
 
 import voxelmorph_folder.voxelmorph as vxm
 
@@ -131,7 +132,7 @@ class ConvBlock(nn.Module):
         return self.conv(x)
 
 
-class TwoHeadsUNet(nn.Module):
+class TwoFlowsUNet(nn.Module):
     """
     Flexible UNet with many configuration options.
 
@@ -358,7 +359,7 @@ class TwoHeadsUNet(nn.Module):
         return feature_tensor_fwd, feature_tensor_bwd
 
 
-class TwoHeadsVxm(nn.Module):
+class WarperVxm(nn.Module):
     """A network architecture built on `BasicUNet` to perform nD image registration using a flow field.
 
     Parameters
@@ -405,6 +406,7 @@ class TwoHeadsVxm(nn.Module):
         source_channels: int,
         target_channels: int,
         nb_features: Sequence[int] = (16, 16, 16, 16, 16),
+        model_type: str,
         # activations: list[Callable | str] | Callable | str | None = nn.ReLU,
         # final_activation: str | nn.Module | None = None,
         flow_initializer: float = 1e-5,
@@ -441,11 +443,30 @@ class TwoHeadsVxm(nn.Module):
 
         self.device = device
 
-        self.model = TwoHeadsUNet(
-            ndim=ndim,
-            in_channels=(source_channels + target_channels),
-            out_channels=ndim,
-            nb_features=nb_features,
+        self.model_type = model_type
+
+        if model_type == "twoflows":
+            self.model = TwoFlowsUNet(
+                ndim=ndim,
+                in_channels=(source_channels + target_channels),
+                out_channels=ndim,
+                nb_features=nb_features,
+            ).to(self.device)
+        elif model_type == "flowseg":
+            self.model = FlowSegUNet(
+                ndim=ndim,
+                in_channels=(source_channels + target_channels),
+                out_channels=ndim,
+                nb_features=nb_features,
+            ).to(self.device)
+        elif model_type == "voxelmorph":
+            self.model = ne.nn.models.BasicUNet(
+                ndim=ndim,
+                in_channels=(source_channels + target_channels),
+                out_channels=ndim,
+                nb_features=nb_features,
+                activations=nn.ReLU,
+                final_activation=None,
         ).to(self.device)
 
         self._init_flow_layer(ndim, 1e-5)
@@ -513,18 +534,26 @@ class TwoHeadsVxm(nn.Module):
         ValueError
             If `return_field_type` is not one of {'velocity', 'svf', 'displacement'}.
         """
+        res = {}
 
         # Pass combined features through the model's backbone & flow layer
         combined_features = torch.cat([source, target], dim=1)
-        displacement_fwd, displacement_bwd = self.model(combined_features)
+        if self.model_type == "twoflows":
+            displacement, displacement_bwd = self.model(combined_features)
+            res["displacement_bwd"] = displacement_bwd
+        elif self.model_type == "voxelmorph":
+            displacement = self.flow_layer(
+            combined_features
+        ) # TODO check si peux pas faire comme twoflows
 
         if return_warped_source:
-            warped_source = self.spatial_transformer(source, displacement_fwd)
-            return (displacement_fwd, displacement_bwd, warped_source)
+            warped_source = self.spatial_transformer(source, displacement)
+            res["warped_source"]=warped_source
         # if return_warped_target:
         #     warped_target = self.spatial_transformer(target, neg_displacement)
         #     outputs.append(warped_target)
-        return (displacement_fwd, displacement_bwd)
+        res["displacement"] = displacement
+        return res #TODO return dict
 
     def _init_flow_layer(self, ndim: int, flow_initializer: float = 1e-5) -> None:
         """Initialize the flow layer with custom weight initialization.
@@ -545,18 +574,260 @@ class TwoHeadsVxm(nn.Module):
             normal distribution (mean=0). Default is `1e-5`.
         """
         # Initialize weights from Normal(mean=0, std=flow_initializer)
-        with torch.no_grad():
-            torch.nn.init.normal_(
-                self.model.out_layer_fwd.conv[0].weight, mean=0.0, std=flow_initializer
-            )
-            # Set the bias term(s) to zero for the first (and only) conv
-            if self.model.out_layer_fwd.conv[0].bias is not None:
-                self.model.out_layer_fwd.conv[0].bias.zero_()
+        if self.model_type == "twoflows":
+            with torch.no_grad():
+                torch.nn.init.normal_(
+                    self.model.out_layer_fwd.conv[0].weight, mean=0.0, std=flow_initializer
+                )
+                # Set the bias term(s) to zero for the first (and only) conv
+                if self.model.out_layer_fwd.conv[0].bias is not None:
+                    self.model.out_layer_fwd.conv[0].bias.zero_()
 
-        with torch.no_grad():
-            torch.nn.init.normal_(
-                self.model.out_layer_bwd.conv[0].weight, mean=0.0, std=flow_initializer
-            )
-            # Set the bias term(s) to zero for the first (and only) conv
-            if self.model.out_layer_bwd.conv[0].bias is not None:
-                self.model.out_layer_bwd.conv[0].bias.zero_()
+            with torch.no_grad():
+                torch.nn.init.normal_(
+                    self.model.out_layer_bwd.conv[0].weight, mean=0.0, std=flow_initializer
+                )
+                # Set the bias term(s) to zero for the first (and only) conv
+                if self.model.out_layer_bwd.conv[0].bias is not None:
+                    self.model.out_layer_bwd.conv[0].bias.zero_()
+        elif self.model_type == "voxelmorph":
+            flow_layer = ne.nn.modules.ConvBlock(ndim, 2, 2).to(self.device)
+            # Initialize weights from Normal(mean=0, std=flow_initializer)
+            with torch.no_grad():
+                torch.nn.init.normal_(
+                    flow_layer.conv0.weight, mean=0.0, std=flow_initializer
+                )
+                # Set the bias term(s) to zero for the first (and only) conv
+                if flow_layer.conv0.bias is not None:
+                    flow_layer.conv0.bias.zero_()
+        # Register the flow layer as a submodule
+        self.add_module("flow_layer", flow_layer)
+
+
+
+class FlowSegUNet(nn.Module):
+    """
+    Flexible UNet with many configuration options.
+
+    Attributes
+    ----------
+    downsampling_conv_blocks : nn.ModuleList
+        Downsampling convolutional blocks.
+    lowest_resolution_conv_block : nn.Module
+        Central convolutional block at the lowest spatial resolution.
+    upsampling_conv_blocks : nn.ModuleList
+        Upsampling convolutional blocks.
+    out_layer : nn.Module
+        Final output layer.
+    down_actual_channels : list[int]
+        Actual output channel counts for each downsampling block (accounts for pass-through levels).
+
+    Notes
+    -----
+    `BasicUNet` is derived from the architecture of the UNet described in
+    [Olaf Ronneberger](https://arxiv.org/pdf/1505.04597)
+
+    Use `0` in `nb_features` to indicate pass-through levels that skip convolutions:
+    - Downsampling `0`: Pool only, no convolution. Channels preserved from input.
+    - Upsampling `0`: Upsample + concat skip only, no conv. Output = upsampled + skip channels.
+
+    Examples
+    --------
+    >>> model = BasicUNet(
+    ...     ndim=2, in_channels=1, out_channels=1,
+    ...     nb_features=[16, 32, 64],
+    ...     normalizations='instance', activations=nn.ReLU
+    ... )
+    >>> input_tensor = torch.randn(1, 1, 128, 128)
+    >>> output = model(input_tensor)
+    >>> output.shape
+    torch.Size([1, 1, 128, 128])
+
+    >>> # Skip full-resolution convolutions using 0
+    >>> model = BasicUNet(
+    ...     ndim=2, in_channels=1, out_channels=1,
+    ...     nb_features=[0, 32, 64],  # Pass-through at full resolution
+    ... )
+    """
+
+    def __init__(
+        self,
+        ndim: int,
+        in_channels: int,
+        out_channels: int,
+        nb_features: Union[Sequence[int], Sequence[Sequence[int]]] = (
+            16,
+            16,
+            16,
+            16,
+            16,
+        ),
+    ):
+        """
+        Initialize `BasicUNet`
+
+        Parameters
+        ----------
+        ndim : int
+            Number of spatial dimensions of the input (1, 2, or 3).
+        in_channels : int
+            Number of input channels.
+        out_channels : int
+            Number of output channels.
+        nb_features : Union[Sequence[int], Sequence[Sequence[int]]], default=(16, 16, 16, 16, 16)
+            Number of features at each level of the unet. Can be:
+            - Single sequence: [16, 32, 64] (symmetric - downsampling uses [16, 32, 64],
+              upsampling uses [64, 32, 16])
+            - Sequence of sequences: [[downsampling_features], [upsampling_features]] for complete
+              asymmetry
+            Use `0` to indicate pass-through levels (no convolution):
+            - Downsampling: [0, 32, 64] skips conv at first level (pool only, channels preserved)
+            - Upsampling: [64, 32, 0] skips conv at last level (upsample + skip concat only)
+        padding_mode : {'zeros', 'replicate', 'reflect'}, default='zeros'
+            Padding mode for convolutional layers.
+        upsample_mode : {'linear', 'transposed', 'nearest'}, default='linear'
+            Upsampling mode for upsampling path.
+        normalizations : Sequence[Union[Callable, str]], Callable, str, or None, default=None
+            Normalization layers to use in each block. Can be a string or a sequence
+            of strings specifying normalizations for each layer, or `None` for no normalization.
+        activations : Sequence[Union[Callable, str]], Callable, str, or None, default=nn.ReLU
+            Activation functions to use in each block. Can be a callable,
+            a string, or a sequence of strings/callables.
+        order : str, default='ca'
+            Order of operations in each convolutional block (e.g., 'ncaca').
+        final_activation : Union[str, nn.Module, None], default=None
+            Activation function applied after the final output layer.
+        skip_connections : bool, default=True
+            Enable skip connections to concatenate features from downsampling path with upsampling
+            path at matching resolutions.
+
+        Examples
+        --------
+        >>> # Symmetric UNet (default behavior)
+        >>> model = BasicUNet(
+        ...     ndim=2, in_channels=1, out_channels=1,
+        ...     nb_features=[16, 32, 64],
+        ...     activations=nn.ReLU
+        ... )
+        >>> # Asymmetric UNet with different downsampling/upsampling features
+        >>> model = BasicUNet(
+        ...     ndim=2, in_channels=1, out_channels=1,
+        ...     nb_features=[[16, 32, 64], [128, 64, 32]],  # Lowest resolution: 64 -> 128
+        ...     skip_connections=True,  # Fully supports asymmetric architectures!
+        ...     activations=nn.ReLU
+        ... )
+        >>> # Skip full-resolution convolutions
+        >>> model = BasicUNet(
+        ...     ndim=2, in_channels=1, out_channels=1,
+        ...     nb_features=[0, 32, 64],  # First level: pool only, no conv
+        ... )
+        """
+        super().__init__()
+
+        self.ndim = ndim
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+
+        # Symmetric Unet
+        nb_downsampling_features = tuple(nb_features)
+        nb_upsampling_features = tuple(reversed(nb_features))
+        nb_skip_channels = tuple(reversed(nb_features))
+
+        # -------- Encoder ---------
+        self.downsampling_conv_blocks = downsampling_conv_blocks(
+            ndim=ndim,
+            in_channels=self.in_channels,
+            nb_features=nb_downsampling_features,
+        )
+
+        # -------- Bottleneck---------
+        bottleneck_channels = nb_downsampling_features[-1]
+        self.lowest_resolution_conv_block = ConvBlock(
+            ndim=ndim,
+            in_channels=bottleneck_channels,
+            out_channels=bottleneck_channels,
+        )
+
+        # Upsampling
+        self.upsample = nn.Upsample(scale_factor=2, mode="bilinear")
+        final_channels = nb_upsampling_features[-1]
+
+        # -------- Decoder FWD ---------
+        self.upsampling_conv_blocks_fwd = upsampling_conv_blocks(
+            ndim=ndim,
+            nb_features=nb_upsampling_features,
+            in_channels=bottleneck_channels,
+            skip_channels=nb_skip_channels,
+        )
+
+        self.out_layer_fwd = ConvBlock(
+            ndim=ndim,
+            in_channels=final_channels,
+            out_channels=out_channels,
+            kernel_size=1,
+            padding=0,
+        )
+
+        # -------- Decoder BWD ---------
+        self.upsampling_conv_blocks_bwd = upsampling_conv_blocks(
+            ndim=ndim,
+            nb_features=nb_upsampling_features,
+            in_channels=bottleneck_channels,
+            skip_channels=nb_skip_channels,
+        )
+
+        self.out_layer_bwd = ConvBlock(
+            ndim=ndim,
+            in_channels=final_channels,
+            out_channels=out_channels,
+            kernel_size=1,
+            padding=0,
+        )
+
+    def forward(self, feature_tensor: torch.Tensor):
+        """
+        Forward pass through the `BasicUNet` model.
+
+        Parameters
+        ----------
+        feature_tensor : torch.Tensor
+            Tensor to be passed through the model. Assumed to have batch and channel dimensions.
+
+        Returns
+        -------
+        torch.Tensor
+            Result of forward pass of the model.
+        """
+        skip_connections = []
+
+        # -------------------------- Downsampling path ----------------------------------------
+        for block in self.downsampling_conv_blocks:
+            feature_tensor = block(feature_tensor)
+            skip_connections.append(feature_tensor)
+            feature_tensor = F.max_pool2d(feature_tensor, 2)
+
+        # -------------------------- Bottleneck ----------------------------------------
+        feature_tensor = self.lowest_resolution_conv_block(feature_tensor)
+
+        # -------------------------- Upsampling path FWD ----------------------------------------
+        feature_tensor_fwd = feature_tensor
+        for block, skip in zip(
+            self.upsampling_conv_blocks_fwd, reversed(skip_connections)
+        ):
+            feature_tensor_fwd = self.upsample(feature_tensor_fwd)
+            feature_tensor_fwd = torch.cat([feature_tensor_fwd, skip], dim=1)
+            feature_tensor_fwd = block(feature_tensor_fwd)
+        feature_tensor_fwd = self.out_layer_fwd(feature_tensor_fwd)
+
+        # -------------------------- Upsampling path BWD ----------------------------------------
+        feature_tensor_bwd = feature_tensor
+        for block, skip in zip(
+            self.upsampling_conv_blocks_bwd, reversed(skip_connections)
+        ):
+            feature_tensor_bwd = self.upsample(feature_tensor_bwd)
+            feature_tensor_bwd = torch.cat([feature_tensor_bwd, skip], dim=1)
+            feature_tensor_bwd = block(feature_tensor_bwd)
+        feature_tensor_bwd = self.out_layer_bwd(feature_tensor_bwd)
+
+        return feature_tensor_fwd, feature_tensor_bwd
+
