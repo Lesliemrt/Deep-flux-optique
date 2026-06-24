@@ -118,15 +118,16 @@ def upsampling_conv_blocks(
 
 
 class ConvBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, ndim=2, kernel_size=3, padding=1):
+    def __init__(self, in_channels, out_channels, ndim=2, kernel_size=3, padding=1, activation = True, batchnorm = True):
         super().__init__()
-        self.conv = nn.Sequential(
-            nn.Conv2d(
+        modules = [nn.Conv2d(
                 in_channels, out_channels, kernel_size=kernel_size, padding=padding
-            ),
-            nn.ReLU(),  # the one used by default in vxm
-            nn.BatchNorm2d(out_channels),  # None by default in vxm
-        )
+            )]
+        if activation :
+            modules.append(nn.ReLU())  # the one used by default in vxm
+        if batchnorm :
+            modules.append(nn.BatchNorm2d(out_channels))  # None by default in vxm
+        self.conv = nn.Sequential(*modules)
 
     def forward(self, x):
         return self.conv(x)
@@ -293,6 +294,8 @@ class TwoFlowsUNet(nn.Module):
             out_channels=out_channels,
             kernel_size=1,
             padding=0,
+            activation = False,
+            batchnorm = False
         )
 
         # -------- Decoder BWD ---------
@@ -309,6 +312,8 @@ class TwoFlowsUNet(nn.Module):
             out_channels=out_channels,
             kernel_size=1,
             padding=0,
+            activation = False,
+            batchnorm = False
         )
 
     def forward(self, feature_tensor: torch.Tensor):
@@ -406,7 +411,7 @@ class WarperVxm(nn.Module):
         source_channels: int,
         target_channels: int,
         nb_features: Sequence[int] = (16, 16, 16, 16, 16),
-        model_type: str,
+        model_type: str = "voxelmorph",
         # activations: list[Callable | str] | Callable | str | None = nn.ReLU,
         # final_activation: str | nn.Module | None = None,
         flow_initializer: float = 1e-5,
@@ -445,21 +450,21 @@ class WarperVxm(nn.Module):
 
         self.model_type = model_type
 
-        if model_type == "twoflows":
+        if self.model_type == "twoflows":
             self.model = TwoFlowsUNet(
                 ndim=ndim,
                 in_channels=(source_channels + target_channels),
                 out_channels=ndim,
                 nb_features=nb_features,
             ).to(self.device)
-        elif model_type == "flowseg":
+        elif self.model_type == "flowseg":
             self.model = FlowSegUNet(
                 ndim=ndim,
                 in_channels=(source_channels + target_channels),
                 out_channels=ndim,
                 nb_features=nb_features,
             ).to(self.device)
-        elif model_type == "voxelmorph":
+        elif self.model_type == "voxelmorph":
             self.model = ne.nn.models.BasicUNet(
                 ndim=ndim,
                 in_channels=(source_channels + target_channels),
@@ -542,9 +547,13 @@ class WarperVxm(nn.Module):
             displacement, displacement_bwd = self.model(combined_features)
             res["displacement_bwd"] = displacement_bwd
         elif self.model_type == "voxelmorph":
+            unet_out = self.model(combined_features)
             displacement = self.flow_layer(
-            combined_features
-        ) # TODO check si peux pas faire comme twoflows
+            unet_out
+        )
+        elif self.model_type == "flowseg":
+            displacement, segmentation = self.model(combined_features)
+            res["segmentation"] = segmentation
 
         if return_warped_source:
             warped_source = self.spatial_transformer(source, displacement)
@@ -553,7 +562,7 @@ class WarperVxm(nn.Module):
         #     warped_target = self.spatial_transformer(target, neg_displacement)
         #     outputs.append(warped_target)
         res["displacement"] = displacement
-        return res #TODO return dict
+        return res
 
     def _init_flow_layer(self, ndim: int, flow_initializer: float = 1e-5) -> None:
         """Initialize the flow layer with custom weight initialization.
@@ -600,8 +609,16 @@ class WarperVxm(nn.Module):
                 # Set the bias term(s) to zero for the first (and only) conv
                 if flow_layer.conv0.bias is not None:
                     flow_layer.conv0.bias.zero_()
-        # Register the flow layer as a submodule
-        self.add_module("flow_layer", flow_layer)
+            # Register the flow layer as a submodule
+            self.add_module("flow_layer", flow_layer)
+        elif self.model_type == "flowseg":
+            with torch.no_grad():
+                torch.nn.init.normal_(
+                    self.model.out_layer_fwd.conv[0].weight, mean=0.0, std=flow_initializer
+                )
+                # Set the bias term(s) to zero for the first (and only) conv
+                if self.model.out_layer_fwd.conv[0].bias is not None:
+                    self.model.out_layer_fwd.conv[0].bias.zero_()
 
 
 
@@ -655,12 +672,13 @@ class FlowSegUNet(nn.Module):
         ndim: int,
         in_channels: int,
         out_channels: int,
+        nb_class_segmentation: int = 1,
         nb_features: Union[Sequence[int], Sequence[Sequence[int]]] = (
             16,
-            16,
-            16,
-            16,
-            16,
+            32,
+            64,
+            128,
+            256,
         ),
     ):
         """
@@ -727,6 +745,7 @@ class FlowSegUNet(nn.Module):
         self.ndim = ndim
         self.in_channels = in_channels
         self.out_channels = out_channels
+        self.nb_class_segmentation = nb_class_segmentation
 
         # Symmetric Unet
         nb_downsampling_features = tuple(nb_features)
@@ -752,7 +771,7 @@ class FlowSegUNet(nn.Module):
         self.upsample = nn.Upsample(scale_factor=2, mode="bilinear")
         final_channels = nb_upsampling_features[-1]
 
-        # -------- Decoder FWD ---------
+        # -------- Decoder Flow FWD ---------
         self.upsampling_conv_blocks_fwd = upsampling_conv_blocks(
             ndim=ndim,
             nb_features=nb_upsampling_features,
@@ -766,22 +785,26 @@ class FlowSegUNet(nn.Module):
             out_channels=out_channels,
             kernel_size=1,
             padding=0,
+            activation = False,
+            batchnorm = False
         )
 
-        # -------- Decoder BWD ---------
-        self.upsampling_conv_blocks_bwd = upsampling_conv_blocks(
+        # -------- Decoder Segmentation ---------
+        self.upsampling_conv_blocks_seg = upsampling_conv_blocks(
             ndim=ndim,
             nb_features=nb_upsampling_features,
             in_channels=bottleneck_channels,
             skip_channels=nb_skip_channels,
         )
 
-        self.out_layer_bwd = ConvBlock(
+        self.out_layer_seg = ConvBlock(
             ndim=ndim,
             in_channels=final_channels,
-            out_channels=out_channels,
+            out_channels=self.nb_class_segmentation,
             kernel_size=1,
             padding=0,
+            activation = False,
+            batchnorm = False
         )
 
     def forward(self, feature_tensor: torch.Tensor):
@@ -819,15 +842,15 @@ class FlowSegUNet(nn.Module):
             feature_tensor_fwd = block(feature_tensor_fwd)
         feature_tensor_fwd = self.out_layer_fwd(feature_tensor_fwd)
 
-        # -------------------------- Upsampling path BWD ----------------------------------------
-        feature_tensor_bwd = feature_tensor
+        # -------------------------- Upsampling path segmentation ----------------------------------------
+        feature_tensor_seg = feature_tensor
         for block, skip in zip(
-            self.upsampling_conv_blocks_bwd, reversed(skip_connections)
+            self.upsampling_conv_blocks_seg, reversed(skip_connections)
         ):
-            feature_tensor_bwd = self.upsample(feature_tensor_bwd)
-            feature_tensor_bwd = torch.cat([feature_tensor_bwd, skip], dim=1)
-            feature_tensor_bwd = block(feature_tensor_bwd)
-        feature_tensor_bwd = self.out_layer_bwd(feature_tensor_bwd)
+            feature_tensor_seg = self.upsample(feature_tensor_seg)
+            feature_tensor_seg = torch.cat([feature_tensor_seg, skip], dim=1)
+            feature_tensor_seg = block(feature_tensor_seg)
+        feature_tensor_seg = self.out_layer_seg(feature_tensor_seg)
 
-        return feature_tensor_fwd, feature_tensor_bwd
+        return feature_tensor_fwd, feature_tensor_seg
 
