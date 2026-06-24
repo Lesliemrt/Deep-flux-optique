@@ -31,7 +31,7 @@ sys.path.append(
 )  # noqa: PTH100, PTH118, PTH120
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from dataset import VxmVideoDataset
-from model import TwoHeadsVxm  # noqa: F401
+from model import WarperVxm  # noqa: F401
 from my_utils.configs import (
     TRAIN_DATA_MUSC,  # noqa: F401
     TRAIN_SEG_DATA_MUSC,  # noqa: F401
@@ -143,7 +143,7 @@ class LossComputer(nn.Module):
         else:
             return self.image_loss_fn(img1, img2)
 
-    def compute_seg_loss(self, img1, img2):
+    def compute_flow_with_seg_loss(self, img1, img2):
         if isinstance(self.seg_loss_fn, ne.nn.modules.Dice):
             return 1 - self.seg_loss_fn(img1, img2)  # to minimize dice loss
         else:
@@ -196,6 +196,7 @@ def train_epoch(
     total_loss = 0.0
     epoch_img_loss = 0.0
     epoch_grad_loss = 0.0
+    epoch_flow_with_seg_loss = 0.0
     epoch_seg_loss = 0.0
     epoch_background_loss = 0.0
     epoch_cycle_loss = 0.0
@@ -218,31 +219,32 @@ def train_epoch(
             source_seg = batch["source_seg"].to(device).unsqueeze(1)  # add channel dim
             target_seg = batch["target_seg"].to(device).unsqueeze(1)  # add channel dim
 
+        # Loss initialisation
         loss = 0.0
         img_loss = 0.0
         seg_loss = 0.0
         grad_loss = 0.0
-
+        
         # Get the displacement and the warped source image from the model
-        # displacement, warped_source = model(
-        #     source,
-        #     target,
-        #     return_warped_source=True,
-        #     return_field_type="displacement",
-        # )  # TODO
-        if args.pyramidal:
-            displacement = pyramidal_flow(
-                source, target, model, model_type="voxelmorph", level=2
-            )
-            warped_source = spatial_transformer(source, displacement)
-        if bidirectionnal:
-            displacement, displacement_inv, warped_source = model(
-                source, target, return_warped_source=True
-            )
-            warped_target = spatial_transformer(target, displacement_inv)  # TODO
-            # displacement_inv, warped_target = model(
-            #     target, source, return_warped_source=True
-            # )
+        res = model(source, target, return_warped_source=True)
+        displacement = res["displacement"]
+        warped_source = res["warepd_source"]
+
+         # if args.pyramidal:
+        #     displacement = pyramidal_flow(
+        #         source, target, model, model_type="voxelmorph", level=2
+        #     )
+        #     warped_source = spatial_transformer(source, displacement) # TODO : change that
+
+        # Compute image loss and grad loss for displacement forward
+        img_loss += loss_computer.compute_image_loss(target, warped_source)
+        grad_loss += loss_computer.compute_grad_loss(displacement) # Smoothness
+
+        # If model_type = twoflows, the backward flow (displacement_inv) is computed as well
+        # Add the corresponding loss (image loss and grad loss for bwd flow + cycle loss)
+        if "displacement_inv" in res:
+            displacement_inv = res["displacement_inv"]
+            warped_target = spatial_transformer(target, displacement_inv)
 
             # Image loss for backward displacement
             img_loss += loss_computer.compute_image_loss(source, warped_target)
@@ -259,13 +261,19 @@ def train_epoch(
             )
             loss += cycle_weight * cycle_loss
             epoch_cycle_loss += cycle_loss.item()
-        else:
-            displacement, warped_source = model(
-                source,
-                target,
-                return_warped_source=True,
-                return_field_type="displacement",
-            )  # TODO
+
+        # If model_type = flowseg, the segmentation map is computed as well
+        # Add the corresponding loss
+        if "segmentation" in res:
+            source_seg_pred = res["source_segmentation"] #TODO : modify res to have source_segmentation + target_segmentatio n
+            target_seg_pred = res["target_segmentation"]
+
+            seg_loss += loss_computer.compute_seg_loss(source_seg_pred, source_seg)
+            seg_loss += loss_computer.compute_seg_loss(target_seg_pred, target_seg) # TODO create compute seg loss
+
+            #TODO create seg_weight dans la liste
+            loss += seg_weight * seg_loss
+            epoch_seg_loss += seg_loss.item()
 
         # Image loss for forward displacement
         # if background:
@@ -275,48 +283,24 @@ def train_epoch(
         #     target = target * target_seg
         #     warped_source = warped_source * warped_source_seg
 
-        img_loss += loss_computer.compute_image_loss(target, warped_source)
-
-        # Grad loss (smoothness)
-        grad_loss += loss_computer.compute_grad_loss(displacement)
 
         # Add to the total loss
         loss += loss_weights[0] * img_loss + loss_weights[1] * grad_loss
 
-        # If args.bidirectionnal, compute the cycle loss and add it to the total loss
-        # if bidirectionnal:
-        #     displacement_inv, warped_target = model(
-        #         target,
-        #         source,
-        #         return_warped_source=True,
-        #         return_field_type="displacement",
-        #     )
-
-        #     half_dis = displacement * (0.5)
-        #     half_dis_inv = displacement_inv * (0.5)
-        #     half_warped_source = spatial_transformer(source, half_dis)
-        #     half_warped_target = spatial_transformer(target, half_dis_inv)
-        #     cycle_loss = image_loss_fn(half_warped_target, half_warped_source)
-        #     if str(image_loss_fn) == "NCC()":
-        #         cycle_loss = 1 - cycle_loss  # to minimize ncc loss
-        #     loss += loss_weights[0] * cycle_loss
-        #     epoch_cycle_loss += cycle_loss.item()
-        # loss += loss_weights[0] * img_loss
-
         # If segmentations are available, compute segmentation loss
         if "source_seg" in batch and "target_seg" in batch:
-            seg_loss = 0.0
+            flow_with_seg_loss = 0.0
             warped_source_seg = spatial_transformer(source_seg, displacement)
             warped_source_seg = torch.clamp(warped_source_seg, 0, 1)
             # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)  # noqa: E501, ERA001
-            seg_loss += loss_computer.compute_seg_loss(
+            flow_with_seg_loss += loss_computer.compute_seg_loss(
                 target_seg, warped_source_seg
             ).squeeze()
             if bidirectionnal:
                 warped_target_seg = spatial_transformer(target_seg, displacement_inv)
                 warped_target_seg = torch.clamp(warped_target_seg, 0, 1)
                 # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)  # noqa: E501, ERA001
-                seg_loss += loss_computer.compute_seg_loss(
+                flow_with_seg_loss += loss_computer.compute_flow_with_seg_loss(
                     source_seg, warped_target_seg
                 ).squeeze()
             if background:
@@ -327,8 +311,8 @@ def train_epoch(
                 loss += loss_weights[3] * background_loss
                 epoch_background_loss += background_loss.item()
             if args.seg_type is not None:
-                loss += loss_weights[2] * seg_loss
-                epoch_seg_loss += seg_loss.item()
+                loss += loss_weights[2] * flow_with_seg_loss
+                epoch_flow_with_seg_loss += flow_with_seg_loss.item()
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
@@ -340,6 +324,7 @@ def train_epoch(
         "img_loss": epoch_img_loss / len(dataloader),
         "grad_loss": epoch_grad_loss / len(dataloader),
         "seg_loss": epoch_seg_loss / len(dataloader) if epoch_seg_loss > 0 else None,
+        "flow_with_seg_loss": epoch_flow_with_seg_loss / len(dataloader) if epoch_flow_with_seg_loss > 0 else None,
         "background_loss": epoch_background_loss / len(dataloader)
         if epoch_background_loss > 0
         else None,
@@ -365,21 +350,29 @@ def main(args):
         mlflow.log_params(vars(args))
 
     # Create model
-    if args.bidirectionnal:
-        model = TwoHeadsVxm(
+    # if args.bidirectionnal:
+    #     model = TwoHeadsVxm(
+    #         ndim=2,
+    #         source_channels=1,
+    #         target_channels=1,
+    #         nb_features=[16, 16, 16, 16, 16],
+    #         device=device,
+    #     ).to(device)
+    # else:  # TODO
+    #     model = vxm.nn.models.VxmPairwise(
+    #         ndim=2,
+    #         source_channels=1,
+    #         target_channels=1,
+    #         nb_features=[16, 16, 16, 16, 16],
+    #         integration_steps=0,
+    #         device=device,
+    #     ).to(device)
+    model = WarperVxm(
             ndim=2,
             source_channels=1,
             target_channels=1,
             nb_features=[16, 16, 16, 16, 16],
-            device=device,
-        ).to(device)
-    else:  # TODO
-        model = vxm.nn.models.VxmPairwise(
-            ndim=2,
-            source_channels=1,
-            target_channels=1,
-            nb_features=[16, 16, 16, 16, 16],
-            integration_steps=0,
+            model_type=args.model_type,
             device=device,
         ).to(device)
 
@@ -407,6 +400,7 @@ def main(args):
         args.gamma_param,
         args.background_param,
         args.cycle_param,
+        args.seg_param
     ]
     loss_computer = LossComputer(image_loss_fn, grad_loss_fn, seg_loss_fn)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
@@ -457,8 +451,14 @@ def main(args):
             )
             if avg_loss["seg_loss"] is not None:
                 mlflow.log_metric(
-                    f"Train_seg_loss gamma:{args.gamma_param}",
+                    f"Train_seg_loss gamma:{}", #TODO add weight
                     avg_loss["seg_loss"],
+                    step=epoch,
+                )
+            if avg_loss["flow_with_seg_loss"] is not None:
+                mlflow.log_metric(
+                    f"Train_flow_with_seg_loss gamma:{args.gamma_param}",
+                    avg_loss["flow_with_seg_loss"],
                     step=epoch,
                 )
             if avg_loss["background_loss"] is not None:
@@ -564,13 +564,17 @@ if __name__ == "__main__":
         help="Type of segmentation to use for training: None, 'binary' or heatmaps",  # TODO add labels/tra?
     )
     # Training parameters
+    parser.add_argument(
+        "--model_type",
+        type=str,
+        default="voxelmorph",
+        choices=["voxelmorph", "twoflows", "flowseg"],
+        help="Type of model to train : voxelmorph, twoflows flowseg",
+    )
     parser.add_argument("--epochs", type=int, default=30, help="Number of epochs")
     parser.add_argument("--batch-size", type=int, default=4, help="Batch size")
     parser.add_argument(
         "--save-every", type=int, default=10, help="Checkpoint every N epochs"
-    )
-    parser.add_argument(
-        "--bidirectionnal", action="store_true", help="Train a bidirectional model"
     )
     parser.add_argument(
         "--cycle_param",
@@ -598,8 +602,9 @@ if __name__ == "__main__":
         type=float,
         dest="gamma_param",
         default=0.01,
-        help="Regularisation parameter for segmentation loss, not used if seg_path is set to None",
+        help="Regularisation parameter for segmentation loss, not used if seg_path is set to None", #TODO change description
     )
+    #TODO : add param for true seg loss
     parser.add_argument(
         "--background",
         action="store_true",
