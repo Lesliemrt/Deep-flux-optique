@@ -118,14 +118,25 @@ def upsampling_conv_blocks(
 
 
 class ConvBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, ndim=2, kernel_size=3, padding=1, activation = True, batchnorm = True):
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        ndim=2,
+        kernel_size=3,
+        padding=1,
+        activation=True,
+        batchnorm=True,
+    ):
         super().__init__()
-        modules = [nn.Conv2d(
+        modules = [
+            nn.Conv2d(
                 in_channels, out_channels, kernel_size=kernel_size, padding=padding
-            )]
-        if activation :
+            )
+        ]
+        if activation:
             modules.append(nn.ReLU())  # the one used by default in vxm
-        if batchnorm :
+        if batchnorm:
             modules.append(nn.BatchNorm2d(out_channels))  # None by default in vxm
         self.conv = nn.Sequential(*modules)
 
@@ -294,8 +305,8 @@ class TwoFlowsUNet(nn.Module):
             out_channels=out_channels,
             kernel_size=1,
             padding=0,
-            activation = False,
-            batchnorm = False
+            activation=False,
+            batchnorm=False,
         )
 
         # -------- Decoder BWD ---------
@@ -312,8 +323,8 @@ class TwoFlowsUNet(nn.Module):
             out_channels=out_channels,
             kernel_size=1,
             padding=0,
-            activation = False,
-            batchnorm = False
+            activation=False,
+            batchnorm=False,
         )
 
     def forward(self, feature_tensor: torch.Tensor):
@@ -472,7 +483,7 @@ class WarperVxm(nn.Module):
                 nb_features=nb_features,
                 activations=nn.ReLU,
                 final_activation=None,
-        ).to(self.device)
+            ).to(self.device)
 
         self._init_flow_layer(ndim, 1e-5)
 
@@ -548,16 +559,14 @@ class WarperVxm(nn.Module):
             res["displacement_bwd"] = displacement_bwd
         elif self.model_type == "voxelmorph":
             unet_out = self.model(combined_features)
-            displacement = self.flow_layer(
-            unet_out
-        )
+            displacement = self.flow_layer(unet_out)
         elif self.model_type == "flowseg":
             displacement, segmentation = self.model(combined_features)
-            res["segmentation"] = segmentation
+            res["source_segmentation"] = segmentation
 
         if return_warped_source:
             warped_source = self.spatial_transformer(source, displacement)
-            res["warped_source"]=warped_source
+            res["warped_source"] = warped_source
         # if return_warped_target:
         #     warped_target = self.spatial_transformer(target, neg_displacement)
         #     outputs.append(warped_target)
@@ -586,7 +595,9 @@ class WarperVxm(nn.Module):
         if self.model_type == "twoflows":
             with torch.no_grad():
                 torch.nn.init.normal_(
-                    self.model.out_layer_fwd.conv[0].weight, mean=0.0, std=flow_initializer
+                    self.model.out_layer_fwd.conv[0].weight,
+                    mean=0.0,
+                    std=flow_initializer,
                 )
                 # Set the bias term(s) to zero for the first (and only) conv
                 if self.model.out_layer_fwd.conv[0].bias is not None:
@@ -594,7 +605,9 @@ class WarperVxm(nn.Module):
 
             with torch.no_grad():
                 torch.nn.init.normal_(
-                    self.model.out_layer_bwd.conv[0].weight, mean=0.0, std=flow_initializer
+                    self.model.out_layer_bwd.conv[0].weight,
+                    mean=0.0,
+                    std=flow_initializer,
                 )
                 # Set the bias term(s) to zero for the first (and only) conv
                 if self.model.out_layer_bwd.conv[0].bias is not None:
@@ -614,12 +627,13 @@ class WarperVxm(nn.Module):
         elif self.model_type == "flowseg":
             with torch.no_grad():
                 torch.nn.init.normal_(
-                    self.model.out_layer_fwd.conv[0].weight, mean=0.0, std=flow_initializer
+                    self.model.out_layer_fwd.conv[0].weight,
+                    mean=0.0,
+                    std=flow_initializer,
                 )
                 # Set the bias term(s) to zero for the first (and only) conv
                 if self.model.out_layer_fwd.conv[0].bias is not None:
                     self.model.out_layer_fwd.conv[0].bias.zero_()
-
 
 
 class FlowSegUNet(nn.Module):
@@ -785,8 +799,8 @@ class FlowSegUNet(nn.Module):
             out_channels=out_channels,
             kernel_size=1,
             padding=0,
-            activation = False,
-            batchnorm = False
+            activation=False,
+            batchnorm=False,
         )
 
         # -------- Decoder Segmentation ---------
@@ -803,8 +817,8 @@ class FlowSegUNet(nn.Module):
             out_channels=self.nb_class_segmentation,
             kernel_size=1,
             padding=0,
-            activation = False,
-            batchnorm = False
+            activation=False,
+            batchnorm=False,
         )
 
     def forward(self, feature_tensor: torch.Tensor):
@@ -853,4 +867,3 @@ class FlowSegUNet(nn.Module):
         feature_tensor_seg = self.out_layer_seg(feature_tensor_seg)
 
         return feature_tensor_fwd, feature_tensor_seg
-

@@ -131,11 +131,12 @@ def pyramidal_flow(source, target, model, model_type, level=2):
 
 
 class LossComputer(nn.Module):
-    def __init__(self, image_loss_fn, grad_loss_fn, seg_loss_fn):
+    def __init__(self, image_loss_fn, grad_loss_fn, flow_with_seg_loss_fn, seg_loss_fn):
         super().__init__()
         self.image_loss_fn = image_loss_fn
-        self.seg_loss_fn = seg_loss_fn
+        self.flow_with_seg_loss_fn = flow_with_seg_loss_fn
         self.grad_loss_fn = grad_loss_fn
+        self.seg_loss_fn = seg_loss_fn
 
     def compute_image_loss(self, img1, img2):
         if isinstance(self.image_loss_fn, ne.nn.modules.NCC):
@@ -162,6 +163,9 @@ class LossComputer(nn.Module):
             torch.abs(displacement) * background_mask
         )  # L1 loss on the displacement in the background
 
+    def compute_seg_loss(self, seg_pred, seg_gt):
+        return self.seg_loss_fn(seg_pred, seg_gt)
+
 
 def train_epoch(
     epoch: int,
@@ -170,7 +174,6 @@ def train_epoch(
     optimizer: torch.optim.Optimizer,
     loss_computer: nn.Module,
     loss_weights: Sequence[float],
-    bidirectionnal: bool,
     background: bool,
 ) -> float:
     """Train for one epoch.
@@ -189,8 +192,6 @@ def train_epoch(
         The gradient loss function to use.
     loss_weights : Sequence[float]
         The weights for the image and gradient losses.
-    bidirectionnal : bool
-        Whether to use bidirectional training.
     """
     model.train()
     total_loss = 0.0
@@ -215,22 +216,19 @@ def train_epoch(
         target = batch["target"]
         source = source.to(device).unsqueeze(1)  # Add channel dimension
         target = target.to(device).unsqueeze(1)  # Add channel dimension
-        if "source_seg" in batch and "target_seg" in batch:
-            source_seg = batch["source_seg"].to(device).unsqueeze(1)  # add channel dim
-            target_seg = batch["target_seg"].to(device).unsqueeze(1)  # add channel dim
 
         # Loss initialisation
         loss = 0.0
         img_loss = 0.0
         seg_loss = 0.0
         grad_loss = 0.0
-        
+
         # Get the displacement and the warped source image from the model
         res = model(source, target, return_warped_source=True)
         displacement = res["displacement"]
         warped_source = res["warepd_source"]
 
-         # if args.pyramidal:
+        # if args.pyramidal:
         #     displacement = pyramidal_flow(
         #         source, target, model, model_type="voxelmorph", level=2
         #     )
@@ -238,8 +236,9 @@ def train_epoch(
 
         # Compute image loss and grad loss for displacement forward
         img_loss += loss_computer.compute_image_loss(target, warped_source)
-        grad_loss += loss_computer.compute_grad_loss(displacement) # Smoothness
+        grad_loss += loss_computer.compute_grad_loss(displacement)  # Smoothness
 
+        # ------------------------------------------- TWO FLOWS ---------------------------------------------------
         # If model_type = twoflows, the backward flow (displacement_inv) is computed as well
         # Add the corresponding loss (image loss and grad loss for bwd flow + cycle loss)
         if "displacement_inv" in res:
@@ -261,19 +260,7 @@ def train_epoch(
             )
             loss += cycle_weight * cycle_loss
             epoch_cycle_loss += cycle_loss.item()
-
-        # If model_type = flowseg, the segmentation map is computed as well
-        # Add the corresponding loss
-        if "segmentation" in res:
-            source_seg_pred = res["source_segmentation"] #TODO : modify res to have source_segmentation + target_segmentatio n
-            target_seg_pred = res["target_segmentation"]
-
-            seg_loss += loss_computer.compute_seg_loss(source_seg_pred, source_seg)
-            seg_loss += loss_computer.compute_seg_loss(target_seg_pred, target_seg) # TODO create compute seg loss
-
-            #TODO create seg_weight dans la liste
-            loss += seg_weight * seg_loss
-            epoch_seg_loss += seg_loss.item()
+        # ---------------------------------------------------------------------------------------------------------
 
         # Image loss for forward displacement
         # if background:
@@ -283,26 +270,45 @@ def train_epoch(
         #     target = target * target_seg
         #     warped_source = warped_source * warped_source_seg
 
-
         # Add to the total loss
         loss += loss_weights[0] * img_loss + loss_weights[1] * grad_loss
 
         # If segmentations are available, compute segmentation loss
         if "source_seg" in batch and "target_seg" in batch:
+            source_seg = batch["source_seg"].to(device).unsqueeze(1)  # add channel dim
+            target_seg = batch["target_seg"].to(device).unsqueeze(1)  # add channel dim
             flow_with_seg_loss = 0.0
             warped_source_seg = spatial_transformer(source_seg, displacement)
             warped_source_seg = torch.clamp(warped_source_seg, 0, 1)
             # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)  # noqa: E501, ERA001
-            flow_with_seg_loss += loss_computer.compute_seg_loss(
+            flow_with_seg_loss += loss_computer.compute_flow_with_seg_loss(
                 target_seg, warped_source_seg
             ).squeeze()
-            if bidirectionnal:
+            # ------------------------------------------- TWO FLOWS ---------------------------------------------------
+            if "displacement_inv" in res:
                 warped_target_seg = spatial_transformer(target_seg, displacement_inv)
                 warped_target_seg = torch.clamp(warped_target_seg, 0, 1)
                 # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)  # noqa: E501, ERA001
                 flow_with_seg_loss += loss_computer.compute_flow_with_seg_loss(
                     source_seg, warped_target_seg
                 ).squeeze()
+            # ------------------------------------------- FLOW SEG ---------------------------------------------------
+            # If model_type = flowseg, the segmentation map is computed as well
+            # Add the corresponding loss
+            if "segmentation" in res:
+                source_seg_pred = res["source_segmentation"]
+                warped_source_seg_pred = spatial_transformer(
+                    source_seg_pred, displacement
+                )
+
+                seg_loss += loss_computer.compute_seg_loss(source_seg_pred, source_seg)
+                seg_loss += loss_computer.compute_seg_loss(
+                    warped_source_seg_pred, target_seg
+                )
+
+                loss += loss_weights[5] * seg_loss
+                epoch_seg_loss += seg_loss.item()
+            # ---------------------------------------------------------------------------------------------------------
             if background:
                 # Add loss to avoid field in the background
                 background_loss = loss_computer.compute_background_loss(
@@ -324,7 +330,9 @@ def train_epoch(
         "img_loss": epoch_img_loss / len(dataloader),
         "grad_loss": epoch_grad_loss / len(dataloader),
         "seg_loss": epoch_seg_loss / len(dataloader) if epoch_seg_loss > 0 else None,
-        "flow_with_seg_loss": epoch_flow_with_seg_loss / len(dataloader) if epoch_flow_with_seg_loss > 0 else None,
+        "flow_with_seg_loss": epoch_flow_with_seg_loss / len(dataloader)
+        if epoch_flow_with_seg_loss > 0
+        else None,
         "background_loss": epoch_background_loss / len(dataloader)
         if epoch_background_loss > 0
         else None,
@@ -345,7 +353,9 @@ def main(args):
     # MLflow set up
     if args.mlflow:
         mlflow.set_tracking_uri("http://127.0.0.1:5000")
-        mlflow.start_run(run_name=f"train_cells_{timestamp}_{args.video_path}")  # noqa: DTZ005
+        mlflow.start_run(
+            run_name=f"train_cells_{args.model_type}_{timestamp}_{args.video_path}"
+        )  # noqa: DTZ005
         print("MLflow tracking enabled.")  # noqa: T201
         mlflow.log_params(vars(args))
 
@@ -358,7 +368,7 @@ def main(args):
     #         nb_features=[16, 16, 16, 16, 16],
     #         device=device,
     #     ).to(device)
-    # else:  # TODO
+    # else:
     #     model = vxm.nn.models.VxmPairwise(
     #         ndim=2,
     #         source_channels=1,
@@ -368,13 +378,13 @@ def main(args):
     #         device=device,
     #     ).to(device)
     model = WarperVxm(
-            ndim=2,
-            source_channels=1,
-            target_channels=1,
-            nb_features=[16, 16, 16, 16, 16],
-            model_type=args.model_type,
-            device=device,
-        ).to(device)
+        ndim=2,
+        source_channels=1,
+        target_channels=1,
+        nb_features=[16, 16, 16, 16, 16],
+        model_type=args.model_type,
+        device=device,
+    ).to(device)
 
     # Setup losses and optimizer
     if args.image_loss == "mse":
@@ -387,11 +397,12 @@ def main(args):
         )
     grad_loss_fn = ne.nn.modules.SpatialGradient(args.grad_loss)
     if args.seg_type == "heatmaps":
-        seg_loss_fn = (
+        flow_with_seg_loss_fn = (
             image_loss_fn  # use the same loss as for the image (MSE or CC) for heatmaps
         )
     else:
-        seg_loss_fn = ne.nn.modules.Dice()
+        flow_with_seg_loss_fn = ne.nn.modules.Dice()
+    seg_loss_fn = nn.BCEWithLogitsLoss()
 
     # Reguralisation parameters for each loss
     loss_weights = [
@@ -400,9 +411,11 @@ def main(args):
         args.gamma_param,
         args.background_param,
         args.cycle_param,
-        args.seg_param
+        args.seg_param,
     ]
-    loss_computer = LossComputer(image_loss_fn, grad_loss_fn, seg_loss_fn)
+    loss_computer = LossComputer(
+        image_loss_fn, grad_loss_fn, flow_with_seg_loss_fn, seg_loss_fn
+    )
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # Create dataloader
@@ -422,7 +435,7 @@ def main(args):
     )
 
     # Create output directory
-    output_dir = Path(args.output_dir)
+    output_dir = Path(args.output_dir / f"{args.model_type}" / f"output_{timestamp}")
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "checkpoints").mkdir(parents=True, exist_ok=True)
 
@@ -438,7 +451,6 @@ def main(args):
             optimizer=optimizer,
             loss_computer=loss_computer,
             loss_weights=loss_weights,
-            bidirectionnal=args.bidirectionnal,
             background=args.background,
         )
         if mlflow.active_run():
@@ -451,7 +463,7 @@ def main(args):
             )
             if avg_loss["seg_loss"] is not None:
                 mlflow.log_metric(
-                    f"Train_seg_loss gamma:{}", #TODO add weight
+                    f"Train_seg_loss gamma:{args.seg_param}",
                     avg_loss["seg_loss"],
                     step=epoch,
                 )
@@ -535,7 +547,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output-dir",
         type=str,
-        default=f"outputs/output_{timestamp}",
+        default="outputs",
         help="Output directory",
     )
     parser.add_argument(
@@ -561,7 +573,7 @@ if __name__ == "__main__":
         type=str,
         default="binary",
         choices=["binary", "heatmaps", None],
-        help="Type of segmentation to use for training: None, 'binary' or heatmaps",  # TODO add labels/tra?
+        help="Type of segmentation to use for training: None, 'binary' or heatmaps",
     )
     # Training parameters
     parser.add_argument(
@@ -602,9 +614,15 @@ if __name__ == "__main__":
         type=float,
         dest="gamma_param",
         default=0.01,
-        help="Regularisation parameter for segmentation loss, not used if seg_path is set to None", #TODO change description
+        help="Regularisation parameter for dice loss between source and warped target, not used if seg_path is set to None",
     )
-    #TODO : add param for true seg loss
+    parser.add_argument(
+        "--seg_param",
+        type=float,
+        dest="seg_param",
+        default=0.01,
+        help="Regularisation parameter for segmentation loss, not used if seg_path is set to None",
+    )
     parser.add_argument(
         "--background",
         action="store_true",
