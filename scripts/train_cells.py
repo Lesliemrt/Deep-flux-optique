@@ -145,10 +145,10 @@ class LossComputer(nn.Module):
             return self.image_loss_fn(img1, img2)
 
     def compute_flow_with_seg_loss(self, img1, img2):
-        if isinstance(self.seg_loss_fn, ne.nn.modules.Dice):
-            return 1 - self.seg_loss_fn(img1, img2)  # to minimize dice loss
+        if isinstance(self.flow_with_seg_loss_fn, ne.nn.modules.Dice):
+            return 1 - self.flow_with_seg_loss_fn(img1, img2)  # to minimize dice loss
         else:
-            return self.seg_loss_fn(img1, img2)
+            return self.flow_with_seg_loss_fn(img1, img2)
 
     def compute_grad_loss(self, flow):
         return self.grad_loss_fn(flow)
@@ -220,13 +220,12 @@ def train_epoch(
         # Loss initialisation
         loss = 0.0
         img_loss = 0.0
-        seg_loss = 0.0
         grad_loss = 0.0
 
         # Get the displacement and the warped source image from the model
         res = model(source, target, return_warped_source=True)
         displacement = res["displacement"]
-        warped_source = res["warepd_source"]
+        warped_source = res["warped_source"]
 
         # if args.pyramidal:
         #     displacement = pyramidal_flow(
@@ -252,8 +251,15 @@ def train_epoch(
             grad_loss += loss_computer.compute_grad_loss(displacement_inv)
 
             # Cycle loss
+            cycle_loss = 0.0
             warped_flow_inv = spatial_transformer(displacement_inv, displacement)
-            cycle_loss = loss_computer.compute_cycle_loss(displacement, warped_flow_inv)
+            cycle_loss += loss_computer.compute_cycle_loss(
+                displacement, warped_flow_inv
+            )
+            warped_flow = spatial_transformer(displacement, displacement_inv)
+            cycle_loss += loss_computer.compute_cycle_loss(
+                displacement_inv, warped_flow
+            )
             # Add a progressiv weight to loss (start at 0, max at loss_weights[4])
             cycle_weight = linear_augment(
                 start=5, end=15, max_weight=loss_weights[4], epoch=epoch
@@ -296,6 +302,7 @@ def train_epoch(
             # If model_type = flowseg, the segmentation map is computed as well
             # Add the corresponding loss
             if "segmentation" in res:
+                seg_loss = 0.0
                 source_seg_pred = res["source_segmentation"]
                 warped_source_seg_pred = spatial_transformer(
                     source_seg_pred, displacement
@@ -349,7 +356,6 @@ def main(args):
     if args.seg_path is None:
         args.seg_type = None
         args.gamma_param = 0.0
-    print(f"Using segmentation type: {args.seg_type}")  # noqa: T201
     # MLflow set up
     if args.mlflow:
         mlflow.set_tracking_uri("http://127.0.0.1:5000")
@@ -377,6 +383,9 @@ def main(args):
     #         integration_steps=0,
     #         device=device,
     #     ).to(device)
+    print(f"Load model type: {args.model_type}")
+    print(f"Using segmentation type: {args.seg_type}")  # noqa: T201
+
     model = WarperVxm(
         ndim=2,
         source_channels=1,
@@ -435,7 +444,8 @@ def main(args):
     )
 
     # Create output directory
-    output_dir = Path(args.output_dir / f"{args.model_type}" / f"output_{timestamp}")
+    output_dir = f"{args.output_dir}/{args.model_type}/output_{timestamp}"
+    output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "checkpoints").mkdir(parents=True, exist_ok=True)
 
@@ -463,7 +473,7 @@ def main(args):
             )
             if avg_loss["seg_loss"] is not None:
                 mlflow.log_metric(
-                    f"Train_seg_loss gamma:{args.seg_param}",
+                    f"Train_seg_loss:{args.seg_param}",
                     avg_loss["seg_loss"],
                     step=epoch,
                 )

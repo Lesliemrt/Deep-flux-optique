@@ -47,7 +47,7 @@ from register_cells_old import (
     register_pair_raft,
     register_pair_fb,
 )
-from model import TwoHeadsVxm
+from model import WarperVxm
 
 import voxelmorph_folder.voxelmorph as vxm
 
@@ -110,12 +110,20 @@ def evaluate_registration(segmentation_moving, segmentation_fixed, field):
 def create_model(args):
     """Create the model for registration."""
     if args.model_type == "voxelmorph":
-        model = vxm.nn.models.VxmPairwise(
+        # model = vxm.nn.models.VxmPairwise(
+        #     ndim=2,
+        #     source_channels=1,
+        #     target_channels=1,
+        #     nb_features=[16, 16, 16, 16, 16],
+        #     integration_steps=0,
+        #     device=device,
+        # ).to(device)
+        model = WarperVxm(
             ndim=2,
             source_channels=1,
             target_channels=1,
             nb_features=[16, 16, 16, 16, 16],
-            integration_steps=0,
+            model_type=args.model_type,
             device=device,
         ).to(device)
         model_path = f"{args.output_dir}/best.pt"
@@ -124,12 +132,13 @@ def create_model(args):
         model.eval()
         if mlflow.active_run():
             mlflow.log_param("model_path", model_path)
-    elif args.model_type == "twoheads_vxm":
-        model = TwoHeadsVxm(
+    elif args.model_type == "twoflows":
+        model = WarperVxm(
             ndim=2,
             source_channels=1,
             target_channels=1,
             nb_features=[16, 16, 16, 16, 16],
+            model_type=args.model_type,
             device=device,
         ).to(device)
         model_path = f"{args.output_dir}/best.pt"
@@ -180,7 +189,7 @@ def register_video(args):
     global_min, global_max = normalisation_params(frames_path_list)
 
     # MLFLOW
-    if args.model_type == "voxelmorph" or args.model_type == "twoheads_vxm":
+    if args.model_type == "voxelmorph" or args.model_type == "twoflows":
         with Path(f"{args.output_dir}/config.json").open() as j:
             config = json.load(j)  # To get informations from vxm training
     else:
@@ -221,7 +230,7 @@ def register_video(args):
             field, fig, input_moving, input_fixed = register_pair(
                 moving, fixed, model, global_min, global_max
             )
-        if args.model_type == "twoheads_vxm":
+        if args.model_type == "twoflows":
             field, inv_field, fig, input_moving, input_fixed = (
                 register_pair_twoheads_vxm(moving, fixed, model, global_min, global_max)
             )
@@ -245,6 +254,7 @@ def register_video(args):
         plt.close(fig)
 
         if args.visualize:
+            print("111111111", field.squeeze().cpu().numpy().max())
             flow_maps[(idx2, idx)] = field.squeeze().cpu().numpy()
             if idx == 0:
                 video.append(
@@ -273,6 +283,7 @@ def register_video(args):
                 inv_field, _, _, _ = register_pair_fb(
                     fixed, moving, model, global_min, global_max
                 )
+            print("2222222222", inv_field.squeeze().cpu().numpy().max())
             flow_maps[(idx, idx2)] = inv_field.squeeze().cpu().numpy()
 
         if mlflow.active_run():
@@ -381,12 +392,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model_type",
         default="voxelmorph",
-        choices=["voxelmorph", "twoheads_vxm", "tvl1", "raft", "farnback"],
+        choices=["voxelmorph", "twoflows", "flowseg", "tvl1", "raft", "farnback"],
         help="Type of model to use for registration",
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/output_20260619_160959",
+        default="outputs/twoflows/output_20260625_175105",
         help="Directory to find model and to save results",
     )
     args = parser.parse_args()

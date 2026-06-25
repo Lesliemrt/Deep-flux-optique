@@ -77,12 +77,13 @@ def register_pair(moving, fixed, model, global_min, global_max):
 
     # Predict
     with torch.no_grad():
-        field, moved = model(
+        res = model(
             source=input_moving,
             target=input_fixed,
             return_warped_source=True,
-            return_field_type="displacement",
+            # return_field_type="displacement",
         )
+        field, moved = res["displacement"], res["warped_source"]
         # field = pyramidal_flow(input_moving, input_fixed, model, level=2)
         moved = spatial_transformer(input_moving, field)
 
@@ -154,12 +155,16 @@ def register_pair_twoheads_vxm(moving, fixed, model, global_min, global_max):
 
     # Predict
     with torch.no_grad():
-        field, field_inv, moved = model(
+        res = model(
             source=input_moving,
             target=input_fixed,
             return_warped_source=True,
         )
-
+    field, field_inv, moved = (
+        res["displacement"],
+        res["displacement_bwd"],
+        res["warped_source"],
+    )
     fig, ax = plt.subplots(2, 2, figsize=(12, 12))
     plt.subplot(2, 2, 1)
     ax[0, 0].set_title("Fixed")
