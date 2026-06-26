@@ -97,8 +97,8 @@ def register_pair(moving, fixed, model, global_min, global_max):
     viz(flo=displacement, ax=ax[1, 1])
 
     res["fig"] = fig
-    res["input_moving"] = input_moving
-    res["input_fixed"] = input_fixed
+    res["input_moving"] = input_moving.squeeze().cpu().numpy()
+    res["input_fixed"] = input_fixed.squeeze().cpu().numpy()
 
     return res
 
@@ -154,7 +154,7 @@ def register_pair_twoheads_vxm(moving, fixed, model, global_min, global_max):
             target=input_fixed,
             return_warped_source=True,
         )
-    displacement, displacement_inv, moved = (
+    displacement, displacement_bwd, moved = (
         res["displacement"],
         res["displacement_bwd"],
         res["warped_source"],
@@ -175,7 +175,7 @@ def register_pair_twoheads_vxm(moving, fixed, model, global_min, global_max):
 
     return (
         displacement,
-        displacement_inv,
+        displacement_bwd,
         fig,
         input_moving.squeeze().cpu().numpy(),
         input_fixed.squeeze().cpu().numpy(),

@@ -280,7 +280,7 @@ def register_video(args):
                 res["input_fixed"],
             )
             if "displacement_bwd" in res:
-                inv_displacement = res["displacement_bwd"]
+                displacement_bwd = res["displacement_bwd"]
             if "source_segmentation" in res:
                 source_seg_pred = res["source_segmentation"]
         elif args.model_type == "tvl1":
@@ -314,13 +314,13 @@ def register_video(args):
             )  # channel dimension neededfor visualization
             if args.model_type == "voxelmorph" or args.model_type == "flowseg":
                 res = register_pair(fixed, moving, model, global_min, global_max)
-                inv_displacement = res["displacement"]
+                displacement_bwd = res["displacement"]
             elif args.model_type == "tvl1":
-                inv_displacement, _, _, _ = register_pair_tvl1(
+                displacement_bwd, _, _, _ = register_pair_tvl1(
                     fixed, moving, global_min, global_max
                 )
             elif args.model_type == "raft":
-                inv_displacement, _, _, _ = register_pair_raft(
+                displacement_bwd, _, _, _ = register_pair_raft(
                     frames_path_list[idx2],
                     frames_path_list[idx],
                     model,
@@ -328,11 +328,11 @@ def register_video(args):
                     global_max,
                 )
             elif args.model_type == "farnback":
-                inv_displacement, _, _, _ = register_pair_fb(
+                displacement_bwd, _, _, _ = register_pair_fb(
                     fixed, moving, model, global_min, global_max
                 )
-            print("2222222222", inv_displacement.squeeze().cpu().numpy().max())
-            flow_maps[(idx, idx2)] = inv_displacement.squeeze().cpu().numpy()
+            print("2222222222", displacement_bwd.squeeze().cpu().numpy().max())
+            flow_maps[(idx, idx2)] = displacement_bwd.squeeze().cpu().numpy()
 
         if mlflow.active_run():
             mlflow.log_figure(

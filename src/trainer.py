@@ -111,11 +111,11 @@ class Trainer:
                 )
                 warped_source = self.spatial_transformer(source, displacement)
             if bidirectionnal:
-                displacement, displacement_inv, warped_source = self.model(
+                displacement, displacement_bwd, warped_source = self.model(
                     source, target, return_warped_source=True
                 )
                 warped_target = self.spatial_transformer(
-                    target, displacement_inv
+                    target, displacement_bwd
                 )  # TODO
                 # displacement_inv, warped_target = model(
                 #     target, source, return_warped_source=True

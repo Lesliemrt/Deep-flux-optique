@@ -152,11 +152,11 @@ class LossComputer(nn.Module):
         else:
             return self.flow_with_seg_loss_fn(img1, img2)
 
-    def compute_grad_loss(self, flow):
-        return self.grad_loss_fn(flow)
+    def compute_grad_loss(self, displacement):
+        return self.grad_loss_fn(displacement)
 
-    def compute_cycle_loss(self, flow, warped_flow_inv):
-        return torch.norm(flow + warped_flow_inv, p=2, dim=1).mean()
+    def compute_cycle_loss(self, displacement, warped_displacement_bwd):
+        return torch.norm(displacement + warped_displacement_bwd, p=2, dim=1).mean()
 
     def compute_background_loss(self, source_seg, target_seg, displacement):
         union_seg = torch.clamp(target_seg + source_seg, 0.0, 1.0)
@@ -240,23 +240,25 @@ def train_epoch(
         grad_loss += loss_computer.compute_grad_loss(displacement)  # Smoothness
 
         # ------------------------------------------- TWO FLOWS ---------------------------------------------------
-        # If model_type = twoflows, the backward flow (displacement_inv) is computed as well
-        # Add the corresponding loss (image loss and grad loss for bwd flow + cycle loss)
+        # If model_type = twoflows, the backward displacement (displacement_bwd) is computed as well
+        # Add the corresponding loss (image loss and grad loss for bwd displacement + cycle loss)
         if "displacement_bwd" in res:
-            displacement_inv = res["displacement_bwd"]
-            warped_target = spatial_transformer(target, displacement_inv)
+            displacement_bwd = res["displacement_bwd"]
+            warped_target = spatial_transformer(target, displacement_bwd)
 
             # Image loss for backward displacement
             img_loss += loss_computer.compute_image_loss(source, warped_target)
 
             # Grad loss for backward displacement
-            grad_loss += loss_computer.compute_grad_loss(displacement_inv)
+            grad_loss += loss_computer.compute_grad_loss(displacement_bwd)
 
             # Cycle loss
             cycle_loss = 0.0
-            warped_flow_inv = spatial_transformer(displacement_inv, displacement)
+            warped_displacement_bwd = spatial_transformer(
+                displacement_bwd, displacement
+            )
             cycle_loss += loss_computer.compute_cycle_loss(
-                displacement, warped_flow_inv
+                displacement, warped_displacement_bwd
             )
             # Add a progressiv weight to loss (start at 0, max at loss_weights[4])
             cycle_weight = linear_augment(
@@ -290,7 +292,7 @@ def train_epoch(
             ).squeeze()
             # ------------------------------------------- TWO FLOWS ---------------------------------------------------
             if "displacement_bwd" in res:
-                warped_target_seg = spatial_transformer(target_seg, displacement_inv)
+                warped_target_seg = spatial_transformer(target_seg, displacement_bwd)
                 warped_target_seg = torch.clamp(warped_target_seg, 0, 1)
                 # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)  # noqa: E501, ERA001
                 flow_with_seg_loss += loss_computer.compute_flow_with_seg_loss(
