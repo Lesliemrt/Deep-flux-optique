@@ -45,7 +45,7 @@ def register_pair(moving, fixed, model):
 
     Returns
     -------
-    field : torch.Tensor
+    displacement : torch.Tensor
         Predicted deformation field.
     fig : matplotlib.figure.Figure
         Figure showing the fixed image, the moved image, the moving image and the flow field.
@@ -76,7 +76,7 @@ def register_pair(moving, fixed, model):
 
     # Predict
     with torch.no_grad():
-        field, moved = model(
+        displacement, moved = model(
             source=input_moving,
             target=input_fixed,
             return_warped_source=True,
@@ -95,10 +95,10 @@ def register_pair(moving, fixed, model):
     ax[1, 0].imshow(input_moving.squeeze().cpu().numpy(), cmap="gray")
     plt.subplot(2, 2, 4)
     ax[1, 1].set_title("Flow")
-    viz(flo=field, ax=ax[1, 1])
+    viz(flo=displacement, ax=ax[1, 1])
 
     return (
-        field,
+        displacement,
         fig,
         input_moving.squeeze().cpu().numpy(),
         input_fixed.squeeze().cpu().numpy(),
@@ -111,7 +111,7 @@ def register_pair_tvl1(moving, fixed, global_min, global_max):
     Parameters
     ----------
     moving : numpy.ndarray
-        Moving image.moved = spatial_transformer(tensor_moving, tensor_field)
+        Moving image.moved = spatial_transformer(tensor_moving, tensor_displacement)
     fixed : numpy.ndarray
         Fixed image.
     global_min : float
@@ -121,7 +121,7 @@ def register_pair_tvl1(moving, fixed, global_min, global_max):
 
     Returns
     -------
-    field : torch.Tensor
+    displacement : torch.Tensor
         Predicted deformation field.
     fig : matplotlib.figure.Figure
         Figure showing the fixed image, the moved image, the moving image and the flow field.
@@ -144,7 +144,7 @@ def register_pair_tvl1(moving, fixed, global_min, global_max):
     )
 
     # Predict
-    field = optical_flow_tvl1(
+    displacement = optical_flow_tvl1(
         reference_image=input_fixed,
         moving_image=input_moving,
         attachment=20,
@@ -155,8 +155,8 @@ def register_pair_tvl1(moving, fixed, global_min, global_max):
     spatial_transformer = vxm.nn.modules.SpatialTransformer(
         interpolation_mode="bilinear"
     ).to(device)
-    tensor_field = torch.from_numpy(field).float().to(device).unsqueeze(0)
-    moved = spatial_transformer(tensor_moving, tensor_field)
+    tensor_displacement = torch.from_numpy(displacement).float().to(device).unsqueeze(0)
+    moved = spatial_transformer(tensor_moving, tensor_displacement)
     #  moving_image : torch.Tensor shape: (B, C, *spatial_dims), deformation_field : torch.Tensor shape: (B, ndim, *spatial_dims).
 
     fig, ax = plt.subplots(2, 2, figsize=(12, 12))
@@ -171,9 +171,9 @@ def register_pair_tvl1(moving, fixed, global_min, global_max):
     ax[1, 0].imshow(input_moving, cmap="gray")
     plt.subplot(2, 2, 4)
     ax[1, 1].set_title("Flow")
-    viz(flo=tensor_field, ax=ax[1, 1])
+    viz(flo=tensor_displacement, ax=ax[1, 1])
 
-    return tensor_field, fig, input_moving, input_fixed
+    return tensor_displacement, fig, input_moving, input_fixed
 
 
 def register_pair_raft(moving_path, fixed_path, model, global_min, global_max):
@@ -194,7 +194,7 @@ def register_pair_raft(moving_path, fixed_path, model, global_min, global_max):
 
     Returns
     -------
-    field : torch.Tensor
+    displacement : torch.Tensor
         Predicted deformation field.
     fig : matplotlib.figure.Figure
         Figure showing the fixed image, the moved image, the moving image and the flow field.
@@ -226,18 +226,18 @@ def register_pair_raft(moving_path, fixed_path, model, global_min, global_max):
 
     # Predict
     with torch.no_grad():
-        _, tensor_field = model(
+        _, tensor_displacement = model(
             input_fixed,  # to get flow in the direction fixed -> moving (like voxelmorph)
             input_moving,
             iters=20,
             test_mode=True,
         )
-    tensor_field = torch.flip(tensor_field, dims=[1])
+    tensor_displacement = torch.flip(tensor_displacement, dims=[1])
 
     spatial_transformer = vxm.nn.modules.SpatialTransformer(
         interpolation_mode="bilinear"
     ).to(device)
-    moved = spatial_transformer(input_moving, tensor_field)
+    moved = spatial_transformer(input_moving, tensor_displacement)
 
     fig, ax = plt.subplots(2, 2, figsize=(12, 12))
     plt.subplot(2, 2, 1)
@@ -251,10 +251,10 @@ def register_pair_raft(moving_path, fixed_path, model, global_min, global_max):
     ax[1, 0].imshow(input_moving.squeeze().cpu().numpy().mean(axis=0), cmap="gray")
     plt.subplot(2, 2, 4)
     ax[1, 1].set_title("Flow")
-    viz(flo=tensor_field, ax=ax[1, 1])
+    viz(flo=tensor_displacement, ax=ax[1, 1])
 
     return (
-        tensor_field,
+        tensor_displacement,
         fig,
         input_moving.squeeze().cpu().numpy().mean(axis=0),
         input_fixed.squeeze().cpu().numpy().mean(axis=0),
@@ -281,7 +281,7 @@ def register_pair_fb(moving, fixed, model, global_min, global_max):
 
     Returns
     -------
-    field : torch.Tensor
+    displacement : torch.Tensor
         Predicted deformation field.
     fig : matplotlib.figure.Figure
         Figure showing the fixed image, the moved image, the moving image and the flow field.
@@ -304,14 +304,20 @@ def register_pair_fb(moving, fixed, model, global_min, global_max):
     )
 
     # Predict
-    field = model.calc(input_fixed, input_moving, None)  # prev = fixed, next = moving)
+    displacement = model.calc(
+        input_fixed, input_moving, None
+    )  # prev = fixed, next = moving)
     spatial_transformer = vxm.nn.modules.SpatialTransformer(
         interpolation_mode="bilinear"
     ).to(device)
-    tensor_field = (
-        torch.from_numpy(field).float().to(device).unsqueeze(0).permute(0, 3, 1, 2)
+    tensor_displacement = (
+        torch.from_numpy(displacement)
+        .float()
+        .to(device)
+        .unsqueeze(0)
+        .permute(0, 3, 1, 2)
     )  # from (B, H, W, ndim) to (B, ndim, H, W)
-    moved = spatial_transformer(tensor_moving, tensor_field)
+    moved = spatial_transformer(tensor_moving, tensor_displacement)
     #  moving_image : torch.Tensor shape: (B, C, *spatial_dims), deformation_field : torch.Tensor shape: (B, ndim, *spatial_dims).
 
     fig, ax = plt.subplots(2, 2, figsize=(12, 12))
@@ -327,8 +333,8 @@ def register_pair_fb(moving, fixed, model, global_min, global_max):
     plt.subplot(2, 2, 4)
     ax[1, 1].set_title("Flow")
     viz(
-        flo=tensor_field,
+        flo=tensor_displacement,
         ax=ax[1, 1],
     )
 
-    return tensor_field, fig, input_moving, input_fixed
+    return tensor_displacement, fig, input_moving, input_fixed

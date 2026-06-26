@@ -62,11 +62,11 @@ class NormalizeMinMax(nn.Module):
 
 def pyramidal_flow(source, target, model, model_type, level=2):
     """Compute the pyramidal flow to allow the model to understand bigger movements."""
-    current_field = None
+    current_displacement = None
     spatial_transformer = vxm.nn.modules.SpatialTransformer(
         interpolation_mode="linear"
     ).to(device)
-    # Start from the lowest resolution and upsample the field at each level to use it as initial field for the next level
+    # Start from the lowest resolution and upsample the displacement at each level to use it as initial displacement for the next level
     for i in range(level):
         scale_factor = 1 / (2 ** (level - i - 1))  # 1/4, 1/2, 1 for 3 levels
         source_down = F.interpolate(
@@ -76,58 +76,60 @@ def pyramidal_flow(source, target, model, model_type, level=2):
             target, scale_factor=scale_factor, mode="bilinear", align_corners=False
         )
 
-        if current_field is None:
+        if current_displacement is None:
             if model_type == "voxelmorph":
-                current_field = model(
+                current_displacement = model(
                     source_down,
                     target_down,
                     return_warped_source=False,
                     return_field_type="displacement",
                 )
             elif model_type == "twoheads_vxm":
-                current_field, current_field_inv = model(
+                current_displacement, current_displacement_inv = model(
                     source_down,
                     target_down,
                     return_warped_source=False,
                 )
         else:
-            field_up = (
+            displacement_up = (
                 F.interpolate(
-                    current_field,
+                    current_displacement,
                     scale_factor=2,
                     mode="bilinear",
                     align_corners=False,
                 )
                 * 2
-            )  # because the field is in the original resolution, we need to multiply by 2 to get the correct field in the downsampled resolution
-            warped_source_down = spatial_transformer(source_down, field_up)
+            )  # because the displacement is in the original resolution, we need to multiply by 2 to get the correct displacement in the downsampled resolution
+            warped_source_down = spatial_transformer(source_down, displacement_up)
             if model_type == "voxelmorph":
-                field = model(
+                displacement = model(
                     warped_source_down,
                     target_down,
                     return_warped_source=False,
                     return_field_type="displacement",
                 )
             elif model_type == "twoheads_vxm":
-                field, field_inv = model(
+                displacement, displacement_inv = model(
                     warped_source_down,
                     target_down,
                     return_warped_source=False,
                 )
-                field_inv_up = (
+                displacement_inv_up = (
                     F.interpolate(
-                        current_field_inv,
+                        current_displacement_inv,
                         scale_factor=2,
                         mode="bilinear",
                         align_corners=False,
                     )
                     * 2
                 )
-                current_field_inv = field_inv + field_inv_up
-            current_field = field + field_up  # composition of the two fields
+                current_displacement_inv = displacement_inv + displacement_inv_up
+            current_displacement = (
+                displacement + displacement_up
+            )  # composition of the two displacements
     if model_type == "voxelmorph":
-        return field
-    return field, field_inv
+        return displacement
+    return displacement, displacement_inv
 
 
 class LossComputer(nn.Module):
@@ -240,8 +242,8 @@ def train_epoch(
         # ------------------------------------------- TWO FLOWS ---------------------------------------------------
         # If model_type = twoflows, the backward flow (displacement_inv) is computed as well
         # Add the corresponding loss (image loss and grad loss for bwd flow + cycle loss)
-        if "displacement_inv" in res:
-            displacement_inv = res["displacement_inv"]
+        if "displacement_bwd" in res:
+            displacement_inv = res["displacement_bwd"]
             warped_target = spatial_transformer(target, displacement_inv)
 
             # Image loss for backward displacement
@@ -255,10 +257,6 @@ def train_epoch(
             warped_flow_inv = spatial_transformer(displacement_inv, displacement)
             cycle_loss += loss_computer.compute_cycle_loss(
                 displacement, warped_flow_inv
-            )
-            warped_flow = spatial_transformer(displacement, displacement_inv)
-            cycle_loss += loss_computer.compute_cycle_loss(
-                displacement_inv, warped_flow
             )
             # Add a progressiv weight to loss (start at 0, max at loss_weights[4])
             cycle_weight = linear_augment(
@@ -291,7 +289,7 @@ def train_epoch(
                 target_seg, warped_source_seg
             ).squeeze()
             # ------------------------------------------- TWO FLOWS ---------------------------------------------------
-            if "displacement_inv" in res:
+            if "displacement_bwd" in res:
                 warped_target_seg = spatial_transformer(target_seg, displacement_inv)
                 warped_target_seg = torch.clamp(warped_target_seg, 0, 1)
                 # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)  # noqa: E501, ERA001
@@ -301,8 +299,9 @@ def train_epoch(
             # ------------------------------------------- FLOW SEG ---------------------------------------------------
             # If model_type = flowseg, the segmentation map is computed as well
             # Add the corresponding loss
-            if "segmentation" in res:
+            if "source_segmentation" in res:
                 seg_loss = 0.0
+                print("segmeeent")
                 source_seg_pred = res["source_segmentation"]
                 warped_source_seg_pred = spatial_transformer(
                     source_seg_pred, displacement
@@ -317,7 +316,7 @@ def train_epoch(
                 epoch_seg_loss += seg_loss.item()
             # ---------------------------------------------------------------------------------------------------------
             if background:
-                # Add loss to avoid field in the background
+                # Add loss to avoid displacement in the background
                 background_loss = loss_computer.compute_background_loss(
                     source_seg, target_seg, displacement
                 )
@@ -394,6 +393,15 @@ def main(args):
         model_type=args.model_type,
         device=device,
     ).to(device)
+    if args.model_type == "flowseg":
+        model = WarperVxm(
+            ndim=2,
+            source_channels=1,
+            target_channels=1,
+            nb_features=[16, 32, 64, 128, 256],
+            model_type=args.model_type,
+            device=device,
+        ).to(device)
 
     # Setup losses and optimizer
     if args.image_loss == "mse":
@@ -636,7 +644,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--background",
         action="store_true",
-        help="Add loss to avoid field in the background, only available if segmentations available",
+        help="Add loss to avoid displacement in the background, only available if segmentations available",
     )
     parser.add_argument(
         "--background_param",

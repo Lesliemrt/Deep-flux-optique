@@ -42,7 +42,6 @@ from flow_visualizer import FlowVisualizer
 from raft import RAFT
 from register_cells_old import (
     register_pair,
-    register_pair_twoheads_vxm,
     register_pair_tvl1,
     register_pair_raft,
     register_pair_fb,
@@ -52,7 +51,7 @@ from model import WarperVxm
 import voxelmorph_folder.voxelmorph as vxm
 
 
-def evaluate_registration(segmentation_moving, segmentation_fixed, field):
+def evaluate_registration(segmentation_moving, segmentation_fixed, displacement):
     """Evaluate the registration results."""
     score = {}
     # Load segmentation masks
@@ -63,14 +62,14 @@ def evaluate_registration(segmentation_moving, segmentation_fixed, field):
     fixed_labels = set(np.unique([seg_fixed]))
     if moving_labels != fixed_labels:
         return None
-    # Warp moving segmentation with the predicted field
+    # Warp moving segmentation with the predicted displacement
     tensor_seg_moving = (
         torch.from_numpy(seg_moving).to(device).float().unsqueeze(0).unsqueeze(0)
     )
     spatial_transformer = vxm.nn.modules.SpatialTransformer(
         interpolation_mode="nearest"
     ).to(device)
-    warped_seg_moving = spatial_transformer(tensor_seg_moving, field)
+    warped_seg_moving = spatial_transformer(tensor_seg_moving, displacement)
     # Compute Dice score
     dice = vxm.py.utils.dice(
         warped_seg_moving.squeeze().cpu().numpy(), seg_fixed, include_zero=False
@@ -103,7 +102,30 @@ def evaluate_registration(segmentation_moving, segmentation_fixed, field):
     ax[1, 0].imshow(seg_moving, cmap="gray")
     plt.subplot(2, 2, 4)
     ax[1, 1].set_title("Flow")
-    viz(flo=field, ax=ax[1, 1])
+    viz(flo=displacement, ax=ax[1, 1])
+    return score, fig
+
+
+def evaluate_segmentation(segmentation_pred, segmentation_gt):
+    """Evaluate the segmentation results."""
+    score = {}
+    # Load segmentation masks
+    seg_pred = interpole_and_pad(segmentation_pred, [HEIGHT, WIDTH])
+    seg_gt = interpole_and_pad(segmentation_gt, [HEIGHT, WIDTH])
+    # Binarise
+    seg_gt = seg_gt > 0
+    # Compute Dice score
+    dice = vxm.py.utils.dice(seg_pred, seg_gt, include_zero=False)
+    score["dice_segmentation"] = np.mean(dice)
+
+    # To visulaise seg evaluation
+    fig, ax = plt.subplots(2, 1, figsize=(12, 6))
+    plt.subplot(2, 1, 1)
+    ax[0, 0].set_title("Segmentation prediction")
+    ax[0, 0].imshow(seg_pred, cmap="gray")
+    plt.subplot(2, 1, 2)
+    ax[0, 1].set_title("Segmentation Ground Truth")
+    ax[0, 1].imshow(seg_gt, cmap="gray")
     return score, fig
 
 
@@ -138,6 +160,21 @@ def create_model(args):
             source_channels=1,
             target_channels=1,
             nb_features=[16, 16, 16, 16, 16],
+            model_type=args.model_type,
+            device=device,
+        ).to(device)
+        model_path = f"{args.output_dir}/best.pt"
+        model.load_state_dict(torch.load(model_path, map_location=device))
+        print(f"Load model : {model_path}")  # noqa: T201
+        model.eval()
+        if mlflow.active_run():
+            mlflow.log_param("model_path", model_path)
+    elif args.model_type == "flowseg":
+        model = WarperVxm(
+            ndim=2,
+            source_channels=1,
+            target_channels=1,
+            nb_features=[16, 16, 16, 16, 16],  # [16, 32, 64, 128, 256],
             model_type=args.model_type,
             device=device,
         ).to(device)
@@ -189,7 +226,11 @@ def register_video(args):
     global_min, global_max = normalisation_params(frames_path_list)
 
     # MLFLOW
-    if args.model_type == "voxelmorph" or args.model_type == "twoflows":
+    if (
+        args.model_type == "voxelmorph"
+        or args.model_type == "twoflows"
+        or args.model_type == "flowseg"
+    ):
         with Path(f"{args.output_dir}/config.json").open() as j:
             config = json.load(j)  # To get informations from vxm training
     else:
@@ -226,20 +267,28 @@ def register_video(args):
         fixed = tiff.imread(frames_path_list[idx2])
 
         # 3. Compute registration
-        if args.model_type == "voxelmorph":
-            field, fig, input_moving, input_fixed = register_pair(
-                moving, fixed, model, global_min, global_max
+        if (
+            args.model_type == "voxelmorph"
+            or args.model_type == "twoflows"
+            or args.model_type == "flowseg"
+        ):
+            res = register_pair(moving, fixed, model, global_min, global_max)
+            displacement, fig, input_moving, input_fixed = (
+                res["displacement"],
+                res["fig"],
+                res["input_moving"],
+                res["input_fixed"],
             )
-        if args.model_type == "twoflows":
-            field, inv_field, fig, input_moving, input_fixed = (
-                register_pair_twoheads_vxm(moving, fixed, model, global_min, global_max)
-            )
+            if "displacement_bwd" in res:
+                inv_displacement = res["displacement_bwd"]
+            if "source_segmentation" in res:
+                source_seg_pred = res["source_segmentation"]
         elif args.model_type == "tvl1":
-            field, fig, input_moving, input_fixed = register_pair_tvl1(
+            displacement, fig, input_moving, input_fixed = register_pair_tvl1(
                 moving, fixed, global_min, global_max
             )
         elif args.model_type == "raft":
-            field, fig, input_moving, input_fixed = register_pair_raft(
+            displacement, fig, input_moving, input_fixed = register_pair_raft(
                 frames_path_list[idx],
                 frames_path_list[idx2],
                 model,
@@ -247,15 +296,15 @@ def register_video(args):
                 global_max,
             )
         elif args.model_type == "farnback":
-            field, fig, input_moving, input_fixed = register_pair_fb(
+            displacement, fig, input_moving, input_fixed = register_pair_fb(
                 moving, fixed, model, global_min, global_max
             )
         fig.savefig(viz_dir / f"registration_result_for_paire_{idx}-{idx2}.png")
         plt.close(fig)
 
         if args.visualize:
-            print("111111111", field.squeeze().cpu().numpy().max())
-            flow_maps[(idx2, idx)] = field.squeeze().cpu().numpy()
+            print("111111111", displacement.squeeze().cpu().numpy().max())
+            flow_maps[(idx2, idx)] = displacement.squeeze().cpu().numpy()
             if idx == 0:
                 video.append(
                     np.expand_dims(input_moving, axis=-1)
@@ -263,16 +312,15 @@ def register_video(args):
             video.append(
                 np.expand_dims(input_fixed, axis=-1)
             )  # channel dimension neededfor visualization
-            if args.model_type == "voxelmorph":
-                inv_field, _, _, _ = register_pair(
-                    fixed, moving, model, global_min, global_max
-                )
+            if args.model_type == "voxelmorph" or args.model_type == "flowseg":
+                res = register_pair(fixed, moving, model, global_min, global_max)
+                inv_displacement = res["displacement"]
             elif args.model_type == "tvl1":
-                inv_field, _, _, _ = register_pair_tvl1(
+                inv_displacement, _, _, _ = register_pair_tvl1(
                     fixed, moving, global_min, global_max
                 )
             elif args.model_type == "raft":
-                inv_field, _, _, _ = register_pair_raft(
+                inv_displacement, _, _, _ = register_pair_raft(
                     frames_path_list[idx2],
                     frames_path_list[idx],
                     model,
@@ -280,11 +328,11 @@ def register_video(args):
                     global_max,
                 )
             elif args.model_type == "farnback":
-                inv_field, _, _, _ = register_pair_fb(
+                inv_displacement, _, _, _ = register_pair_fb(
                     fixed, moving, model, global_min, global_max
                 )
-            print("2222222222", inv_field.squeeze().cpu().numpy().max())
-            flow_maps[(idx, idx2)] = inv_field.squeeze().cpu().numpy()
+            print("2222222222", inv_displacement.squeeze().cpu().numpy().max())
+            flow_maps[(idx, idx2)] = inv_displacement.squeeze().cpu().numpy()
 
         if mlflow.active_run():
             mlflow.log_figure(
@@ -292,15 +340,15 @@ def register_video(args):
             )
 
         # 4. Evaluation for the pair
-        # If segmentations available, load them and warp the moving segmentation with the predicted field for evaluation
+        # If segmentations available, load them and warp the moving segmentation with the predicted displacement for evaluation
         if args.seg_path is not None:
             # Load segmentation masks
             seg_moving = tiff.imread(seg_path_list[idx])
             seg_fixed = tiff.imread(seg_path_list[idx2])
-            res = evaluate_registration(seg_moving, seg_fixed, field)
-            if res is None:
+            eval_res = evaluate_registration(seg_moving, seg_fixed, displacement)
+            if eval_res is None:
                 continue
-            score_pair, fig = res
+            score_pair, fig = eval_res
             results.append(score_pair)
             fig.savefig(viz_dir / f"seg_eval_for_paire_{idx}-{idx2}.png")
             if mlflow.active_run():
@@ -308,6 +356,19 @@ def register_video(args):
                     fig, artifact_file=f"seg_eval_for_paire_{idx}-{idx2}.png"
                 )
             plt.close(fig)
+            # ------------------------- SEGMENTATION EVALUATION ------------------------------------
+            if "source_segmentation" in res:
+                eval_seg_res = evaluate_segmentation(source_seg_pred, seg_moving)
+                if eval_seg_res is None:
+                    continue
+                score_pair, fig = eval_seg_res
+                results.append(score_pair)
+                fig.savefig(viz_dir / f"segmentation_result_for_{idx}.png")
+                if mlflow.active_run():
+                    mlflow.log_figure(
+                        fig, artifact_file=f"segmentation_result_for_{idx}.png"
+                    )
+                plt.close(fig)
 
         else:
             print("Segmentation files not found, skipping segmentation evaluation.")  # noqa: T201
@@ -338,6 +399,13 @@ def register_video(args):
         global_ref_dice = np.mean(ref_dice_scores_per_pair)
         global_iou = np.mean(iou_scores_per_pair)
         global_ref_iou = np.mean(ref_iou_scores_per_pair)
+        if "dice_segmentation" in results[0]:
+            dice_segmentation_per_pair = [
+                result["dice_segmentation"] for result in results if result is not None
+            ]
+            global_dice_segmentation = np.mean(dice_segmentation_per_pair)
+        else:
+            global_dice_segmentation = None
         # Save metrics in a json file
         metrics["global_dice"] = global_dice
         metrics["global_ref_dice"] = global_ref_dice
@@ -347,6 +415,7 @@ def register_video(args):
         metrics["ref_dice_per_pair"] = ref_dice_scores_per_pair
         metrics["iou_per_pair"] = iou_scores_per_pair
         metrics["ref_iou_per_pair"] = ref_iou_scores_per_pair
+        metrics["global_dice_segmentation"] = global_dice_segmentation
         if mlflow.active_run():
             mlflow.log_metrics(
                 {
@@ -397,7 +466,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/twoflows/output_20260625_175105",
+        default="outputs/twoflows/output_20260626_145854",
         help="Directory to find model and to save results",
     )
     args = parser.parse_args()

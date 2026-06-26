@@ -61,7 +61,7 @@ class NormalizeMinMax(nn.Module):
 
 def pyramidal_flow(source, target, model, model_type, level=2):
     """Compute the pyramidal flow to allow the model to understand bigger movements."""
-    current_field = None
+    current_displacement = None
     spatial_transformer = vxm.nn.modules.SpatialTransformer(
         interpolation_mode="linear"
     ).to(device)
