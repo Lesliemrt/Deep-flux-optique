@@ -527,7 +527,7 @@ def main(args):
     final_path = output_dir / "final.pt"
     torch.save(model.state_dict(), final_path)
     config = {
-        "model": "VxmPairwise",
+        "model": args.model_type,
         "max_gap": args.max_gap,
         "segmentations": args.seg_path is not None,
         "dataset": args.video_path,
@@ -571,21 +571,21 @@ if __name__ == "__main__":
         help="Output directory",
     )
     parser.add_argument(
-        "--video-path", default=TRAIN_DATA, help="Path to the training video"
+        "--video-path", default=TRAIN_DATA_MUSC, help="Path to the training video"
     )
     parser.add_argument(
         "--seg-path",
-        default=TRAIN_SEG_DATA,
+        default=TRAIN_SEG_DATA_MUSC,
         help="Path to the segmentation of the training video, if not available set to None",
     )
     # Dataset parameters
     parser.add_argument(
-        "--max_gap", type=int, default=20, help="Maximum temporal gap between 2 frames"
+        "--max_gap", type=int, default=1, help="Maximum temporal gap between 2 frames"
     )
     parser.add_argument(
         "--multiplier",
         type=int,
-        default=3,
+        default=1,
         help="Multiplier to have more pairs per epoch",
     )
     parser.add_argument(
@@ -626,7 +626,7 @@ if __name__ == "__main__":
         "--lambda",
         type=float,
         dest="lambda_param",
-        default=0.001,
+        default=0.01,
         help="Regularisation parameter for smooth loss",
     )
     parser.add_argument(

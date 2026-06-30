@@ -21,8 +21,8 @@ sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
 )  # noqa: PTH100, PTH118, PTH120
 from scripts.train_cells import NormalizeMinMax
-from my_utils.configs import HEIGHT, WIDTH, device
-from my_utils.utils import interpole_and_pad, viz, normalise
+from my_utils.configs import device
+from my_utils.utils import viz, normalise
 
 import voxelmorph_folder.voxelmorph as vxm
 
@@ -54,17 +54,9 @@ def register_pair(moving, fixed, model, global_min, global_max):
     input_fixed : numpy.ndarray
         Normalized fixed image.
     """
-    # Interpole/Pad images to HEIGHT, WIDTH if needed
-    moving_resized = interpole_and_pad(moving, [HEIGHT, WIDTH])
-    fixed_resized = interpole_and_pad(fixed, [HEIGHT, WIDTH])
-
     # To tensor
-    input_moving = (
-        torch.from_numpy(moving_resized).float().to(device).unsqueeze(0).unsqueeze(0)
-    )
-    input_fixed = (
-        torch.from_numpy(fixed_resized).float().to(device).unsqueeze(0).unsqueeze(0)
-    )
+    input_moving = torch.from_numpy(moving).float().to(device).unsqueeze(0).unsqueeze(0)
+    input_fixed = torch.from_numpy(fixed).float().to(device).unsqueeze(0).unsqueeze(0)
 
     # Normalisation
     normalise = NormalizeMinMax(global_min=global_min, global_max=global_max)
@@ -130,17 +122,10 @@ def register_pair_twoheads_vxm(moving, fixed, model, global_min, global_max):
     input_fixed : numpy.ndarray
         Normalized fixed image.
     """
-    # Interpole/Pad images to HEIGHT, WIDTH if needed
-    moving_resized = interpole_and_pad(moving, [HEIGHT, WIDTH])
-    fixed_resized = interpole_and_pad(fixed, [HEIGHT, WIDTH])
 
     # To tensor
-    input_moving = (
-        torch.from_numpy(moving_resized).float().to(device).unsqueeze(0).unsqueeze(0)
-    )
-    input_fixed = (
-        torch.from_numpy(fixed_resized).float().to(device).unsqueeze(0).unsqueeze(0)
-    )
+    input_moving = torch.from_numpy(moving).float().to(device).unsqueeze(0).unsqueeze(0)
+    input_fixed = torch.from_numpy(fixed).float().to(device).unsqueeze(0).unsqueeze(0)
 
     # Normalisation
     normalise = NormalizeMinMax(global_min=global_min, global_max=global_max)
@@ -207,13 +192,10 @@ def register_pair_tvl1(moving, fixed, global_min, global_max):
     input_fixed : numpy.ndarray
         Normalized fixed image.
     """
-    # Interpole/Pad images to HEIGHT, WIDTH if needed
-    moving_resized = interpole_and_pad(moving, [HEIGHT, WIDTH])
-    fixed_resized = interpole_and_pad(fixed, [HEIGHT, WIDTH])
 
     # Normalisation
-    input_moving = normalise(moving_resized, global_min, global_max)
-    input_fixed = normalise(fixed_resized, global_min, global_max)
+    input_moving = normalise(moving, global_min, global_max)
+    input_fixed = normalise(fixed, global_min, global_max)
 
     # To tensor
     tensor_moving = (
