@@ -109,7 +109,7 @@ def evaluate_registration_with_seg(
 
 
 def evaluate_registration(moving, fixed, displacement):
-    """Evaluate the registration results."""
+    """Evaluate the registration results with MSE : not relevant (ideally find another method to evaluate the visual aspect)."""
     score = {}
     # Load segmentation masks
     moving = interpole_and_pad(moving, [HEIGHT, WIDTH])
@@ -125,7 +125,7 @@ def evaluate_registration(moving, fixed, displacement):
     # Compute MSE score
     mse = np.square(np.subtract(fixed, warped_moving.squeeze().cpu().numpy())).mean()
     ref_mse = np.square(
-        np.subtract(fixed, warped_moving.squeeze().cpu().numpy())
+        np.subtract(fixed, moving)
     ).mean()  # reference dice to compare with the mse after registration
     score["mse"] = mse
     score["ref_mse"] = ref_mse
@@ -286,6 +286,7 @@ def register_video(args):
     flow_maps = {}
     video = []  # list of frames to visualize the flow maps on (only for gap=1 and if args.visualize is True)
     for idx in range(min((len(frames_path_list) - args.gap), 100)):
+        result = {}
         # Load moving and fixed images
         idx2 = idx + args.gap
         print(f"Registering pair : {idx} and {idx2}")  # noqa: T201
@@ -369,8 +370,8 @@ def register_video(args):
 
         # 4. Evaluation for the pair
         # Compute mse to evaluate visual aspect
-        score_pair = evaluate_registration(moving, fixed, displacement)
-        results.append(score_pair)
+        # score_pair = evaluate_registration(moving, fixed, displacement)
+        # result.update(score_pair)
         # If segmentations available, load them and warp the moving segmentation with the predicted displacement for evaluation
         if args.seg_path is not None:
             # Load segmentation masks
@@ -382,7 +383,7 @@ def register_video(args):
             if eval_res is None:
                 continue
             score_pair, fig = eval_res
-            results.append(score_pair)
+            result.update(score_pair)
             fig.savefig(viz_dir / f"seg_eval_for_paire_{idx}-{idx2}.png")
             if mlflow.active_run():
                 mlflow.log_figure(
@@ -395,7 +396,7 @@ def register_video(args):
                 if eval_seg_res is None:
                     continue
                 score_pair, fig = eval_seg_res
-                results.append(score_pair)
+                result.update(score_pair)
                 fig.savefig(viz_dir / f"segmentation_result_for_{idx}.png")
                 if mlflow.active_run():
                     mlflow.log_figure(
@@ -405,6 +406,7 @@ def register_video(args):
 
         else:
             print("Segmentation files not found, skipping segmentation evaluation.")  # noqa: T201
+        results.append(result)
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")  # noqa: DTZ005
     metrics = {
@@ -416,14 +418,14 @@ def register_video(args):
     }
     # 5. Global evaluation
     # Compute mse to evaluate the global visual aspect
-    mse_per_pair = [result["mse"] for result in results if result is not None]
-    ref_mse_scores_per_pair = [
-        result["ref_mse"] for result in results if result is not None
-    ]
-    global_mse = np.mean(mse_per_pair)
-    global_ref_mse = np.mean(ref_mse_scores_per_pair)
-    metrics["global_mse"] = global_mse
-    metrics["global_ref_mse"] = global_ref_mse
+    # mse_per_pair = [result["mse"] for result in results if result is not None]
+    # ref_mse_scores_per_pair = [
+    #     result["ref_mse"] for result in results if result is not None
+    # ]
+    # global_mse = np.mean(mse_per_pair)
+    # global_ref_mse = np.mean(ref_mse_scores_per_pair)
+    # metrics["global_mse"] = global_mse
+    # metrics["global_ref_mse"] = global_ref_mse
     # Compute de global dice score an iou score
     if args.seg_path is not None:
         # TODO fonction pour faire ça pck la c'est moche
@@ -465,12 +467,10 @@ def register_video(args):
                     "global_ref_dice": global_ref_dice,
                     "global_iou": global_iou,
                     "global_ref_iou": global_ref_iou,
-                    "global_mse": global_mse,
-                    "global_ref_mse": global_ref_mse,
                 }
             )
-    with Path.open(results_dir / "metrics.json", "w") as f:
-        json.dump(metrics, f, indent=4)
+    # with Path.open(results_dir / "metrics.json", "w") as f:
+    #     json.dump(metrics, f, indent=4)
 
     if args.mlflow:
         mlflow.end_run()
@@ -510,7 +510,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/voxelmorph/output_20260630_130218",
+        default="outputs/twoflows/output_20260702_154508",
         help="Directory to find model and to save results",
     )
     args = parser.parse_args()

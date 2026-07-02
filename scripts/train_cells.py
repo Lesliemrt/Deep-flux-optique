@@ -142,7 +142,7 @@ class LossComputer(nn.Module):
 
     def compute_image_loss(self, img1, img2):
         if isinstance(self.image_loss_fn, ne.nn.modules.NCC):
-            return 1 - self.image_loss_fn(img1, img2)  # to minimize ncc loss
+            return (1 - self.image_loss_fn(img1, img2))[0][0]  # to minimize ncc loss
         else:
             return self.image_loss_fn(img1, img2)
 
@@ -616,7 +616,7 @@ if __name__ == "__main__":
         help="Regularisation parameter for cycle loss",
     )
     parser.add_argument(
-        "--image-loss", type=str, default="mse", help="Image loss to use: 'mse' or 'cc'"
+        "--image-loss", type=str, default="cc", help="Image loss to use: 'mse' or 'cc'"
     )
     parser.add_argument(
         "--grad_loss", type=str, default="l2", help="Gradient loss to use: 'l1' or 'l2'"
@@ -626,7 +626,7 @@ if __name__ == "__main__":
         "--lambda",
         type=float,
         dest="lambda_param",
-        default=0.01,
+        default=0.1,
         help="Regularisation parameter for smooth loss",
     )
     parser.add_argument(
