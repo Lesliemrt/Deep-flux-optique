@@ -36,6 +36,7 @@ from my_utils.configs import (  # type: ignore
     TEST_SEG_DATA_MUSC,  # noqa: F401
     WIDTH,
     device,
+    MLFLOW_TRACKING_URI,
 )
 from my_utils.utils import interpole_and_pad, iou, viz, normalisation_params
 from flow_visualizer import FlowVisualizer
@@ -264,7 +265,7 @@ def register_video(args):
         args.output_dir = f"outputs/{args.model_type}"
 
     if args.mlflow:
-        mlflow.set_tracking_uri("http://127.0.0.1:5000")
+        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
         parent_run_id = config.get("mlflow_run_id", None)
         mlflow.start_run(
             run_name=f"Test gap {args.gap} model type {args.model_type} on {args.video_path}",
@@ -510,7 +511,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/twoflows/output_20260702_154508",
+        default="outputs/twoflows/output_20260703_114802",
         help="Directory to find model and to save results",
     )
     args = parser.parse_args()

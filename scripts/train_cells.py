@@ -40,6 +40,7 @@ from my_utils.configs import (
     TRAIN_SEG_DATA,  # noqa: F401
     TRAIN_SEG_DATA_HSC,  # noqa: F401
     device,
+    MLFLOW_TRACKING_URI,
 )
 from my_utils.utils import linear_augment  # noqa: F401
 
@@ -223,6 +224,7 @@ def train_epoch(
         loss = 0.0
         img_loss = 0.0
         grad_loss = 0.0
+        background_loss = 0.0
 
         # Get the displacement and the warped source image from the model
         res = model(source, target, return_warped_source=True)
@@ -298,6 +300,13 @@ def train_epoch(
                 flow_with_seg_loss += loss_computer.compute_flow_with_seg_loss(
                     source_seg, warped_target_seg
                 ).squeeze()
+                if background:
+                    # Add loss to avoid displacement in the background
+                    background_loss += loss_computer.compute_background_loss(
+                        source_seg, target_seg, displacement_bwd
+                    )
+                    loss += loss_weights[3] * background_loss
+                    epoch_background_loss += background_loss.item()
             # ------------------------------------------- FLOW SEG ---------------------------------------------------
             # If model_type = flowseg, the segmentation map is computed as well
             # Add the corresponding loss
@@ -319,7 +328,7 @@ def train_epoch(
             # ---------------------------------------------------------------------------------------------------------
             if background:
                 # Add loss to avoid displacement in the background
-                background_loss = loss_computer.compute_background_loss(
+                background_loss += loss_computer.compute_background_loss(
                     source_seg, target_seg, displacement
                 )
                 loss += loss_weights[3] * background_loss
@@ -359,7 +368,7 @@ def main(args):
         args.gamma_param = 0.0
     # MLflow set up
     if args.mlflow:
-        mlflow.set_tracking_uri("http://127.0.0.1:5000")
+        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
         mlflow.start_run(
             run_name=f"train_cells_{args.model_type}_{timestamp}_{args.video_path}"
         )  # noqa: DTZ005
@@ -616,7 +625,7 @@ if __name__ == "__main__":
         help="Regularisation parameter for cycle loss",
     )
     parser.add_argument(
-        "--image-loss", type=str, default="cc", help="Image loss to use: 'mse' or 'cc'"
+        "--image-loss", type=str, default="mse", help="Image loss to use: 'mse' or 'cc'"
     )
     parser.add_argument(
         "--grad_loss", type=str, default="l2", help="Gradient loss to use: 'l1' or 'l2'"
@@ -626,7 +635,7 @@ if __name__ == "__main__":
         "--lambda",
         type=float,
         dest="lambda_param",
-        default=0.1,
+        default=0.01,
         help="Regularisation parameter for smooth loss",
     )
     parser.add_argument(
