@@ -511,7 +511,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/twoflows/output_20260703_114802",
+        default="outputs/twoflows/output_20260703_152159",
         help="Directory to find model and to save results",
     )
     args = parser.parse_args()
