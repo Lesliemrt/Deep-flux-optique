@@ -48,3 +48,7 @@ outputs/
 **/*.pth
 **/*.json
 **/*.zip
+
+# server
+jobs/
+**/*.sh
