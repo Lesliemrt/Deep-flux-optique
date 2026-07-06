@@ -207,7 +207,7 @@ def create_model(args):
             ndim=2,
             source_channels=1,
             target_channels=1,
-            nb_features=[16, 16, 16, 16, 16],  # [16, 32, 64, 128, 256],
+            nb_features=[16, 32, 64, 128, 256],
             model_type=args.model_type,
             device=device,
         ).to(device)
