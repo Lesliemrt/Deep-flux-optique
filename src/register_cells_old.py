@@ -23,7 +23,7 @@ sys.path.append(
 from my_utils.configs import device
 from my_utils.image_utils import viz, normalise, NormalizeMinMax
 
-import voxelmorph_folder.voxelmorph as vxm
+import voxelmorph as vxm
 
 
 def register_pair(moving, fixed, model, global_min, global_max):
