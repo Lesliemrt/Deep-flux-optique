@@ -30,6 +30,11 @@ sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
 )  # noqa: PTH100, PTH118, PTH120
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+sys.path.append(
+    os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "voxelmorph_folder"
+    )
+)  # noqa: PTH100, PTH118, PTH120
 from dataset import VxmVideoDataset
 from model import WarperVxm  # noqa: F401
 from my_utils.configs import (
@@ -44,7 +49,7 @@ from my_utils.configs import (
 )
 from my_utils.utils import linear_augment  # noqa: F401
 
-import voxelmorph_folder.voxelmorph as vxm
+import voxelmorph as vxm
 
 
 class NormalizeMinMax(nn.Module):

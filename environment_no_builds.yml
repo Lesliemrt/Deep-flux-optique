@@ -107,7 +107,6 @@ dependencies:
       - tzdata==2026.2
       - urllib3==2.7.0
       - uvicorn==0.47.0
-      - voxelmorph==0.2
       - werkzeug==3.1.8
       - yarl==1.24.2
       - zipp==4.1.0

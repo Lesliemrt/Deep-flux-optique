@@ -5,7 +5,7 @@ from torch import nn
 import torch.nn.functional as F
 import neurite as ne
 
-import voxelmorph_folder.voxelmorph as vxm
+import voxelmorph as vxm
 
 
 def downsampling_conv_blocks(

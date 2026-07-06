@@ -24,6 +24,11 @@ sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
 )  # noqa: PTH100, PTH118, PTH120
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+sys.path.append(
+    os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "voxelmorph_folder"
+    )
+)  # noqa: PTH100, PTH118, PTH120
 from my_utils.configs import (  # type: ignore
     HEIGHT,
     TEST_DATA,  # noqa: F401
@@ -49,7 +54,7 @@ from register_cells_old import (
 )
 from model import WarperVxm
 
-import voxelmorph_folder.voxelmorph as vxm
+import voxelmorph as vxm
 
 
 def evaluate_registration_with_seg(
