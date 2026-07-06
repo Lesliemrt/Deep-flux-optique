@@ -1,6 +1,4 @@
 # utils.py  # noqa: ERA001, INP001
-import os
-import sys
 from collections import Counter
 
 import matplotlib.pyplot as plt
@@ -9,11 +7,8 @@ import scipy
 import tifffile as tiff
 from skimage.measure import regionprops
 
-# Local imports
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))  # noqa: PTH100, PTH118, PTH120
-
 import voxelmorph as vxm
-from flow_viz import flow_to_image  # code from raft
+from my_utils.flow_viz import flow_to_image  # code from raft
 
 
 def normalisation_params(frames_path_list):
