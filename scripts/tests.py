@@ -147,18 +147,18 @@ def evaluate_segmentation(segmentation_pred, segmentation_gt):
     seg_gt = interpole_and_pad(segmentation_gt, [HEIGHT, WIDTH])
     # Binarise
     seg_gt = seg_gt > 0
+    seg_pred = (seg_pred > 0.5).astype(int)
     # Compute Dice score
     dice = vxm.py.utils.dice(seg_pred, seg_gt, include_zero=False)
     score["dice_segmentation"] = np.mean(dice)
-
     # To visulaise seg evaluation
     fig, ax = plt.subplots(2, 1, figsize=(12, 6))
     plt.subplot(2, 1, 1)
-    ax[0, 0].set_title("Segmentation prediction")
-    ax[0, 0].imshow(seg_pred, cmap="gray")
+    ax[0].set_title("Segmentation prediction")
+    ax[0].imshow(seg_pred, cmap="gray")
     plt.subplot(2, 1, 2)
-    ax[0, 1].set_title("Segmentation Ground Truth")
-    ax[0, 1].imshow(seg_gt, cmap="gray")
+    ax[1].set_title("Segmentation Ground Truth")
+    ax[1].imshow(seg_gt, cmap="gray")
     return score, fig
 
 
@@ -303,7 +303,6 @@ def register_video(args):
         # Interpole/Pad images to HEIGHT, WIDTH if needed
         moving = interpole_and_pad(moving, [HEIGHT, WIDTH])
         fixed = interpole_and_pad(fixed, [HEIGHT, WIDTH])
-
         # 3. Compute registration
         if (
             args.model_type == "voxelmorph"
