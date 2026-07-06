@@ -20,9 +20,8 @@ import torch
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
 )  # noqa: PTH100, PTH118, PTH120
-from scripts.train_cells import NormalizeMinMax
 from my_utils.configs import device
-from my_utils.image_utils import viz, normalise
+from my_utils.image_utils import viz, normalise, NormalizeMinMax
 
 import voxelmorph_folder.voxelmorph as vxm
 

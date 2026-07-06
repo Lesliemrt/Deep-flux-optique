@@ -52,20 +52,6 @@ from my_utils.image_utils import linear_augment  # noqa: F401
 import voxelmorph as vxm
 
 
-class NormalizeMinMax(nn.Module):
-    """Return normalized tensor based on min, max."""
-
-    def __init__(self, global_min, global_max, eps=1e-7):
-        super().__init__()
-        self.min = global_min
-        self.max = global_max
-        self.eps = eps
-
-    def forward(self, x):
-        """Forward."""
-        return (x - self.min) / (self.max - self.min + self.eps)
-
-
 def pyramidal_flow(source, target, model, model_type, level=2):
     """Compute the pyramidal flow to allow the model to understand bigger movements."""
     current_displacement = None

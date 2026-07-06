@@ -6,6 +6,7 @@ import numpy as np
 import scipy
 import tifffile as tiff
 from skimage.measure import regionprops
+from torch import nn
 
 import voxelmorph as vxm
 from my_utils.flow_viz import flow_to_image  # code from raft
@@ -154,6 +155,20 @@ def linear_augment(start, end, max_weight, epoch):
         return max_weight
     else:
         return max_weight * ((epoch - start) / (end - start))
+
+
+class NormalizeMinMax(nn.Module):
+    """Return normalized tensor based on min, max."""
+
+    def __init__(self, global_min, global_max, eps=1e-7):
+        super().__init__()
+        self.min = global_min
+        self.max = global_max
+        self.eps = eps
+
+    def forward(self, x):
+        """Forward."""
+        return (x - self.min) / (self.max - self.min + self.eps)
 
 
 if __name__ == "__main__":
