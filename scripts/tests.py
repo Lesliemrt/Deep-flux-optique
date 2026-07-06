@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import mlflow
 import numpy as np
 import tifffile as tiff
-from argparse import Namespace
+# from argparse import Namespace
 
 # Third-party imports
 import torch
@@ -45,7 +45,8 @@ from my_utils.configs import (  # type: ignore
 )
 from my_utils.image_utils import interpole_and_pad, iou, viz, normalisation_params
 from flow_visualizer import FlowVisualizer
-from raft import RAFT
+
+# from raft import RAFT
 from register_cells_old import (
     register_pair,
     register_pair_tvl1,
@@ -218,21 +219,21 @@ def create_model(args):
             mlflow.log_param("model_path", model_path)
     elif args.model_type == "tvl1":
         model = None
-    elif args.model_type == "raft":
-        raft_args = Namespace(
-            model="raft-things.pth",
-            path=args.video_path,
-            small=False,
-            mixed_precision=False,
-            alternate_corr=False,
-        )
-        model = torch.nn.DataParallel(RAFT(raft_args))
-        model_path = "raft_models/raft-things.pth"
-        model.load_state_dict(torch.load(model_path, map_location=device))
+    # elif args.model_type == "raft":
+    #     raft_args = Namespace(
+    #         model="raft-things.pth",
+    #         path=args.video_path,
+    #         small=False,
+    #         mixed_precision=False,
+    #         alternate_corr=False,
+    #     )
+    #     model = torch.nn.DataParallel(RAFT(raft_args))
+    #     model_path = "raft_models/raft-things.pth"
+    #     model.load_state_dict(torch.load(model_path, map_location=device))
 
-        model = model.module
-        model.to(device)
-        model.eval()
+    #     model = model.module
+    #     model.to(device)
+    #     model.eval()
     elif args.model_type == "farnback":
         model = cv2.FarnebackOpticalFlow.create()
     else:
