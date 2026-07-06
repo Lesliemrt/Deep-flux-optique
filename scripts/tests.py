@@ -143,10 +143,8 @@ def evaluate_segmentation(segmentation_pred, segmentation_gt):
     """Evaluate the segmentation results."""
     score = {}
     # Load segmentation masks
-    seg_pred = interpole_and_pad(
-        segmentation_pred.squeeze().cpu().numpy(), [HEIGHT, WIDTH]
-    )
-    seg_gt = interpole_and_pad(segmentation_gt.squeeze().cpu().numpy(), [HEIGHT, WIDTH])
+    seg_pred = interpole_and_pad(segmentation_pred, [HEIGHT, WIDTH])
+    seg_gt = interpole_and_pad(segmentation_gt, [HEIGHT, WIDTH])
     # Binarise
     seg_gt = seg_gt > 0
     # Compute Dice score
@@ -401,7 +399,9 @@ def register_video(args):
             plt.close(fig)
             # ------------------------- SEGMENTATION EVALUATION ------------------------------------
             if "source_segmentation" in res:
-                eval_seg_res = evaluate_segmentation(source_seg_pred, seg_moving)
+                eval_seg_res = evaluate_segmentation(
+                    source_seg_pred.squeeze().cpu().numpy(), seg_moving
+                )
                 if eval_seg_res is None:
                     continue
                 score_pair, fig = eval_seg_res
