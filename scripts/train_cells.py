@@ -47,7 +47,7 @@ from my_utils.configs import (
     device,
     MLFLOW_TRACKING_URI,
 )
-from my_utils.utils import linear_augment  # noqa: F401
+from my_utils.image_utils import linear_augment  # noqa: F401
 
 import voxelmorph as vxm
 

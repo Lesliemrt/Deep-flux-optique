@@ -43,7 +43,7 @@ from my_utils.configs import (  # type: ignore
     device,
     MLFLOW_TRACKING_URI,
 )
-from my_utils.utils import interpole_and_pad, iou, viz, normalisation_params
+from my_utils.image_utils import interpole_and_pad, iou, viz, normalisation_params
 from flow_visualizer import FlowVisualizer
 from raft import RAFT
 from register_cells_old import (

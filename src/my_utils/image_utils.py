@@ -13,7 +13,7 @@ from skimage.measure import regionprops
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))  # noqa: PTH100, PTH118, PTH120
 
 import voxelmorph as vxm
-from utils import flow_viz  # raft.core.utils
+from my_utils.image_utils import flow_viz  # raft.core.utils
 
 
 def normalisation_params(frames_path_list):

@@ -27,7 +27,7 @@ from my_utils.configs import (
     WIDTH,
     device,
 )
-from my_utils.utils import interpole_and_pad, normalisation_params, normalise
+from my_utils.image_utils import interpole_and_pad, normalisation_params, normalise
 import voxelmorph_folder.voxelmorph as vxm
 
 

@@ -17,7 +17,7 @@ from torchvision.transforms import v2
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
 )  # noqa: PTH100, PTH118, PTH120
-from my_utils.utils import interpole_and_pad
+from my_utils.image_utils import interpole_and_pad
 from my_utils.configs import (
     HEIGHT,
     TRAIN_DATA_MUSC,  # noqa: F401

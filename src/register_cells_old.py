@@ -22,7 +22,7 @@ sys.path.append(
 )  # noqa: PTH100, PTH118, PTH120
 from scripts.train_cells import NormalizeMinMax
 from my_utils.configs import device
-from my_utils.utils import viz, normalise
+from my_utils.image_utils import viz, normalise
 
 import voxelmorph_folder.voxelmorph as vxm
 

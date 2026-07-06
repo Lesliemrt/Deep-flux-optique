@@ -37,7 +37,7 @@ from src.my_utils.configs import (
     device,
 )
 from src.dataset import VxmVideoDataset
-from src.my_utils.utils import iou, viz
+from my_utils.image_utils import iou, viz
 from src.flow_visualizer import FlowVisualizer
 from raft import RAFT
 from src.register_cells import (

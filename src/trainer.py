@@ -29,7 +29,7 @@ from src.my_utils.configs import (
     TRAIN_SEG_DATA_HSC,  # noqa: F401
     device,
 )
-from src.my_utils.utils import linear_augment  # noqa: F401
+from my_utils.image_utils import linear_augment  # noqa: F401
 
 import voxelmorph_folder.voxelmorph as vxm
 
