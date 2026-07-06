@@ -119,8 +119,8 @@ def evaluate_registration(moving, fixed, displacement):
     """Evaluate the registration results with MSE : not relevant (ideally find another method to evaluate the visual aspect)."""
     score = {}
     # Load segmentation masks
-    moving = interpole_and_pad(moving, [HEIGHT, WIDTH])
-    fixed = interpole_and_pad(fixed, [HEIGHT, WIDTH])
+    moving = interpole_and_pad(moving.squeeze().cpu().numpy(), [HEIGHT, WIDTH])
+    fixed = interpole_and_pad(fixed.squeeze().cpu().numpy(), [HEIGHT, WIDTH])
     # Warp moving with the predicted displacement
     tensor_moving = (
         torch.from_numpy(moving).to(device).float().unsqueeze(0).unsqueeze(0)
