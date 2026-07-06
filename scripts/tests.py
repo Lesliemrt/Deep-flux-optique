@@ -119,8 +119,8 @@ def evaluate_registration(moving, fixed, displacement):
     """Evaluate the registration results with MSE : not relevant (ideally find another method to evaluate the visual aspect)."""
     score = {}
     # Load segmentation masks
-    moving = interpole_and_pad(moving.squeeze().cpu().numpy(), [HEIGHT, WIDTH])
-    fixed = interpole_and_pad(fixed.squeeze().cpu().numpy(), [HEIGHT, WIDTH])
+    moving = interpole_and_pad(moving, [HEIGHT, WIDTH])
+    fixed = interpole_and_pad(fixed, [HEIGHT, WIDTH])
     # Warp moving with the predicted displacement
     tensor_moving = (
         torch.from_numpy(moving).to(device).float().unsqueeze(0).unsqueeze(0)
@@ -143,8 +143,10 @@ def evaluate_segmentation(segmentation_pred, segmentation_gt):
     """Evaluate the segmentation results."""
     score = {}
     # Load segmentation masks
-    seg_pred = interpole_and_pad(segmentation_pred, [HEIGHT, WIDTH])
-    seg_gt = interpole_and_pad(segmentation_gt, [HEIGHT, WIDTH])
+    seg_pred = interpole_and_pad(
+        segmentation_pred.squeeze().cpu().numpy(), [HEIGHT, WIDTH]
+    )
+    seg_gt = interpole_and_pad(segmentation_gt.squeeze().cpu().numpy(), [HEIGHT, WIDTH])
     # Binarise
     seg_gt = seg_gt > 0
     # Compute Dice score
