@@ -13,7 +13,7 @@ from skimage.measure import regionprops
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))  # noqa: PTH100, PTH118, PTH120
 
 import voxelmorph as vxm
-from utils import flow_viz  # raft.core.utils
+from flow_viz import flow_to_image  # code from raft
 
 
 def normalisation_params(frames_path_list):
@@ -118,7 +118,7 @@ def viz(flo, ax=None):
     flo = flo.squeeze(0).permute(1, 2, 0).cpu().numpy()
 
     # map flow to rgb image
-    flo = flow_viz.flow_to_image(flo)
+    flo = flow_to_image(flo)
     if ax is None:
         plt.imshow(flo)
     else:
