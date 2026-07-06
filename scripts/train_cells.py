@@ -26,9 +26,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 # Local imports
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
-)  # noqa: PTH100, PTH118, PTH120
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # noqa: PTH100, PTH118, PTH120
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 sys.path.append(
     os.path.join(

@@ -20,9 +20,7 @@ from argparse import Namespace
 import torch
 
 # Local imports
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
-)  # noqa: PTH100, PTH118, PTH120
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # noqa: PTH100, PTH118, PTH120
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 sys.path.append(
     os.path.join(
