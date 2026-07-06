@@ -475,8 +475,8 @@ def register_video(args):
                     "global_ref_iou": global_ref_iou,
                 }
             )
-    # with Path.open(results_dir / "metrics.json", "w") as f:
-    #     json.dump(metrics, f, indent=4)
+    with Path.open(results_dir / "metrics.json", "w") as f:
+        json.dump(metrics, f, indent=4)
 
     if args.mlflow:
         mlflow.end_run()
@@ -516,7 +516,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/twoflows/output_20260703_152159",
+        default="outputs/flowseg/output_20260706_143609",
         help="Directory to find model and to save results",
     )
     args = parser.parse_args()
