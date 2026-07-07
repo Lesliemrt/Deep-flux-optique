@@ -626,7 +626,7 @@ if __name__ == "__main__":
         "--lambda",
         type=float,
         dest="lambda_param",
-        default=0.01,
+        default=0.1,
         help="Regularisation parameter for smooth loss",
     )
     parser.add_argument(

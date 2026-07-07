@@ -152,11 +152,11 @@ def evaluate_segmentation(segmentation_pred, segmentation_gt):
     dice = vxm.py.utils.dice(seg_pred, seg_gt, include_zero=False)
     score["dice_segmentation"] = np.mean(dice)
     # To visulaise seg evaluation
-    fig, ax = plt.subplots(2, 1, figsize=(12, 6))
-    plt.subplot(2, 1, 1)
+    fig, ax = plt.subplots(1, 2, figsize=(12, 6))
+    plt.subplot(1, 2, 1)
     ax[0].set_title("Segmentation prediction")
     ax[0].imshow(seg_pred, cmap="gray")
-    plt.subplot(2, 1, 2)
+    plt.subplot(1, 2, 2)
     ax[1].set_title("Segmentation Ground Truth")
     ax[1].imshow(seg_gt, cmap="gray")
     return score, fig
@@ -518,7 +518,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/flowseg/output_20260707_103416",
+        default="outputs/flowseg/output_20260707_135028",
         help="Directory to find model and to save results",
     )
     args = parser.parse_args()
