@@ -1,4 +1,5 @@
 # To do once on segmentation dataset
+import argparse
 from pathlib import Path
 import tifffile as tiff
 from collections import Counter
@@ -63,25 +64,31 @@ def mask_to_gaussian(segmentation, sigma_scale=0.25):
 
 
 if __name__ == "__main__":
-    name = "BF-C2DL-HSC"
+    parser = argparse.ArgumentParser(description="Train VoxelMorph")
+    parser.add_argument(
+        "--path",
+        default="data/data/BF-C2DL-HSC",
+        help="Path to the dataset to process",
+    )
+    args = parser.parse_args()
     # Relabel the segmentation videos with the labels from the tracking videos
-    output_path = Path(f"data/data/{name}/01_ERR_SEG_TRA")
+    output_path = Path(f"data/data/{args.path}/01_ERR_SEG_TRA")
     output_path.mkdir(exist_ok=True)
     relabel_video(
-        seg_video_path=Path(f"data/data/{name}/01_ERR_SEG"),
-        tra_video_path=Path(f"data/data/{name}/01_GT/TRA"),
+        seg_video_path=Path(f"data/data/{args.path}/01_ERR_SEG"),
+        tra_video_path=Path(f"data/data/{args.path}/01_GT/TRA"),
         output_path=output_path,
     )
-    output_path = Path(f"data/data/{name}/02_ERR_SEG_TRA")
+    output_path = Path(f"data/data/{args.path}/02_ERR_SEG_TRA")
     output_path.mkdir(exist_ok=True)
     relabel_video(
-        seg_video_path=Path(f"data/data/{name}/02_ERR_SEG"),
-        tra_video_path=Path(f"data/data/{name}/02_GT/TRA"),
+        seg_video_path=Path(f"data/data/{args.path}/02_ERR_SEG"),
+        tra_video_path=Path(f"data/data/{args.path}/02_GT/TRA"),
         output_path=output_path,
     )
 
     # # Create Gaussian heatmaps from the relabeled segmentation videos
-    # path = Path(f"data/data/{name}/01_ERR_SEG_TRA")
+    # path = Path(f"data/data/{args.path}/01_ERR_SEG_TRA")
     # video = sorted(path.iterdir())
     # out_path = path.parent / "SEG_HEATMAP"
     # out_path.mkdir(exist_ok=True)

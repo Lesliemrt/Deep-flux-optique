@@ -41,9 +41,11 @@ from my_utils.configs import (
     TRAIN_DATA_MUSC,  # noqa: F401
     TRAIN_SEG_DATA_MUSC,  # noqa: F401
     TRAIN_DATA,  # noqa: F401
-    TRAIN_DATA_HSC,  # noqa: F401
     TRAIN_SEG_DATA,  # noqa: F401
+    TRAIN_DATA_HSC,  # noqa: F401
     TRAIN_SEG_DATA_HSC,  # noqa: F401
+    TRAIN_DATA_HELA,  # noqa: F401
+    TRAIN_SEG_DATA_HELA,  # noqa: F401
     device,
     MLFLOW_TRACKING_URI,
 )
@@ -571,11 +573,11 @@ if __name__ == "__main__":
         help="Output directory",
     )
     parser.add_argument(
-        "--video-path", default=TRAIN_DATA, help="Path to the training video"
+        "--video-path", default=TRAIN_DATA_HELA, help="Path to the training video"
     )
     parser.add_argument(
         "--seg-path",
-        default=TRAIN_SEG_DATA,
+        default=TRAIN_SEG_DATA_HELA,
         help="Path to the segmentation of the training video, if not available set to None",
     )
     # Dataset parameters
@@ -626,7 +628,7 @@ if __name__ == "__main__":
         "--lambda",
         type=float,
         dest="lambda_param",
-        default=0.1,
+        default=0.01,
         help="Regularisation parameter for smooth loss",
     )
     parser.add_argument(
