@@ -571,11 +571,11 @@ if __name__ == "__main__":
         help="Output directory",
     )
     parser.add_argument(
-        "--video-path", default=TRAIN_DATA_MUSC, help="Path to the training video"
+        "--video-path", default=TRAIN_DATA, help="Path to the training video"
     )
     parser.add_argument(
         "--seg-path",
-        default=TRAIN_SEG_DATA_MUSC,
+        default=TRAIN_SEG_DATA,
         help="Path to the segmentation of the training video, if not available set to None",
     )
     # Dataset parameters
