@@ -115,7 +115,7 @@ python scripts/tests.py
 | `--mlflow` | `flag` | `False` | N/A | Enable mlflow tracking during training |
 | `--visualize` | `flag` | `False` | N/A | Enable visualization of flow maps |
 | `--video_path` | `str` | `TEST_DATA` | *Any string* | Moving image (source) filename |
-| `--gap` | `int` | `10` | *Any integer* | Temporal gap between 2 frames |
+| `--gap` | `int` | `1` | *Any integer* | Temporal gap between 2 frames |
 | `--seg_path` | `str` | `TEST_SEG_DATA` | *Any string* | Segmentations for evaluation (if segmentations not available, set to None) |
 | `--model_type` | `str` | `"voxelmorph"` | `"voxelmorph"`, `"twoflows"`, `"flowseg"`, `"tvl1"`, `"raft"`, `"farnback"` | Type of model to use for registration |
 | `--output_dir` | `str` | `"outputs/flowseg/output_20260707_152433"` | *Any string* | Directory to find model and to save results |
@@ -127,3 +127,5 @@ python scripts/tests.py --mlflow --visualize --model_type flowseg
 ```
 
 The model that will be tested will be the best.pt in the output directory given. The model type given must correspond to the output directory given.
+When testing pretrain model or analytic method, the ouotput dir will be outputs/{name of the model} and anything can be put as an argument for output_dir.
+To test raft you must have a folder named raft_models

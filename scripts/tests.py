@@ -164,7 +164,7 @@ def evaluate_segmentation(segmentation_pred, segmentation_gt):
 
 def create_model(args):
     """Create the model for registration."""
-    if args.model_type == "voxelmorph":
+    if args.model_type == "voxelmorph" or args.model_type == "twoflows":
         # model = vxm.nn.models.VxmPairwise(
         #     ndim=2,
         #     source_channels=1,
@@ -172,22 +172,7 @@ def create_model(args):
         #     nb_features=[16, 16, 16, 16, 16],
         #     integration_steps=0,
         #     device=device,
-        # ).to(device)
-        model = WarperVxm(
-            ndim=2,
-            source_channels=1,
-            target_channels=1,
-            nb_features=[16, 16, 16, 16, 16],
-            model_type=args.model_type,
-            device=device,
-        ).to(device)
-        model_path = f"{args.output_dir}/best.pt"
-        model.load_state_dict(torch.load(model_path, map_location=device))
-        print(f"Load model : {model_path}")  # noqa: T201
-        model.eval()
-        if mlflow.active_run():
-            mlflow.log_param("model_path", model_path)
-    elif args.model_type == "twoflows":
+        # ).to(device) #TODO mettre option pour utiliser ce model vxm ?
         model = WarperVxm(
             ndim=2,
             source_channels=1,
