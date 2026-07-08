@@ -305,7 +305,6 @@ def train_epoch(
             # Add the corresponding loss
             if "source_segmentation" in res:
                 seg_loss = 0.0
-                print("segmeeent")
                 source_seg_pred = res["source_segmentation"]
                 warped_source_seg_pred = spatial_transformer(
                     source_seg_pred, displacement
@@ -393,7 +392,7 @@ def main(args):
         ndim=2,
         source_channels=1,
         target_channels=1,
-        nb_features=[16, 16, 16, 16, 16],
+        nb_features=[16, 32, 64, 128, 256],
         model_type=args.model_type,
         device=device,
     ).to(device)
@@ -444,7 +443,7 @@ def main(args):
         video_path=args.video_path,
         seg_path=args.seg_path,
         seg_type=args.seg_type,
-        mode="train_in_order",  # TODO
+        mode="train",  # TODO
         gap=args.max_gap,
         multiplier=args.multiplier,
     )
@@ -582,12 +581,12 @@ if __name__ == "__main__":
     )
     # Dataset parameters
     parser.add_argument(
-        "--max_gap", type=int, default=10, help="Maximum temporal gap between 2 frames"
+        "--max_gap", type=int, default=20, help="Maximum temporal gap between 2 frames"
     )
     parser.add_argument(
         "--multiplier",
         type=int,
-        default=1,
+        default=3,
         help="Multiplier to have more pairs per epoch",
     )
     parser.add_argument(
