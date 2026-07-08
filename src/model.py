@@ -138,7 +138,7 @@ class ConvBlock(nn.Module):
             modules.append(nn.ReLU())  # the one used by default in vxm
         if batchnorm:
             modules.append(nn.BatchNorm2d(out_channels))  # None by default in vxm
-        self.conv = nn.Sequential(*modules)
+        self.conv = nn.Sequential(*modules)  # TODO append à sequential directement
 
     def forward(self, x):
         return self.conv(x)

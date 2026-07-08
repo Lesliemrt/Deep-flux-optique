@@ -67,10 +67,10 @@ def evaluate_registration_with_seg(
     seg_moving = interpole_and_pad(segmentation_moving, [HEIGHT, WIDTH])
     seg_fixed = interpole_and_pad(segmentation_fixed, [HEIGHT, WIDTH])
     # Take only pairs of frame with same nbr of cells (to have max dice = 1 in case of disappaering cell in vid)
-    # moving_labels = set(np.unique([seg_moving]))
-    # fixed_labels = set(np.unique([seg_fixed]))
-    # if moving_labels != fixed_labels:
-    #     return None
+    moving_labels = set(np.unique([seg_moving]))
+    fixed_labels = set(np.unique([seg_fixed]))
+    if moving_labels != fixed_labels:
+        return None
     # Warp moving segmentation with the predicted displacement
     tensor_seg_moving = (
         torch.from_numpy(seg_moving).to(device).float().unsqueeze(0).unsqueeze(0)
@@ -485,13 +485,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--video_path",
-        default=f"{TEST_DATA_HELA}",
+        default=f"{TEST_DATA_HSC}",
         help="Moving image (source) filename",
     )
-    parser.add_argument("--gap", default=10, help="Temporal gap between 2 frames")
+    parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
-        default=TEST_SEG_DATA_HELA,
+        default=TEST_SEG_DATA_HSC,
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
@@ -502,7 +502,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/flowseg/output_20260708_024326",
+        default="outputs/voxelmorph/output_20260708_141935",
         help="Directory to find model and to save results",
     )
     args = parser.parse_args()

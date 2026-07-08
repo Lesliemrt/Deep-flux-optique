@@ -79,13 +79,21 @@ class VxmVideoDataset(Dataset):
         self.mode = mode
         self.seg_type = seg_type
         self.get_path_list()
-        self.transform = self.get_transforms(n=len(self.frames_path_list))
-        if not gap < len(self.frames_path_list) // 2:
+        self.len_video = len(self.frames_path_list)
+        self.transform = self.get_transforms(n=self.len_video)
+        if not gap < self.len_video // 2:
             raise ValueError(
-                f"max_gap {gap} should be smaller than frames number // 2 {len(self.frames_path_list) // 2}."
+                f"max_gap {gap} should be smaller than frames number // 2 {self.len_video // 2}."
             )
         self.gap = gap
         self.multiplier = multiplier
+        if self.mode == "train":
+            self.nb_pairs = self.len_video * self.multiplier
+        elif self.mode == "train_in_order":
+            # sum from 1 to gap of the (len_video - gap)
+            self.nb_pairs = self.gap * self.len_video - self.gap * (self.gap - 1) // 2
+        elif self.mode == "test":
+            self.nb_pairs = self.len_video - self.gap
 
     def __getitem__(self, idx):
         """Normalize video and generate pairs of frame from a single video.
@@ -94,19 +102,29 @@ class VxmVideoDataset(Dataset):
             A dictionary containing the source and target frames.
         """
         if self.mode == "train":
-            # Select 2 frames with a random gap (maximum 10 frames gap)
+            # Select 2 frames with a random gap between -self.gap and self.gap (inclusive) (excluding 0)
             gap = np.random.randint(-self.gap, self.gap + 1)
             if gap == 0:
                 gap = 1
             idx1 = idx % (
-                len(self.frames_path_list) - 1
+                self.len_video - 1
             )  # to avoid out of index error when selecting pairs of frames
             idx2 = (
                 idx1 - gap
-                if (idx1 + gap > (len(self.frames_path_list) - 1) or idx1 + gap < 0)
+                if (idx1 + gap > (self.len_video - 1) or idx1 + gap < 0)
                 else idx1 + gap
             )
-        if self.mode == "test":
+        elif self.mode == "train_in_order":
+            # Select 2 frames with a gap between 1 and self.gap (inclusive) in order
+            current_gap = 1
+            nb_pairs_current_gap = self.len_video - current_gap
+            while idx >= nb_pairs_current_gap:
+                idx -= nb_pairs_current_gap
+                current_gap += 1
+                nb_pairs_current_gap = self.len_video - current_gap
+            idx1 = idx
+            idx2 = idx1 + current_gap
+        elif self.mode == "test":
             # Select 2 frames with a fixed gap
             idx1 = idx
             idx2 = idx1 + self.gap
@@ -132,7 +150,7 @@ class VxmVideoDataset(Dataset):
             source_seg = interpole_and_pad(source_seg, [HEIGHT, WIDTH])
             target_seg = interpole_and_pad(target_seg, [HEIGHT, WIDTH])
             # For testing, we don't need further processing
-            if self.mode == "train":
+            if self.mode == "train" or self.mode == "train_in_order":
                 if self.seg_type == "binary" or self.seg_type is None:
                     source_seg = source_seg > 0
                     target_seg = target_seg > 0
@@ -185,10 +203,7 @@ class VxmVideoDataset(Dataset):
 
     def __len__(self):
         """Return nbr of paires to train on per epoch."""
-        if self.mode == "train":
-            return len(self.frames_path_list) * self.multiplier
-        else:
-            return len(self.frames_path_list) - self.gap
+        return self.nb_pairs
 
     def get_path_list(self):
         """Create a list with all the frame's path and segmentation's path."""
