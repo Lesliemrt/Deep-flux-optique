@@ -18,7 +18,7 @@ The different dataset used are :
 
  ## Data preprocessing
 
-The raw datasets does not contains segmentation with tracking labels. But to evaluate the optical flow we will need those, use the following command to create a ERR_SEG_TRA folder that contains segmentation with temporal consistent label.
+The raw datasets does not contains segmentation with tracking labels. But to evaluate the optical flow we will need those, use the following command to create a ERR_SEG_TRA folder that contains segmentation (from SEG_TRA) with temporal consistent label (from GT/TRA).
 ``` bash
 # Use --path to specify the dataset to preprocess, for exemple :
  python scripts/datapreprocessing.py --path "data/Fluo-N2DH-GOWT1"
@@ -104,7 +104,7 @@ python scripts/train_cells.py --mlflow --model_type twoflows
 
 ### Testing
 
-To train a model use : 
+To test a model use : 
 
 ``` bash
 python scripts/tests.py
@@ -127,5 +127,8 @@ python scripts/tests.py --mlflow --visualize --model_type flowseg
 ```
 
 The model that will be tested will be the best.pt in the output directory given. The model type given must correspond to the output directory given.
-When testing pretrain model or analytic method, the ouotput dir will be outputs/{name of the model} and anything can be put as an argument for output_dir.
-To test raft you must have a folder named raft_models
+When testing pretrain model or analytic method, the output dir will be outputs/{name of the model} (anything can be put as an argument for output_dir).
+To test raft you must have a folder named raft_models containing the weights.
+
+## Methodology
+

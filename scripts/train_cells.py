@@ -396,12 +396,12 @@ def main(args):
         model_type=args.model_type,
         device=device,
     ).to(device)
-    if args.model_type == "flowseg":
+    if args.model_type == "voxelmorph":
         model = WarperVxm(
             ndim=2,
             source_channels=1,
             target_channels=1,
-            nb_features=[16, 32, 64, 128, 256],
+            nb_features=[16, 16, 16, 16, 16],
             model_type=args.model_type,
             device=device,
         ).to(device)
@@ -443,7 +443,7 @@ def main(args):
         video_path=args.video_path,
         seg_path=args.seg_path,
         seg_type=args.seg_type,
-        mode="train",  # TODO
+        mode="train_in_order",  # TODO
         gap=args.max_gap,
         multiplier=args.multiplier,
     )
@@ -572,21 +572,21 @@ if __name__ == "__main__":
         help="Output directory",
     )
     parser.add_argument(
-        "--video-path", default=TRAIN_DATA, help="Path to the training video"
+        "--video-path", default=TRAIN_DATA_MUSC, help="Path to the training video"
     )
     parser.add_argument(
         "--seg-path",
-        default=TRAIN_SEG_DATA,
+        default=TRAIN_SEG_DATA_MUSC,
         help="Path to the segmentation of the training video, if not available set to None",
     )
     # Dataset parameters
     parser.add_argument(
-        "--max_gap", type=int, default=20, help="Maximum temporal gap between 2 frames"
+        "--max_gap", type=int, default=2, help="Maximum temporal gap between 2 frames"
     )
     parser.add_argument(
         "--multiplier",
         type=int,
-        default=3,
+        default=1,
         help="Multiplier to have more pairs per epoch",
     )
     parser.add_argument(
