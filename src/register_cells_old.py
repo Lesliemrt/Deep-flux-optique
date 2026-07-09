@@ -230,8 +230,13 @@ def register_pair_tvl1(moving, fixed, global_min, global_max):
     plt.subplot(2, 2, 4)
     ax[1, 1].set_title("Flow")
     viz(flo=tensor_displacement, ax=ax[1, 1])
-
-    return tensor_displacement, fig, input_moving, input_fixed
+    res = {
+        "displacement": tensor_displacement,
+        "fig": fig,
+        "input_moving": input_moving,
+        "input_fixed": input_fixed,
+    }
+    return res
 
 
 def register_pair_raft(moving_path, fixed_path, model, global_min, global_max):
@@ -311,12 +316,14 @@ def register_pair_raft(moving_path, fixed_path, model, global_min, global_max):
     ax[1, 1].set_title("Flow")
     viz(flo=tensor_displacement, ax=ax[1, 1])
 
-    return (
-        tensor_displacement,
-        fig,
-        input_moving.squeeze().cpu().numpy().mean(axis=0),
-        input_fixed.squeeze().cpu().numpy().mean(axis=0),
-    )
+    res = {
+        "displacement": tensor_displacement,
+        "fig": fig,
+        "input_moving": input_moving.squeeze().cpu().numpy().mean(axis=0),
+        "input_fixed": input_fixed.squeeze().cpu().numpy(),
+    }
+
+    return res
 
 
 def register_pair_fb(moving, fixed, model, global_min, global_max):

@@ -306,16 +306,26 @@ def register_video(args):
             if "source_segmentation" in res:
                 source_seg_pred = res["source_segmentation"]
         elif args.model_type == "tvl1":
-            displacement, fig, input_moving, input_fixed = register_pair_tvl1(
-                moving, fixed, global_min, global_max
+            res = register_pair_tvl1(moving, fixed, global_min, global_max)
+            displacement, fig, input_moving, input_fixed = (
+                res["displacement"],
+                res["fig"],
+                res["input_moving"],
+                res["input_fixed"],
             )
         elif args.model_type == "raft":
-            displacement, fig, input_moving, input_fixed = register_pair_raft(
+            res = register_pair_raft(
                 frames_path_list[idx],
                 frames_path_list[idx2],
                 model,
                 global_min,
                 global_max,
+            )
+            displacement, fig, input_moving, input_fixed = (
+                res["displacement"],
+                res["fig"],
+                res["input_moving"],
+                res["input_fixed"],
             )
         elif args.model_type == "farnback":
             displacement, fig, input_moving, input_fixed = register_pair_fb(
@@ -337,17 +347,17 @@ def register_video(args):
                 res = register_pair(fixed, moving, model, global_min, global_max)
                 displacement_bwd = res["displacement"]
             elif args.model_type == "tvl1":
-                displacement_bwd, _, _, _ = register_pair_tvl1(
-                    fixed, moving, global_min, global_max
-                )
+                res = register_pair_tvl1(fixed, moving, global_min, global_max)
+                displacement_bwd = res["displacement"]
             elif args.model_type == "raft":
-                displacement_bwd, _, _, _ = register_pair_raft(
+                res = register_pair_raft(
                     frames_path_list[idx2],
                     frames_path_list[idx],
                     model,
                     global_min,
                     global_max,
                 )
+                displacement_bwd = res["displacement"]
             elif args.model_type == "farnback":
                 displacement_bwd, _, _, _ = register_pair_fb(
                     fixed, moving, model, global_min, global_max
@@ -485,13 +495,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--video_path",
-        default=TEST_DATA,
+        default=TEST_DATA_HELA,
         help="Moving image (source) filename",
     )
     parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
-        default=TEST_SEG_DATA,
+        default=TEST_SEG_DATA_HELA,
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
