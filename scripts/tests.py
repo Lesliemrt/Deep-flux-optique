@@ -485,13 +485,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--video_path",
-        default=TEST_DATA_MUSC,
+        default=TEST_DATA,
         help="Moving image (source) filename",
     )
     parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
-        default=TEST_SEG_DATA_MUSC,
+        default=TEST_SEG_DATA,
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
@@ -502,7 +502,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/twoflows/output_20260709_113805",
+        default="outputs/twoflows/output_20260709_141133",
         help="Directory to find model and to save results",
     )
     args = parser.parse_args()
