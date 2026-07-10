@@ -171,6 +171,7 @@ def train_epoch(
     loss_computer: nn.Module,
     loss_weights: Sequence[float],
     background: bool,
+    cycle_consistency: bool = False,
 ) -> float:
     """Train for one epoch.
 
@@ -230,12 +231,17 @@ def train_epoch(
         #     )
         #     warped_source = spatial_transformer(source, displacement) # TODO : change that
 
+        if cycle_consistency and "displacement_bwd" not in res:
+            res_bwd = model(target, source, return_warped_source=True)
+            res["displacement_bwd"] = res_bwd["displacement"]
+
         # Compute image loss and grad loss for displacement forward
         img_loss += loss_computer.compute_image_loss(target, warped_source)
         grad_loss += loss_computer.compute_grad_loss(displacement)  # Smoothness
 
-        # ------------------------------------------- TWO FLOWS ---------------------------------------------------
+        # ------------------------------------------- TWO FLOWS / CYCLE CONSISTENCY ---------------------------------------------------
         # If model_type = twoflows, the backward displacement (displacement_bwd) is computed as well
+        # if cycle_consistency is True, the backward displacement is computed by inversing source and target
         # Add the corresponding loss (image loss and grad loss for bwd displacement + cycle loss)
         if "displacement_bwd" in res:
             displacement_bwd = res["displacement_bwd"]
@@ -285,7 +291,7 @@ def train_epoch(
             flow_with_seg_loss += loss_computer.compute_flow_with_seg_loss(
                 target_seg, warped_source_seg
             ).squeeze()
-            # ------------------------------------------- TWO FLOWS ---------------------------------------------------
+            # ------------------------------------------- TWO FLOWS / CYCLE CONSISTENCY ---------------------------------------------------
             if "displacement_bwd" in res:
                 warped_target_seg = spatial_transformer(target_seg, displacement_bwd)
                 warped_target_seg = torch.clamp(warped_target_seg, 0, 1)
@@ -443,7 +449,7 @@ def main(args):
         video_path=args.video_path,
         seg_path=args.seg_path,
         seg_type=args.seg_type,
-        mode="train_in_order",  # TODO
+        mode="train",  # TODO
         gap=args.max_gap,
         multiplier=args.multiplier,
     )
@@ -539,8 +545,11 @@ def main(args):
         "learning_rate": args.lr,
         "lambda": args.lambda_param,
         "gamma": args.gamma_param,
+        "background": args.background,
         "background_param": args.background_param,
+        "cycle_consistency": args.cycle_consistency,
         "cycle_param": args.cycle_param,
+        "seg_param": args.seg_param,
         "device": str(device),
         "date": timestamp,
     }
@@ -608,6 +617,11 @@ if __name__ == "__main__":
     parser.add_argument("--batch-size", type=int, default=4, help="Batch size")
     parser.add_argument(
         "--save-every", type=int, default=10, help="Checkpoint every N epochs"
+    )
+    parser.add_argument(
+        "--cycle_consistency",
+        action="store_true",
+        help="Add loss to enforce cycle consistency, automatic True if model_type is twoflows",
     )
     parser.add_argument(
         "--cycle_param",
