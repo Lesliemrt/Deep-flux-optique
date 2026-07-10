@@ -334,7 +334,7 @@ def register_video(args):
         fig.savefig(viz_dir / f"registration_result_for_paire_{idx}-{idx2}.png")
         plt.close(fig)
 
-        if args.visualize:
+        if args.visualize or args.save_flow_maps:
             flow_maps[(idx2, idx)] = displacement.squeeze().cpu().numpy()
             if idx == 0:
                 video.append(
@@ -476,6 +476,12 @@ def register_video(args):
     if args.mlflow:
         mlflow.end_run()
 
+    if args.save_flow_maps:
+        flow_dir = results_dir / "flowmaps"
+        flow_dir.mkdir(parents=True, exist_ok=True)
+        for name, value in flow_maps.items():
+            np.save(flow_dir / f"{name}.npy", value)
+
     if args.visualize:
         visualizer = FlowVisualizer(video, flow_maps, grid_step=20, gap=args.gap)
         visualizer.run()
@@ -494,13 +500,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--video_path",
-        default=TEST_DATA_MUSC,
+        default=TEST_DATA,
         help="Moving image (source) filename",
     )
     parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
-        default=TEST_SEG_DATA_MUSC,
+        default=TEST_SEG_DATA,
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
@@ -511,7 +517,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/flowseg/output_20260710_113535",
+        default="outputs/flowseg/output_20260710_115405",
         help="Directory to find model and to save results",
     )
     parser.add_argument(
