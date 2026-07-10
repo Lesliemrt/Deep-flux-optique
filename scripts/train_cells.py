@@ -306,15 +306,14 @@ def train_epoch(
             if "source_segmentation" in res:
                 seg_loss = 0.0
                 source_seg_pred = res["source_segmentation"]
-                # warped_source_seg_pred = spatial_transformer(
-                #     source_seg_pred, displacement
-                # )
+                warped_source_seg_pred = spatial_transformer(
+                    source_seg_pred, displacement
+                )
 
                 seg_loss += loss_computer.compute_seg_loss(source_seg_pred, source_seg)
-                # seg_loss += loss_computer.compute_seg_loss(
-                #     warped_source_seg_pred, target_seg
-                # )
-                # TODO test sans la loss combinée
+                seg_loss += loss_computer.compute_seg_loss(
+                    warped_source_seg_pred, target_seg
+                )
 
                 loss += loss_weights[5] * seg_loss
                 epoch_seg_loss += seg_loss.item()
@@ -397,7 +396,7 @@ def main(args):
         model_type=args.model_type,
         device=device,
     ).to(device)
-    if args.model_type == "voxelmorph" or args.model_type == "twoflows":
+    if args.model_type == "voxelmorph":
         model = WarperVxm(
             ndim=2,
             source_channels=1,
@@ -444,7 +443,7 @@ def main(args):
         video_path=args.video_path,
         seg_path=args.seg_path,
         seg_type=args.seg_type,
-        mode="train",  # TODO
+        mode="train_in_order",  # TODO
         gap=args.max_gap,
         multiplier=args.multiplier,
     )
@@ -582,7 +581,7 @@ if __name__ == "__main__":
     )
     # Dataset parameters
     parser.add_argument(
-        "--max_gap", type=int, default=1, help="Maximum temporal gap between 2 frames"
+        "--max_gap", type=int, default=2, help="Maximum temporal gap between 2 frames"
     )
     parser.add_argument(
         "--multiplier",
