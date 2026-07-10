@@ -394,20 +394,21 @@ def main(args):
     print(f"Load model type: {args.model_type}")
     print(f"Using segmentation type: {args.seg_type}")  # noqa: T201
 
-    model = WarperVxm(
-        ndim=2,
-        source_channels=1,
-        target_channels=1,
-        nb_features=[16, 32, 64, 128, 256],
-        model_type=args.model_type,
-        device=device,
-    ).to(device)
     if args.model_type == "voxelmorph":
         model = WarperVxm(
             ndim=2,
             source_channels=1,
             target_channels=1,
             nb_features=[16, 16, 16, 16, 16],
+            model_type=args.model_type,
+            device=device,
+        ).to(device)
+    else:
+        model = WarperVxm(
+            ndim=2,
+            source_channels=1,
+            target_channels=1,
+            nb_features=[16, 32, 64, 128, 256],
             model_type=args.model_type,
             device=device,
         ).to(device)
@@ -590,7 +591,7 @@ if __name__ == "__main__":
     )
     # Dataset parameters
     parser.add_argument(
-        "--max_gap", type=int, default=2, help="Maximum temporal gap between 2 frames"
+        "--max_gap", type=int, default=1, help="Maximum temporal gap between 2 frames"
     )
     parser.add_argument(
         "--multiplier",

@@ -164,7 +164,7 @@ def evaluate_segmentation(segmentation_pred, segmentation_gt):
 
 def create_model(args):
     """Create the model for registration."""
-    if args.model_type == "voxelmorph" or args.model_type == "twoflows":
+    if args.model_type == "voxelmorph":
         # model = vxm.nn.models.VxmPairwise(
         #     ndim=2,
         #     source_channels=1,
@@ -187,7 +187,7 @@ def create_model(args):
         model.eval()
         if mlflow.active_run():
             mlflow.log_param("model_path", model_path)
-    elif args.model_type == "flowseg":
+    elif args.model_type == "flowseg" or args.model_type == "twoflows":
         model = WarperVxm(
             ndim=2,
             source_channels=1,
@@ -511,7 +511,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/twoflows/output_20260710_030111",
+        default="outputs/twoflows/output_20260710_105819",
         help="Directory to find model and to save results",
     )
     parser.add_argument(
