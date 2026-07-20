@@ -36,7 +36,7 @@ sys.path.append(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "voxelmorph_folder"
     )
 )  # noqa: PTH100, PTH118, PTH120
-from dataset import VxmVideoDataset
+from dataset import VxmVideoDataset, VxmMultipleVideoDataset
 from model import WarperVxm  # noqa: F401
 from my_utils.configs import (
     TRAIN_DATA_MUSC,  # noqa: F401
@@ -464,6 +464,15 @@ def main(args):
         gap=args.max_gap,
         multiplier=args.multiplier,
     )
+    if args.multiple_videos:
+        train_dataset = VxmMultipleVideoDataset(
+            video_paths=[TRAIN_DATA, TRAIN_DATA_HELA],
+            seg_paths=[TRAIN_SEG_DATA, TRAIN_SEG_DATA_HELA],
+            seg_type=args.seg_type,
+            mode="train",
+            gap=args.max_gap,
+            multiplier=args.multiplier,
+        )
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
@@ -562,6 +571,7 @@ def main(args):
         "cycle_consistency": args.cycle_consistency,
         "cycle_param": args.cycle_param,
         "seg_param": args.seg_param,
+        "multiple_videos": args.multiple_videos,
         "device": str(device),
         "date": timestamp,
     }
@@ -685,6 +695,11 @@ if __name__ == "__main__":
         "--pyramidal",
         action="store_true",
         help="Use pyramidal method for training, to allow the model to understand bigger movements",
+    )
+    parser.add_argument(
+        "--multiple_videos",
+        action="store_true",
+        help="Use multiple videos for training, to allow the model to generalize better",
     )
     args = parser.parse_args()
     main(args)

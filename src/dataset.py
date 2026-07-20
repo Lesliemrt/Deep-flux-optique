@@ -2,6 +2,7 @@
 import os
 import sys
 from pathlib import Path
+import random
 
 os.environ["NEURITE_BACKEND"] = "pytorch"
 os.environ["VXM_BACKEND"] = "pytorch"
@@ -224,6 +225,7 @@ class VxmMultipleVideoDataset(Dataset):
         mode="train",
         seg_type=None,
         gap=1,
+        multiplier=3,
     ) -> None:
         """Parameters
 
@@ -245,17 +247,13 @@ class VxmMultipleVideoDataset(Dataset):
         self.mode = mode
         self.seg_type = seg_type
         self.get_path_list()
-        self.len_video = len(self.frames_path_list)
-        self.transform = self.get_transforms(n=self.len_video)
-        if not gap < self.len_video // 2:
-            raise ValueError(
-                f"max_gap {gap} should be smaller than frames number // 2 {self.len_video // 2}."
-            )
+        self.transform = self.get_transforms(n=len(self.frames_path_list))
         self.gap = gap
+        self.multiplier = multiplier
         if self.mode == "train":
-            self.nb_pairs = self.len_video
+            self.nb_pairs = len(self.frames_path_list) * self.multiplier
         elif self.mode == "test":
-            self.nb_pairs = self.len_video - self.gap
+            self.nb_pairs = len(self.frames_path_list) - self.gap
 
     def __getitem__(self, idx):
         """Normalize video and generate pairs of frame.
@@ -266,16 +264,28 @@ class VxmMultipleVideoDataset(Dataset):
         if self.mode == "train":
             # Select 2 frames with a random gap between -self.gap and self.gap (inclusive) (excluding 0)
             gap = np.random.randint(-self.gap, self.gap + 1)
-            if gap == 0:
-                gap = 1
-            idx1 = idx % (
-                self.len_video - 1
-            )  # to avoid out of index error when selecting pairs of frames
-            idx2 = (
-                idx1 - gap
-                if (idx1 + gap > (self.len_video - 1) or idx1 + gap < 0)
-                else idx1 + gap
-            )
+            possible_gap = [k for k in range(-self.gap, self.gap + 1) if k != 0]
+            gap = random.choice(possible_gap)
+            idx1 = idx % (len(self.frames_path_list) - 1)
+            # find the limts of the video that idx1 belongs to
+            video_idx = 0
+            limit = self.limits[video_idx]
+            while idx1 >= limit:
+                video_idx += 1
+                limit = self.limits[video_idx]
+            start_idx = self.limits[video_idx - 1]
+            end_idx = self.limits[video_idx] - 1
+
+            idx2 = idx1 + gap
+
+            if idx2 < start_idx or idx2 > end_idx:
+                # if out of limits, select the other frame in the opposite direction
+                idx2 = idx1 - gap
+                if idx2 < start_idx:
+                    idx2 = start_idx
+                elif idx2 > end_idx:
+                    idx2 = end_idx
+
         elif self.mode == "test":
             # Select 2 frames with a fixed gap
             idx1 = idx
@@ -361,9 +371,15 @@ class VxmMultipleVideoDataset(Dataset):
         """Create a list with all the frame's path and segmentation's path."""
         self.frames_path_list = []
         self.seg_path_list = []
+        self.limits = [
+            0
+        ]  # list to store the limits of each video in the frames_path_list
         for i, video_path in enumerate(self.list_video_path):
             video_path = Path(video_path)
             self.frames_path_list += sorted(video_path.iterdir())
+            self.limits.append(
+                len(self.frames_path_list)
+            )  # store the limit of the current video
             if self.list_seg_path is not None:
                 # Get the corresponding segmentation path of the video i and create a list of all the segmentation frames
                 seg_path = Path(self.list_seg_path[i])
