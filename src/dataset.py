@@ -220,8 +220,8 @@ class VxmMultipleVideoDataset(Dataset):
 
     def __init__(
         self,
-        list_video_path,
-        list_seg_path=None,
+        video_paths,
+        seg_paths=None,
         mode="train",
         seg_type=None,
         gap=1,
@@ -229,9 +229,9 @@ class VxmMultipleVideoDataset(Dataset):
     ) -> None:
         """Parameters
 
-        list_video_path : list
+        video_paths : list
             List of paths to the video frames.
-        list_seg_path : list
+        seg_paths : list
             List of paths to the segmentation frames (optional).
         mode : str
             Mode of the dataset: "train" or "test".
@@ -242,8 +242,8 @@ class VxmMultipleVideoDataset(Dataset):
         seg_type : str
             Type of segmentation to use for training: None, labels or heatmaps.
         """
-        self.list_video_path = list_video_path
-        self.list_seg_path = list_seg_path
+        self.video_paths = video_paths
+        self.seg_paths = seg_paths
         self.mode = mode
         self.seg_type = seg_type
         self.get_path_list()
@@ -306,7 +306,7 @@ class VxmMultipleVideoDataset(Dataset):
         source = self.transform(source)
         target = self.transform(target)
 
-        if self.seg_path is not None:
+        if self.seg_paths is not None:
             source_seg = tiff.imread(self.seg_path_list[idx1])
             target_seg = tiff.imread(self.seg_path_list[idx2])
             source_seg = interpole_and_pad(source_seg, [HEIGHT, WIDTH])
@@ -374,21 +374,15 @@ class VxmMultipleVideoDataset(Dataset):
         self.limits = [
             0
         ]  # list to store the limits of each video in the frames_path_list
-        for i, video_path in enumerate(self.list_video_path):
+        for i, video_path in enumerate(self.video_paths):
             video_path = Path(video_path)
             self.frames_path_list += sorted(video_path.iterdir())
             self.limits.append(
                 len(self.frames_path_list)
             )  # store the limit of the current video
-            if self.list_seg_path is not None:
+            if self.seg_paths is not None:
                 # Get the corresponding segmentation path of the video i and create a list of all the segmentation frames
-                seg_path = Path(self.list_seg_path[i])
+                seg_path = Path(self.seg_paths[i])
                 if self.seg_type == "heatmaps":
                     seg_path = seg_path.parent / "SEG_HEATMAP"
                 self.seg_path_list += sorted(seg_path.iterdir())
-
-        self.frames_path_list = sorted(self.video_path.iterdir())
-        if self.seg_path is not None:
-            if self.seg_type == "heatmaps":
-                self.seg_path = self.seg_path.parent / "SEG_HEATMAP"
-            self.seg_path_list = sorted(self.seg_path.iterdir())

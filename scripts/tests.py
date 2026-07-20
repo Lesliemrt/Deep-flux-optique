@@ -31,11 +31,11 @@ sys.path.append(
 )  # noqa: PTH100, PTH118, PTH120
 from my_utils.configs import (  # type: ignore
     HEIGHT,
-    TEST_DATA,  # noqa: F401
+    TEST_DATA_GOWT,  # noqa: F401
     TEST_DATA_HELA,  # noqa: F401
     TEST_DATA_HSC,  # noqa: F401
     TEST_DATA_MUSC,  # noqa: F401
-    TEST_SEG_DATA,  # noqa: F401
+    TEST_SEG_DATA_GOWT,  # noqa: F401
     TEST_SEG_DATA_HELA,  # noqa: F401
     TEST_SEG_DATA_HSC,  # noqa: F401
     TEST_SEG_DATA_MUSC,  # noqa: F401
@@ -509,13 +509,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--video_path",
-        default=TEST_DATA_HELA,
+        default=TEST_DATA_GOWT,
         help="Moving image (source) filename",
     )
     parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
-        default=TEST_SEG_DATA_HELA,
+        default=TEST_SEG_DATA_GOWT,
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
@@ -526,7 +526,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/voxelmorph/output_20260720_161948",
+        default="outputs/voxelmorph/output_20260720_172040",
         help="Directory to find model and to save results",
     )
     parser.add_argument(

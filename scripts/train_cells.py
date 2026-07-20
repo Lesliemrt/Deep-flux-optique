@@ -41,8 +41,8 @@ from model import WarperVxm  # noqa: F401
 from my_utils.configs import (
     TRAIN_DATA_MUSC,  # noqa: F401
     TRAIN_SEG_DATA_MUSC,  # noqa: F401
-    TRAIN_DATA,  # noqa: F401
-    TRAIN_SEG_DATA,  # noqa: F401
+    TRAIN_DATA_GOWT,  # noqa: F401
+    TRAIN_SEG_DATA_GOWT,  # noqa: F401
     TRAIN_DATA_HSC,  # noqa: F401
     TRAIN_SEG_DATA_HSC,  # noqa: F401
     TRAIN_DATA_HELA,  # noqa: F401
@@ -367,7 +367,7 @@ def train_epoch(
     }
 
 
-def main(args):
+def train(args):
     """Create the dataloader, create the model, train and save."""
     # Set device
     print(f"Using device: {device}")  # noqa: T201
@@ -460,14 +460,15 @@ def main(args):
         video_path=args.video_path,
         seg_path=args.seg_path,
         seg_type=args.seg_type,
-        mode="train",  # TODO
+        mode="train",
         gap=args.max_gap,
         multiplier=args.multiplier,
     )
     if args.multiple_videos:
+        print("Using multiple videos for training")  # noqa: T201
         train_dataset = VxmMultipleVideoDataset(
-            video_paths=[TRAIN_DATA, TRAIN_DATA_HELA],
-            seg_paths=[TRAIN_SEG_DATA, TRAIN_SEG_DATA_HELA],
+            video_paths=[TRAIN_DATA_GOWT, TRAIN_DATA_HELA],
+            seg_paths=[TRAIN_SEG_DATA_GOWT, TRAIN_SEG_DATA_HELA],
             seg_type=args.seg_type,
             mode="train",
             gap=args.max_gap,
@@ -603,11 +604,11 @@ if __name__ == "__main__":
         help="Output directory",
     )
     parser.add_argument(
-        "--video-path", default=TRAIN_DATA, help="Path to the training video"
+        "--video-path", default=TRAIN_DATA_GOWT, help="Path to the training video"
     )
     parser.add_argument(
         "--seg-path",
-        default=TRAIN_SEG_DATA,
+        default=TRAIN_SEG_DATA_GOWT,
         help="Path to the segmentation of the training video, if not available set to None",
     )
     # Dataset parameters
@@ -702,4 +703,4 @@ if __name__ == "__main__":
         help="Use multiple videos for training, to allow the model to generalize better",
     )
     args = parser.parse_args()
-    main(args)
+    train(args)
