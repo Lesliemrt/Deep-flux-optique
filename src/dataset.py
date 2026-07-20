@@ -212,3 +212,167 @@ class VxmVideoDataset(Dataset):
             if self.seg_type == "heatmaps":
                 self.seg_path = self.seg_path.parent / "SEG_HEATMAP"
             self.seg_path_list = sorted(self.seg_path.iterdir())
+
+
+class VxmMultipleVideoDataset(Dataset):
+    """PyTorch Dataset for VoxelMorph registration data on multiple videos."""
+
+    def __init__(
+        self,
+        list_video_path,
+        list_seg_path=None,
+        mode="train",
+        seg_type=None,
+        gap=1,
+    ) -> None:
+        """Parameters
+
+        list_video_path : list
+            List of paths to the video frames.
+        list_seg_path : list
+            List of paths to the segmentation frames (optional).
+        mode : str
+            Mode of the dataset: "train" or "test".
+        seg_type : str
+            Type of segmentation to use for training: None, "binary", "labels" or "heatmaps".
+        gap : int
+            In training mode : Maximum gap between the two frames to select for registration, in test mode : fixed gap between the two frames to select for registration.
+        seg_type : str
+            Type of segmentation to use for training: None, labels or heatmaps.
+        """
+        self.list_video_path = list_video_path
+        self.list_seg_path = list_seg_path
+        self.mode = mode
+        self.seg_type = seg_type
+        self.get_path_list()
+        self.len_video = len(self.frames_path_list)
+        self.transform = self.get_transforms(n=self.len_video)
+        if not gap < self.len_video // 2:
+            raise ValueError(
+                f"max_gap {gap} should be smaller than frames number // 2 {self.len_video // 2}."
+            )
+        self.gap = gap
+        if self.mode == "train":
+            self.nb_pairs = self.len_video
+        elif self.mode == "test":
+            self.nb_pairs = self.len_video - self.gap
+
+    def __getitem__(self, idx):
+        """Normalize video and generate pairs of frame.
+
+        dict
+            A dictionary containing the source and target frames.
+        """
+        if self.mode == "train":
+            # Select 2 frames with a random gap between -self.gap and self.gap (inclusive) (excluding 0)
+            gap = np.random.randint(-self.gap, self.gap + 1)
+            if gap == 0:
+                gap = 1
+            idx1 = idx % (
+                self.len_video - 1
+            )  # to avoid out of index error when selecting pairs of frames
+            idx2 = (
+                idx1 - gap
+                if (idx1 + gap > (self.len_video - 1) or idx1 + gap < 0)
+                else idx1 + gap
+            )
+        elif self.mode == "test":
+            # Select 2 frames with a fixed gap
+            idx1 = idx
+            idx2 = idx1 + self.gap
+
+        source_img = tiff.imread(self.frames_path_list[idx1])
+        target_img = tiff.imread(self.frames_path_list[idx2])
+
+        # Interpole and pad images to HEIGHT, WIDTH if needed
+        moving_resized = interpole_and_pad(source_img, [HEIGHT, WIDTH])
+        fixed_resized = interpole_and_pad(target_img, [HEIGHT, WIDTH])
+
+        # To tensor
+        source = torch.from_numpy(moving_resized).float()
+        target = torch.from_numpy(fixed_resized).float()
+
+        # Normalisation + augmentation if augment
+        source = self.transform(source)
+        target = self.transform(target)
+
+        if self.seg_path is not None:
+            source_seg = tiff.imread(self.seg_path_list[idx1])
+            target_seg = tiff.imread(self.seg_path_list[idx2])
+            source_seg = interpole_and_pad(source_seg, [HEIGHT, WIDTH])
+            target_seg = interpole_and_pad(target_seg, [HEIGHT, WIDTH])
+            # For testing, we don't need further processing
+            if self.mode == "train" or self.mode == "train_in_order":
+                if self.seg_type == "binary" or self.seg_type is None:
+                    source_seg = source_seg > 0
+                    target_seg = target_seg > 0
+                elif self.seg_type == "labels":
+                    target_seg_oh = (  # noqa: F841
+                        torch.nn.functional.one_hot(
+                            target_seg.long(), num_classes=NB_CLASSES
+                        )
+                        .permute(0, 3, 1, 2)
+                        .float()
+                    )
+                    source_seg_oh = (  # noqa: F841
+                        torch.nn.functional.one_hot(
+                            source_seg.long(), num_classes=NB_CLASSES
+                        )
+                        .permute(0, 3, 1, 2)
+                        .float()
+                    )
+                    # Not enough memory to use labels (and one hot)
+                source_seg = torch.from_numpy(source_seg).float()
+                target_seg = torch.from_numpy(target_seg).float()
+            return {
+                "source": source,
+                "target": target,
+                "source_seg": source_seg,
+                "target_seg": target_seg,
+                "idx1": idx1,
+                "idx2": idx2,
+            }
+
+        return {"source": source, "target": target}
+
+    def get_transforms(self, n):
+        """Get global min and global max from n frames and return normalisation and transformation functions."""
+        global_min = np.min(tiff.imread(str(self.frames_path_list[0])))
+        global_max = np.max(tiff.imread(str(self.frames_path_list[0])))
+
+        for i in range(1, n):
+            current_min = np.min(tiff.imread(str(self.frames_path_list[i])))
+            current_max = np.max(tiff.imread(str(self.frames_path_list[i])))
+
+            global_min = min(global_min, current_min)
+            global_max = max(global_max, current_max)
+
+        base_transforms = [
+            NormalizeMinMax(global_min=global_min, global_max=global_max)
+        ]
+
+        return v2.Compose(base_transforms)
+
+    def __len__(self):
+        """Return nbr of paires to train on per epoch."""
+        return self.nb_pairs
+
+    def get_path_list(self):
+        """Create a list with all the frame's path and segmentation's path."""
+        self.frames_path_list = []
+        self.seg_path_list = []
+        for i, video_path in enumerate(self.list_video_path):
+            video_path = Path(video_path)
+            self.frames_path_list += sorted(video_path.iterdir())
+            if self.list_seg_path is not None:
+                # Get the corresponding segmentation path of the video i and create a list of all the segmentation frames
+                seg_path = Path(self.list_seg_path[i])
+                if self.seg_type == "heatmaps":
+                    seg_path = seg_path.parent / "SEG_HEATMAP"
+                self.seg_path_list += sorted(seg_path.iterdir())
+
+        self.frames_path_list = sorted(self.video_path.iterdir())
+        if self.seg_path is not None:
+            if self.seg_type == "heatmaps":
+                self.seg_path = self.seg_path.parent / "SEG_HEATMAP"
+            self.seg_path_list = sorted(self.seg_path.iterdir())
