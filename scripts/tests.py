@@ -42,6 +42,7 @@ from my_utils.configs import (  # type: ignore
     WIDTH,
     device,
     MLFLOW_TRACKING_URI,
+    SEED,
 )
 from my_utils.image_utils import interpole_and_pad, iou, viz, normalisation_params
 from flow_visualizer import FlowVisualizer
@@ -56,6 +57,14 @@ from register_cells_old import (
 from model import WarperVxm
 
 import voxelmorph as vxm
+
+# for reproductability
+torch.manual_seed(SEED)
+np.random.seed(SEED)
+torch.cuda.manual_seed(SEED)
+torch.cuda.manual_seed_all(SEED)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
 
 
 def evaluate_registration_with_seg(
@@ -177,7 +186,7 @@ def create_model(args):
             ndim=2,
             source_channels=1,
             target_channels=1,
-            nb_features=[16, 16, 16, 16, 16],
+            nb_features=[16, 32, 64, 128, 256],
             model_type=args.model_type,
             device=device,
         ).to(device)
@@ -500,13 +509,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--video_path",
-        default=TEST_DATA_HELA,
+        default=TEST_DATA,
         help="Moving image (source) filename",
     )
     parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
-        default=TEST_SEG_DATA_HELA,
+        default=TEST_SEG_DATA,
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
@@ -517,7 +526,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/flowseg/output_20260710_115405",
+        default="outputs/voxelmorph/output_20260720_114317",
         help="Directory to find model and to save results",
     )
     parser.add_argument(

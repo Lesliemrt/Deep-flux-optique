@@ -16,6 +16,7 @@ os.environ["NEURITE_BACKEND"] = "pytorch"
 os.environ["VXM_BACKEND"] = "pytorch"
 # Third-party imports
 import datetime
+import numpy as np
 
 import mlflow
 import neurite as ne
@@ -48,10 +49,19 @@ from my_utils.configs import (
     TRAIN_SEG_DATA_HELA,  # noqa: F401
     device,
     MLFLOW_TRACKING_URI,
+    SEED,
 )
 from my_utils.image_utils import linear_augment  # noqa: F401
 
 import voxelmorph as vxm
+
+# for reproductability
+torch.manual_seed(SEED)
+np.random.seed(SEED)
+torch.cuda.manual_seed(SEED)
+torch.cuda.manual_seed_all(SEED)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
 
 
 def pyramidal_flow(source, target, model, model_type, level=2):
@@ -399,7 +409,7 @@ def main(args):
             ndim=2,
             source_channels=1,
             target_channels=1,
-            nb_features=[16, 16, 16, 16, 16],
+            nb_features=[16, 32, 64, 128, 256],
             model_type=args.model_type,
             device=device,
         ).to(device)
@@ -457,6 +467,7 @@ def main(args):
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
+        shuffle=True,
         num_workers=args.workers,
         pin_memory=True,  # To speed up, if not enough RAM, set to False
     )
@@ -582,16 +593,16 @@ if __name__ == "__main__":
         help="Output directory",
     )
     parser.add_argument(
-        "--video-path", default=TRAIN_DATA_HELA, help="Path to the training video"
+        "--video-path", default=TRAIN_DATA, help="Path to the training video"
     )
     parser.add_argument(
         "--seg-path",
-        default=TRAIN_SEG_DATA_HELA,
+        default=TRAIN_SEG_DATA,
         help="Path to the segmentation of the training video, if not available set to None",
     )
     # Dataset parameters
     parser.add_argument(
-        "--max_gap", type=int, default=1, help="Maximum temporal gap between 2 frames"
+        "--max_gap", type=int, default=20, help="Maximum temporal gap between 2 frames"
     )
     parser.add_argument(
         "--multiplier",
