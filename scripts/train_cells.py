@@ -593,21 +593,21 @@ if __name__ == "__main__":
         help="Output directory",
     )
     parser.add_argument(
-        "--video-path", default=TRAIN_DATA, help="Path to the training video"
+        "--video-path", default=TRAIN_DATA_MUSC, help="Path to the training video"
     )
     parser.add_argument(
         "--seg-path",
-        default=TRAIN_SEG_DATA,
+        default=TRAIN_SEG_DATA_MUSC,
         help="Path to the segmentation of the training video, if not available set to None",
     )
     # Dataset parameters
     parser.add_argument(
-        "--max_gap", type=int, default=20, help="Maximum temporal gap between 2 frames"
+        "--max_gap", type=int, default=1, help="Maximum temporal gap between 2 frames"
     )
     parser.add_argument(
         "--multiplier",
         type=int,
-        default=3,
+        default=1,
         help="Multiplier to have more pairs per epoch",
     )
     parser.add_argument(
