@@ -467,8 +467,8 @@ def train(args):
     if args.multiple_videos:
         print("Using multiple videos for training")  # noqa: T201
         train_dataset = VxmMultipleVideoDataset(
-            video_paths=[TRAIN_DATA_GOWT, TRAIN_DATA_HELA],
-            seg_paths=[TRAIN_SEG_DATA_GOWT, TRAIN_SEG_DATA_HELA],
+            video_paths=[TRAIN_DATA_GOWT, TRAIN_DATA_HELA, TRAIN_DATA_MUSC],
+            seg_paths=[TRAIN_SEG_DATA_GOWT, TRAIN_SEG_DATA_HELA, TRAIN_SEG_DATA_MUSC],
             seg_type=args.seg_type,
             mode="train",
             gap=args.max_gap,

@@ -303,8 +303,8 @@ class VxmMultipleVideoDataset(Dataset):
         target = torch.from_numpy(fixed_resized).float()
 
         # Normalisation
-        vmin = self.video_min[video_idx]
-        vmax = self.video_max[video_idx]
+        vmin = self.video_min[video_idx - 1]
+        vmax = self.video_max[video_idx - 1]
 
         source = (source - vmin) / (vmax - vmin + 1e-8)
         target = (target - vmin) / (vmax - vmin + 1e-8)
