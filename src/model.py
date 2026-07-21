@@ -65,6 +65,63 @@ def downsampling_conv_blocks(
     return blocks
 
 
+def downsampling_attention_blocks(
+    ndim: int,
+    in_channels: int,
+    nb_features: Sequence[int],
+    kernel_size: int = 3,
+) -> Tuple[nn.ModuleList, List[int]]:
+    """
+    Create an `nn.ModuleList` of downsampling conv blocks based the number of features per layer.
+
+    Parameters
+    ----------
+    ndim : int
+        Dimensionality of the convolution (1 for Conv1d, 2 for Conv2d, 3 for Conv3d).
+    nb_features : Sequence[int]
+        Number of features at each level of the downsampling convs. Use `0` to indicate a
+        pass-through level (pool only, no convolution). When `0` is used, the actual output
+        channels equal the input channels (channels are preserved).
+    kernel_size : int, default=3
+        Size of the convolving kernel at each level.
+
+    Returns
+    -------
+    tuple[nn.ModuleList, list[int]]
+        A tuple of (blocks, actual_channels) where:
+        - blocks: ModuleList of downsampling blocks (DownsampleConvBlock or DownsamplePassthrough)
+        - actual_channels: List of actual output channel counts for each block, accounting for
+          pass-through levels where channels are preserved
+
+    Examples
+    --------
+    >>> # Standard usage
+    >>> blocks, actual_ch = downsampling_conv_blocks(
+    ...     ndim=2,
+    ...     nb_features=[3, 16, 32],
+    ...     kernel_size=3,
+    ...     normalizations=["batch", "instance", "batch"],
+    ...     activations="relu"
+    ... )
+    >>> actual_ch
+    [16, 32]
+    """
+
+    # Init container for downsampling convs and track actual channels
+    blocks = nn.ModuleList()
+
+    in_ch = in_channels
+
+    # Make downsampling conv block and append to list of them
+    for out_ch in nb_features:
+        block = ConvBlock(in_ch, out_ch, kernel_size)
+        blocks.append(block)
+
+        in_ch = out_ch
+
+    return blocks
+
+
 def upsampling_conv_blocks(
     ndim: int,
     nb_features: Sequence[int],
@@ -89,7 +146,7 @@ def upsampling_conv_blocks(
     skip_channels : Sequence[int] or None, default=None
         List of channel counts for skip connections, one per upsampling block. If provided and
         accepts_skip=True, enables asymmetric downsampling/upsampling architectures. If None and
-        accepts_skip=True, assumes symmetric architecture (skip channels equal upsampled
+        accepts_skip=True, assumes symmetric architecture (skip channels equal upsampleda_bl
         channels).
     in_channels : int or None, default=None
         Actual input channels to the first upsampling block (from bottleneck). If None, uses
@@ -1000,7 +1057,7 @@ class TransFlowSegUNet(nn.Module):
         nb_skip_channels = tuple(reversed(nb_features))
 
         # -------- Encoder ---------
-        self.downsampling_conv_blocks = downsampling_conv_blocks(
+        self.downsampling_conv_blocks = downsampling_attention_blocks(
             ndim=ndim,
             in_channels=self.in_channels,
             nb_features=nb_downsampling_features,

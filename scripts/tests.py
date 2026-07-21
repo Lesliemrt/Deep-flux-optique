@@ -528,7 +528,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/voxelmorph/output_20260721_154147",
+        default="outputs/voxelmorph/output_20260721_163737",
         help="Directory to find model and to save results",
     )
     parser.add_argument(
