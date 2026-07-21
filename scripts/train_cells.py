@@ -588,6 +588,8 @@ def train(args):
     if mlflow.active_run():
         mlflow.end_run()
 
+    return output_dir
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train VoxelMorph")
@@ -703,4 +705,4 @@ if __name__ == "__main__":
         help="Use multiple videos for training, to allow the model to generalize better",
     )
     args = parser.parse_args()
-    train(args)
+    _ = train(args)

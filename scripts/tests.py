@@ -495,6 +495,8 @@ def register_video(args):
         visualizer = FlowVisualizer(video, flow_maps, grid_step=20, gap=args.gap)
         visualizer.run()
 
+    return (global_dice - global_ref_dice) / (1 - global_ref_dice)
+
 
 if __name__ == "__main__":
     # Parse commandline args
@@ -536,4 +538,4 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    register_video(args)
+    _ = register_video(args)

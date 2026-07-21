@@ -25,9 +25,9 @@ from my_utils.configs import (
     TRAIN_SEG_DATA_MUSC,  # noqa: F401
     WIDTH,
     NB_CLASSES,
-    TRAIN_DATA,  # noqa: F401
+    TRAIN_DATA_GOWT,  # noqa: F401
     TRAIN_DATA_HSC,  # noqa: F401
-    TRAIN_SEG_DATA,  # noqa: F401
+    TRAIN_SEG_DATA_GOWT,  # noqa: F401
     TRAIN_SEG_DATA_HSC,  # noqa: F401
 )
 
@@ -247,7 +247,7 @@ class VxmMultipleVideoDataset(Dataset):
         self.mode = mode
         self.seg_type = seg_type
         self.get_path_list()
-        self.transform = self.get_transforms(n=len(self.frames_path_list))
+        self.compute_video_min_max()
         self.gap = gap
         self.multiplier = multiplier
         if self.mode == "train":
@@ -302,9 +302,12 @@ class VxmMultipleVideoDataset(Dataset):
         source = torch.from_numpy(moving_resized).float()
         target = torch.from_numpy(fixed_resized).float()
 
-        # Normalisation + augmentation if augment
-        source = self.transform(source)
-        target = self.transform(target)
+        # Normalisation
+        vmin = self.video_min[video_idx]
+        vmax = self.video_max[video_idx]
+
+        source = (source - vmin) / (vmax - vmin + 1e-8)
+        target = (target - vmin) / (vmax - vmin + 1e-8)
 
         if self.seg_paths is not None:
             source_seg = tiff.imread(self.seg_path_list[idx1])
@@ -363,6 +366,26 @@ class VxmMultipleVideoDataset(Dataset):
 
         return v2.Compose(base_transforms)
 
+    def compute_video_min_max(self):
+        """Compute min max of each video independently"""
+        self.video_min = []
+        self.video_max = []
+        for k in range(len(self.limits) - 1):
+            start_idx = self.limits[k]
+            end_idx = self.limits[k + 1]
+
+            global_min = np.min(tiff.imread(str(self.frames_path_list[start_idx])))
+            global_max = np.max(tiff.imread(str(self.frames_path_list[start_idx])))
+
+            for i in range(start_idx, end_idx):
+                img = tiff.imread(str(self.frames_path_list[i]))
+
+                global_min = min(global_min, np.min(img))
+                global_max = max(global_max, np.max(img))
+
+            self.video_min.append(global_min)
+            self.video_max.append(global_max)
+
     def __len__(self):
         """Return nbr of paires to train on per epoch."""
         return self.nb_pairs
@@ -386,3 +409,8 @@ class VxmMultipleVideoDataset(Dataset):
                 if self.seg_type == "heatmaps":
                     seg_path = seg_path.parent / "SEG_HEATMAP"
                 self.seg_path_list += sorted(seg_path.iterdir())
+
+                if len(self.frames_path_list) != len(self.seg_path_list):
+                    raise ValueError(
+                        "Synchronisation problem between video and segmentation"
+                    )
