@@ -319,7 +319,7 @@ class TransFlowSegUNet(nn.Module):
         in_channels: int,
         out_channels: int,
         nb_class_segmentation: int = 1,
-        embed_dim: int = 64,
+        embed_dim: int = 96,
         reg_head_channels: int = 16,
     ):
         """
@@ -354,7 +354,12 @@ class TransFlowSegUNet(nn.Module):
         self.reg_head_channels = reg_head_channels
 
         # Symmetric Unet
-        nb_features = [embed_dim // 2, embed_dim, embed_dim * 2, embed_dim * 4]
+        nb_features = [
+            embed_dim // 2,
+            embed_dim,
+            embed_dim * 2,
+            embed_dim * 4,
+        ]  # TODO pb il faut 5 car 5 skip connections mettre 16?
         nb_upsampling_features = tuple(reversed(nb_features))
         nb_skip_channels = tuple(reversed(nb_features))
 
@@ -370,7 +375,7 @@ class TransFlowSegUNet(nn.Module):
         self.transformer = timm.create_model(
             "swinv2_tiny_window8_256",
             pretrained=True,
-            in_channs=2,
+            in_chans=2,
             features_only=True,
             out_indices=[0, 1, 2, 3],
         )
@@ -406,7 +411,7 @@ class TransFlowSegUNet(nn.Module):
         )
 
         self.reg_head = nn.Conv2d(
-            self.reg_head_channels, out_channels, kernel_size=1, padding=1
+            self.reg_head_channels, out_channels, kernel_size=1, padding=0
         )
 
         # -------- Decoder Segmentation ---------
