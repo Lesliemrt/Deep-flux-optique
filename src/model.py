@@ -6,6 +6,7 @@ import torch.nn.functional as F
 import neurite as ne
 
 import voxelmorph as vxm
+from transformer_model import TransFlowSegUNet
 
 
 class ConvBlock(nn.Module):
@@ -717,6 +718,12 @@ class WarperVxm(nn.Module):
                 activations=nn.ReLU,
                 final_activation=None,
             ).to(self.device)
+        elif self.model_type == "transflowseg":
+            self.model = TransFlowSegUNet(
+                ndim=ndim,
+                in_channels=(source_channels + target_channels),
+                out_channels=ndim,
+            )
 
         self._init_flow_layer(ndim, 1e-5)
 
@@ -793,7 +800,7 @@ class WarperVxm(nn.Module):
         elif self.model_type == "voxelmorph":
             unet_out = self.model(combined_features)
             displacement = self.flow_layer(unet_out)
-        elif self.model_type == "flowseg":
+        elif self.model_type == "flowseg" or self.model_type == "transflowseg":
             displacement, segmentation = self.model(combined_features)
             res["source_segmentation"] = segmentation
 
