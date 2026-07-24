@@ -524,7 +524,7 @@ if __name__ == "__main__":
         default=TEST_DATA_GOWT,
         help="Moving image (source) filename",
     )
-    parser.add_argument("--gap", default=10, help="Temporal gap between 2 frames")
+    parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
         default=TEST_SEG_DATA_GOWT,
@@ -546,7 +546,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/transflowseg/output_20260724_151503",
+        default="outputs/transflowseg/output_20260724_161151",
         help="Directory to find model and to save results",
     )
     parser.add_argument(
