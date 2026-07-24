@@ -36,7 +36,7 @@ from tests import register_video
 
 if __name__ == "__main__":
     seeds = [42, 123, 456, 54321, 98765]
-    model = ["flowseg", "voxelmorph", "tvl1"]
+    model = ["flowseg", "voxelmorph", "tvl1", "transflowseg"]
     datasets = ["GOWT", "HELA", "MUSC", "HSC"]
 
     base_train_args = {
