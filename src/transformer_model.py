@@ -281,14 +281,16 @@ class TransFlowSegUNet(nn.Module):
 
         out = self.transformer(feature_tensor)
 
-        f1 = out[-2]
-        f2 = out[-3]
-        f3 = out[-4]
+        f1 = out[-2].permute(0, 3, 1, 2).contiguous()
+        f2 = out[-3].permute(0, 3, 1, 2).contiguous()
+        f3 = out[-4].permute(0, 3, 1, 2).contiguous()
 
         skip_connections = [f1, f2, f3, f4, f5]
 
         # -------------------------- Bottleneck ----------------------------------------
-        feature_tensor = self.lowest_resolution_conv_block(out[-1])
+        feature_tensor = self.lowest_resolution_conv_block(
+            out[-1].permute(0, 3, 1, 2).contiguous()
+        )
 
         # -------------------------- Upsampling path FWD ----------------------------------------
         feature_tensor_fwd = feature_tensor
