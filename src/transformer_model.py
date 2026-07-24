@@ -201,11 +201,11 @@ class TransFlowSegUNet(nn.Module):
 
         # -------- Bottleneck---------
         bottleneck_channels = embed_dim * 8
-        self.lowest_resolution_conv_block = ConvBlock(
-            ndim=ndim,
-            in_channels=bottleneck_channels,
-            out_channels=bottleneck_channels,
-        )
+        # self.lowest_resolution_conv_block = ConvBlock(
+        #     ndim=ndim,
+        #     in_channels=bottleneck_channels,
+        #     out_channels=bottleneck_channels,
+        # )
 
         # Upsampling
         self.upsample = nn.Upsample(scale_factor=2, mode="bilinear")
@@ -288,9 +288,7 @@ class TransFlowSegUNet(nn.Module):
         skip_connections = [f1, f2, f3, f4, f5]
 
         # -------------------------- Bottleneck ----------------------------------------
-        feature_tensor = self.lowest_resolution_conv_block(
-            out[-1].permute(0, 3, 1, 2).contiguous()
-        )
+        feature_tensor = out[-1].permute(0, 3, 1, 2).contiguous()
 
         # -------------------------- Upsampling path FWD ----------------------------------------
         feature_tensor_fwd = feature_tensor

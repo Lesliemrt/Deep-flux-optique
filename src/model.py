@@ -723,7 +723,7 @@ class WarperVxm(nn.Module):
                 ndim=ndim,
                 in_channels=(source_channels + target_channels),
                 out_channels=ndim,
-            )
+            ).to(self.device)
 
         self._init_flow_layer(ndim, 1e-5)
 
@@ -791,6 +791,7 @@ class WarperVxm(nn.Module):
             If `return_field_type` is not one of {'velocity', 'svf', 'displacement'}.
         """
         res = {}
+        print(f"Using model type : {self.model_type} (signed : the warper)")
 
         # Pass combined features through the model's backbone & flow layer
         combined_features = torch.cat([source, target], dim=1)
@@ -874,3 +875,14 @@ class WarperVxm(nn.Module):
                 # Set the bias term(s) to zero for the first (and only) conv
                 if self.model.out_layer_fwd.conv[0].bias is not None:
                     self.model.out_layer_fwd.conv[0].bias.zero_()
+
+        elif self.model_type == "transflowseg":
+            with torch.no_grad():
+                torch.nn.init.normal_(
+                    self.model.reg_head.weight,
+                    mean=0.0,
+                    std=flow_initializer,
+                )
+                # Set the bias term(s) to zero for the first (and only) conv
+                if self.model.reg_head.bias is not None:
+                    self.model.reg_head.bias.zero_()

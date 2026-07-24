@@ -196,7 +196,11 @@ def create_model(args):
         model.eval()
         if mlflow.active_run():
             mlflow.log_param("model_path", model_path)
-    elif args.model_type == "flowseg" or args.model_type == "twoflows":
+    elif (
+        args.model_type == "flowseg"
+        or args.model_type == "twoflows"
+        or args.model_type == "transflowseg"
+    ):
         model = WarperVxm(
             ndim=2,
             source_channels=1,
@@ -257,6 +261,7 @@ def register_video(args):
         args.model_type == "voxelmorph"
         or args.model_type == "twoflows"
         or args.model_type == "flowseg"
+        or args.model_type == "transflowseg"
     ):
         with Path(f"{args.output_dir}/config.json").open() as j:
             config = json.load(j)  # To get informations from vxm training
@@ -302,6 +307,7 @@ def register_video(args):
             args.model_type == "voxelmorph"
             or args.model_type == "twoflows"
             or args.model_type == "flowseg"
+            or args.model_type == "transflowseg"
         ):
             res = register_pair(moving, fixed, model, global_min, global_max)
             displacement, fig, input_moving, input_fixed = (
@@ -352,7 +358,11 @@ def register_video(args):
             video.append(
                 np.expand_dims(input_fixed, axis=-1)
             )  # channel dimension neededfor visualization
-            if args.model_type == "voxelmorph" or args.model_type == "flowseg":
+            if (
+                args.model_type == "voxelmorph"
+                or args.model_type == "flowseg"
+                or args.model_type == "transflowseg"
+            ):
                 res = register_pair(fixed, moving, model, global_min, global_max)
                 displacement_bwd = res["displacement"]
             elif args.model_type == "tvl1":
@@ -511,24 +521,32 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--video_path",
-        default=TEST_DATA_MUSC,
+        default=TEST_DATA_GOWT,
         help="Moving image (source) filename",
     )
-    parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
+    parser.add_argument("--gap", default=10, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
-        default=TEST_SEG_DATA_MUSC,
+        default=TEST_SEG_DATA_GOWT,
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
         "--model_type",
         default="voxelmorph",
-        choices=["voxelmorph", "twoflows", "flowseg", "tvl1", "raft", "farnback"],
+        choices=[
+            "voxelmorph",
+            "twoflows",
+            "flowseg",
+            "transflowseg",
+            "tvl1",
+            "raft",
+            "farnback",
+        ],
         help="Type of model to use for registration",
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/voxelmorph/output_20260721_163737",
+        default="outputs/transflowseg/output_20260724_151503",
         help="Directory to find model and to save results",
     )
     parser.add_argument(
