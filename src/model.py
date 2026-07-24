@@ -791,7 +791,6 @@ class WarperVxm(nn.Module):
             If `return_field_type` is not one of {'velocity', 'svf', 'displacement'}.
         """
         res = {}
-        print(f"Using model type : {self.model_type} (signed : the warper)")
 
         # Pass combined features through the model's backbone & flow layer
         combined_features = torch.cat([source, target], dim=1)

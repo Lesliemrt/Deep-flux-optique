@@ -1,6 +1,8 @@
 # Core library imports
 import argparse
 import os
+import sys
+from pathlib import Path
 
 os.environ["NEURITE_BACKEND"] = "pytorch"
 os.environ["VXM_BACKEND"] = "pytorch"
@@ -11,25 +13,16 @@ import torch
 import pandas as pd
 
 # Local imports
-# sys.path.append(
-#     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
-# )  # noqa: PTH100, PTH118, PTH120
-# sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-# sys.path.append(
-#     os.path.join(
-#         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "voxelmorph_folder"
-#     )
-# )  # noqa: PTH100, PTH118, PTH120
-from my_utils.configs import (
-    TRAIN_DATA_MUSC,  # noqa: F401
-    TRAIN_SEG_DATA_MUSC,  # noqa: F401
-    TRAIN_DATA_GOWT,  # noqa: F401
-    TRAIN_SEG_DATA_GOWT,  # noqa: F401
-    TRAIN_DATA_HSC,  # noqa: F401
-    TRAIN_SEG_DATA_HSC,  # noqa: F401
-    TRAIN_DATA_HELA,  # noqa: F401
-    TRAIN_SEG_DATA_HELA,  # noqa: F401
-)
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
+)  # noqa: PTH100, PTH118, PTH120
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+sys.path.append(
+    os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "voxelmorph_folder"
+    )
+)  # noqa: PTH100, PTH118, PTH120
+import my_utils.configs as configs
 from train_cells import train
 from tests import register_video
 
@@ -81,6 +74,7 @@ if __name__ == "__main__":
             train_time_per_seed = []
             inf_time_per_seed = []
             for seed in seeds:
+                print(f"Using model {model_name}, dataset {dataset} and seed {seed}")
                 torch.manual_seed(seed)
                 np.random.seed(seed)
                 torch.cuda.manual_seed(seed)
@@ -88,8 +82,8 @@ if __name__ == "__main__":
                 torch.backends.cudnn.deterministic = True
                 torch.backends.cudnn.benchmark = False
 
-                video_path = f"TRAIN_DATA_{dataset}"
-                seg_path = f"TRAIN_SEG_DATA_{dataset}"
+                video_path = getattr(configs, f"TRAIN_DATA_{dataset}")
+                seg_path = getattr(configs, f"TRAIN_SEG_DATA_{dataset}")
                 if dataset == "GOWT" or dataset == "HELA":
                     max_gap = 20
                     multiplier = 3
@@ -109,8 +103,8 @@ if __name__ == "__main__":
                 output_dir, train_time = train(train_args)
 
                 additionnal_test_args = {
-                    "video_path": f"TEST_DATA_{dataset}",
-                    "seg_path": f"TEST_SEG_DATA_{dataset}",
+                    "video_path": getattr(configs, f"TEST_DATA_{dataset}"),
+                    "seg_path": getattr(configs, f"TEST_SEG_DATA_{dataset}"),
                     "model_type": model_name,
                     "output_dir": output_dir,
                 }

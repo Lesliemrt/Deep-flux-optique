@@ -248,6 +248,7 @@ def register_video(args):
         Commandline arguments.
     """
     print(f"Using device: {device}")  # noqa: T201
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # 1. Load video and segmentations frames
     frames_path_list = sorted(Path(args.video_path).iterdir())
@@ -505,7 +506,10 @@ def register_video(args):
         visualizer = FlowVisualizer(video, flow_maps, grid_step=20, gap=args.gap)
         visualizer.run()
 
-    return (global_dice - global_ref_dice) / (1 - global_ref_dice)
+    end_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    time = end_timestamp - timestamp
+
+    return (global_dice - global_ref_dice) / (1 - global_ref_dice), time
 
 
 if __name__ == "__main__":

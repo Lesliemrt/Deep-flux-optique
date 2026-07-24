@@ -182,6 +182,7 @@ def train_epoch(
     loss_weights: Sequence[float],
     background: bool,
     cycle_consistency: bool = False,
+    seg_type: str = "binary",
 ) -> float:
     """Train for one epoch.
 
@@ -341,7 +342,7 @@ def train_epoch(
                 )
                 loss += loss_weights[3] * background_loss
                 epoch_background_loss += background_loss.item()
-            if args.seg_type is not None:
+            if seg_type is not None:
                 loss += loss_weights[2] * flow_with_seg_loss
                 epoch_flow_with_seg_loss += flow_with_seg_loss.item()
         loss.backward()
@@ -371,6 +372,7 @@ def train(args):
     """Create the dataloader, create the model, train and save."""
     # Set device
     print(f"Using device: {device}")  # noqa: T201
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     if args.seg_path is None:
         args.seg_type = None
         args.gamma_param = 0.0
@@ -501,6 +503,8 @@ def train(args):
             loss_computer=loss_computer,
             loss_weights=loss_weights,
             background=args.background,
+            cycle_consistency=args.cycle_consistency,
+            seg_type=args.seg_type,
         )
         if mlflow.active_run():
             mlflow.log_metric("Train_loss", avg_loss["loss"], step=epoch)
@@ -588,12 +592,14 @@ def train(args):
     if mlflow.active_run():
         mlflow.end_run()
 
-    return output_dir
+    end_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    time = end_timestamp - timestamp
+
+    return output_dir, time
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train VoxelMorph")
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")  # noqa: DTZ005
     parser.add_argument(
         "--mlflow", action="store_true", help="Enable mlflow tracking during training"
     )
