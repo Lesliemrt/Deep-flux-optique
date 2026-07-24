@@ -638,7 +638,7 @@ if __name__ == "__main__":
         choices=["voxelmorph", "twoflows", "flowseg", "transflowseg"],
         help="Type of model to train : voxelmorph, twoflows flowseg",
     )
-    parser.add_argument("--epochs", type=int, default=1, help="Number of epochs")
+    parser.add_argument("--epochs", type=int, default=30, help="Number of epochs")
     parser.add_argument("--batch-size", type=int, default=4, help="Batch size")
     parser.add_argument(
         "--save-every", type=int, default=10, help="Checkpoint every N epochs"
