@@ -28,16 +28,20 @@ from train_cells import train
 from my_utils import configs
 
 if __name__ == "__main__":
-    seeds = [42, 123, 456, 54321, 98765]
-    model = ["flowseg", "voxelmorph", "tvl1", "transflowseg"]
-    datasets = ["GOWT", "HELA", "MUSC", "HSC"]
+    # seeds = [42, 123, 456, 54321, 98765]
+    # model = ["flowseg", "voxelmorph", "tvl1", "transflowseg"]
+    # datasets = ["GOWT", "HELA", "MUSC", "HSC"]
+
+    seeds = [42]
+    model = ["voxelmorph"]
+    datasets = ["GOWT"]
 
     base_train_args = {
         "mlflow": False,
         "workers": 4,
         "output_dir": "outputs",
         "seg_type": "binary",
-        "epochs": 30,
+        "epochs": 1,  # TODO
         "batch_size": 4,
         "save_every": 15,
         "cycle_consistency": False,
@@ -106,7 +110,7 @@ if __name__ == "__main__":
                     "video_path": getattr(configs, f"TEST_DATA_{dataset}"),
                     "seg_path": getattr(configs, f"TEST_SEG_DATA_{dataset}"),
                     "model_type": model_name,
-                    "output_dir": output_dir,
+                    "output_dir": str(output_dir),
                 }
 
                 test_args = argparse.Namespace(
@@ -129,13 +133,13 @@ if __name__ == "__main__":
                 f"{np.mean(inf_time_per_seed)!s}({np.std(inf_time_per_seed)})"
             )
 
-        df = pd.DataFrame(data=dice_res_per_data)
+        df = pd.DataFrame(data=dice_res_per_data, index=model_name)
         dice_df = pd.concat([dice_df, df], axis=0)
 
-        df = pd.DataFrame(data=train_time_per_data)
+        df = pd.DataFrame(data=train_time_per_data, index=model_name)
         train_time_df = pd.concat([dice_df, df], axis=0)
 
-        df = pd.DataFrame(data=inf_time_per_data)
+        df = pd.DataFrame(data=inf_time_per_data, index=model_name)
         inf_time_df = pd.concat([inf_time_df, df], axis=0)
 
 dice_df.to_csv("RESULTS.csv")

@@ -338,7 +338,7 @@ def register_video(args):
                 moving, fixed, model, global_min, global_max
             )
         fig.savefig(viz_dir / f"registration_result_for_paire_{idx}-{idx2}.png")
-        plt.close(fig)
+        plt.close("all")
 
         if args.visualize or args.save_flow_maps:
             flow_maps[(idx2, idx)] = displacement.squeeze().cpu().numpy()
@@ -400,7 +400,7 @@ def register_video(args):
                 mlflow.log_figure(
                     fig, artifact_file=f"seg_eval_for_paire_{idx}-{idx2}.png"
                 )
-            plt.close(fig)
+            plt.close("all")
             # ------------------------- SEGMENTATION EVALUATION ------------------------------------
             if "source_segmentation" in res:
                 eval_seg_res = evaluate_segmentation(
@@ -415,7 +415,7 @@ def register_video(args):
                     mlflow.log_figure(
                         fig, artifact_file=f"segmentation_result_for_{idx}.png"
                     )
-                plt.close(fig)
+                plt.close("all")
         else:
             print("Segmentation files not found, skipping segmentation evaluation.")
         results.append(result)
@@ -539,7 +539,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/transflowseg/output_20260724_161151",
+        default="outputs/voxelmorph/output_20260727_120004",
         help="Directory to find model and to save results",
     )
     parser.add_argument(

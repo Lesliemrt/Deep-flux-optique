@@ -10,20 +10,20 @@ import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
-from skimage.registration import optical_flow_tvl1
-from PIL import Image
 
 # Third-party imports
 import torch
+from PIL import Image
+from skimage.registration import optical_flow_tvl1
 
 # Local imports
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
-)  # noqa: PTH100, PTH118, PTH120
-from my_utils.configs import device
-from my_utils.image_utils import viz, normalise, NormalizeMinMax
-
+)
 import voxelmorph as vxm
+
+from my_utils.configs import device
+from my_utils.image_utils import NormalizeMinMax, normalise, viz
 
 
 def register_pair(moving, fixed, model, global_min, global_max):
