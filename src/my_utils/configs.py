@@ -1,4 +1,3 @@
-# noqa: INP001
 # To run on gpu is available
 import os
 

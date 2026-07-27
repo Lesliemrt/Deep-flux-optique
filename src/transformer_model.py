@@ -1,8 +1,8 @@
-from typing import List, Optional, Sequence, Tuple, Union
+from collections.abc import Sequence
 
+import timm
 import torch
 from torch import nn
-import timm
 
 
 class ConvBlock(nn.Module):
@@ -36,9 +36,9 @@ def upsampling_2conv_blocks(
     ndim: int,
     nb_features: Sequence[int],
     kernel_size: int = 3,
-    skip_channels: Union[Sequence[int], None] = None,
-    in_channels: Optional[int] = None,
-) -> Tuple[nn.ModuleList, List[int]]:
+    skip_channels: Sequence[int] | None = None,
+    in_channels: int | None = None,
+) -> tuple[nn.ModuleList, list[int]]:
     """
     Create an `nn.ModuleList` of upsampling conv blocks based the number of features per layer/
     level.

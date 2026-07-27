@@ -9,23 +9,23 @@ os.environ["VXM_BACKEND"] = "pytorch"
 
 # Third-party imports
 import numpy as np
-import torch
 import pandas as pd
+import torch
 
 # Local imports
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
-)  # noqa: PTH100, PTH118, PTH120
+)
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 sys.path.append(
     os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "voxelmorph_folder"
     )
-)  # noqa: PTH100, PTH118, PTH120
-import my_utils.configs as configs
-from train_cells import train
+)
 from tests import register_video
+from train_cells import train
 
+from my_utils import configs
 
 if __name__ == "__main__":
     seeds = [42, 123, 456, 54321, 98765]
@@ -120,13 +120,13 @@ if __name__ == "__main__":
                 inf_time_per_seed.append(inf_time)
 
             dice_res_per_data[dataset] = (
-                f"{str(np.mean(dice_res_per_seed))}({np.std(dice_res_per_seed)})"
+                f"{np.mean(dice_res_per_seed)!s}({np.std(dice_res_per_seed)})"
             )
             train_time_per_data[dataset] = (
-                f"{str(np.mean(train_time_per_seed))}({np.std(train_time_per_seed)})"
+                f"{np.mean(train_time_per_seed)!s}({np.std(train_time_per_seed)})"
             )
             inf_time_per_data[dataset] = (
-                f"{str(np.mean(inf_time_per_seed))}({np.std(inf_time_per_seed)})"
+                f"{np.mean(inf_time_per_seed)!s}({np.std(inf_time_per_seed)})"
             )
 
         df = pd.DataFrame(data=dice_res_per_data)

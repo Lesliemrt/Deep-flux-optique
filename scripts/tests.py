@@ -1,4 +1,4 @@
-# personnal tetst file # noqa: INP001
+# personnal tetst file
 """Example script to test registration of frames of a video with VoxelMorph models."""
 
 # Core library imports
@@ -14,55 +14,41 @@ import matplotlib.pyplot as plt
 import mlflow
 import numpy as np
 import tifffile as tiff
-# from argparse import Namespace
 
+# from argparse import Namespace
 # Third-party imports
 import torch
 
 # Local imports
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
-)  # noqa: PTH100, PTH118, PTH120
+)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 sys.path.append(
     os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "voxelmorph_folder"
     )
-)  # noqa: PTH100, PTH118, PTH120
-from my_utils.configs import (  # type: ignore
-    HEIGHT,
-    TEST_DATA_GOWT,  # noqa: F401
-    TEST_DATA_HELA,  # noqa: F401
-    TEST_DATA_HSC,  # noqa: F401
-    TEST_DATA_MUSC,  # noqa: F401
-    TEST_SEG_DATA_GOWT,  # noqa: F401
-    TEST_SEG_DATA_HELA,  # noqa: F401
-    TEST_SEG_DATA_HSC,  # noqa: F401
-    TEST_SEG_DATA_MUSC,  # noqa: F401
-    WIDTH,
-    device,
-    MLFLOW_TRACKING_URI,
-    SEED,
 )
-from my_utils.image_utils import interpole_and_pad, iou, viz, normalisation_params
+import voxelmorph as vxm
+
 from flow_visualizer import FlowVisualizer
+from model import WarperVxm
+from my_utils import configs
+from my_utils.image_utils import interpole_and_pad, iou, normalisation_params, viz
 
 # from raft import RAFT
 from register_cells_old import (
     register_pair,
-    register_pair_tvl1,
-    register_pair_raft,
     register_pair_fb,
+    register_pair_raft,
+    register_pair_tvl1,
 )
-from model import WarperVxm
-
-import voxelmorph as vxm
 
 # for reproductability
-torch.manual_seed(SEED)
-np.random.seed(SEED)
-torch.cuda.manual_seed(SEED)
-torch.cuda.manual_seed_all(SEED)
+torch.manual_seed(configs.SEED)
+np.random.seed(configs.SEED)
+torch.cuda.manual_seed(configs.SEED)
+torch.cuda.manual_seed_all(configs.SEED)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
@@ -73,8 +59,8 @@ def evaluate_registration_with_seg(
     """Evaluate the registration results."""
     score = {}
     # Load segmentation masks
-    seg_moving = interpole_and_pad(segmentation_moving, [HEIGHT, WIDTH])
-    seg_fixed = interpole_and_pad(segmentation_fixed, [HEIGHT, WIDTH])
+    seg_moving = interpole_and_pad(segmentation_moving, [configs.HEIGHT, configs.WIDTH])
+    seg_fixed = interpole_and_pad(segmentation_fixed, [configs.HEIGHT, configs.WIDTH])
     # Take only pairs of frame with same nbr of cells (to have max dice = 1 in case of disappaering cell in vid)
     moving_labels = set(np.unique([seg_moving]))
     fixed_labels = set(np.unique([seg_fixed]))
@@ -82,11 +68,15 @@ def evaluate_registration_with_seg(
         return None
     # Warp moving segmentation with the predicted displacement
     tensor_seg_moving = (
-        torch.from_numpy(seg_moving).to(device).float().unsqueeze(0).unsqueeze(0)
+        torch.from_numpy(seg_moving)
+        .to(configs.device)
+        .float()
+        .unsqueeze(0)
+        .unsqueeze(0)
     )
     spatial_transformer = vxm.nn.modules.SpatialTransformer(
         interpolation_mode="nearest"
-    ).to(device)
+    ).to(configs.device)
     warped_seg_moving = spatial_transformer(tensor_seg_moving, displacement)
     # Compute Dice score
     dice = vxm.py.utils.dice(
@@ -128,15 +118,15 @@ def evaluate_registration(moving, fixed, displacement):
     """Evaluate the registration results with MSE : not relevant (ideally find another method to evaluate the visual aspect)."""
     score = {}
     # Load segmentation masks
-    moving = interpole_and_pad(moving, [HEIGHT, WIDTH])
-    fixed = interpole_and_pad(fixed, [HEIGHT, WIDTH])
+    moving = interpole_and_pad(moving, [configs.HEIGHT, configs.WIDTH])
+    fixed = interpole_and_pad(fixed, [configs.HEIGHT, configs.WIDTH])
     # Warp moving with the predicted displacement
     tensor_moving = (
-        torch.from_numpy(moving).to(device).float().unsqueeze(0).unsqueeze(0)
+        torch.from_numpy(moving).to(configs.device).float().unsqueeze(0).unsqueeze(0)
     )
     spatial_transformer = vxm.nn.modules.SpatialTransformer(
         interpolation_mode="linear"
-    ).to(device)
+    ).to(configs.device)
     warped_moving = spatial_transformer(tensor_moving, displacement)
     # Compute MSE score
     mse = np.square(np.subtract(fixed, warped_moving.squeeze().cpu().numpy())).mean()
@@ -152,8 +142,8 @@ def evaluate_segmentation(segmentation_pred, segmentation_gt):
     """Evaluate the segmentation results."""
     score = {}
     # Load segmentation masks
-    seg_pred = interpole_and_pad(segmentation_pred, [HEIGHT, WIDTH])
-    seg_gt = interpole_and_pad(segmentation_gt, [HEIGHT, WIDTH])
+    seg_pred = interpole_and_pad(segmentation_pred, [configs.HEIGHT, configs.WIDTH])
+    seg_gt = interpole_and_pad(segmentation_gt, [configs.HEIGHT, configs.WIDTH])
     # Binarise
     seg_gt = seg_gt > 0
     seg_pred = (seg_pred > 0.5).astype(int)
@@ -188,11 +178,11 @@ def create_model(args):
             target_channels=1,
             nb_features=[16, 16, 16, 16, 16],
             model_type=args.model_type,
-            device=device,
-        ).to(device)
+            device=configs.device,
+        ).to(configs.device)
         model_path = f"{args.output_dir}/best.pt"
-        model.load_state_dict(torch.load(model_path, map_location=device))
-        print(f"Load model : {model_path}")  # noqa: T201
+        model.load_state_dict(torch.load(model_path, map_location=configs.device))
+        print(f"Load model : {model_path}")
         model.eval()
         if mlflow.active_run():
             mlflow.log_param("model_path", model_path)
@@ -207,11 +197,11 @@ def create_model(args):
             target_channels=1,
             nb_features=[16, 32, 64, 128, 256],
             model_type=args.model_type,
-            device=device,
-        ).to(device)
+            device=configs.device,
+        ).to(configs.device)
         model_path = f"{args.output_dir}/best.pt"
-        model.load_state_dict(torch.load(model_path, map_location=device))
-        print(f"Load model : {model_path}")  # noqa: T201
+        model.load_state_dict(torch.load(model_path, map_location=configs.device))
+        print(f"Load model : {model_path}")
         model.eval()
         if mlflow.active_run():
             mlflow.log_param("model_path", model_path)
@@ -247,8 +237,8 @@ def register_video(args):
     args : argparse.Namespace
         Commandline arguments.
     """
-    print(f"Using device: {device}")  # noqa: T201
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    print(f"Using device: {configs.device}")
+    timestamp = datetime.datetime.now(tz=datetime.UTC)
 
     # 1. Load video and segmentations frames
     frames_path_list = sorted(Path(args.video_path).iterdir())
@@ -271,14 +261,14 @@ def register_video(args):
         args.output_dir = f"outputs/{args.model_type}"
 
     if args.mlflow:
-        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+        mlflow.set_tracking_uri(configs.MLFLOW_TRACKING_URI)
         parent_run_id = config.get("mlflow_run_id", None)
         mlflow.start_run(
             run_name=f"Test gap {args.gap} model type {args.model_type} on {args.video_path}",
             nested=True,
             parent_run_id=parent_run_id,  # To link the test run to the training run (if not specified, the test run will be a independant run)
         )
-        print("MLflow tracking enabled.")  # noqa: T201
+        print("MLflow tracking enabled.")
         mlflow.log_params(vars(args))
 
     # 2. Create model
@@ -296,13 +286,13 @@ def register_video(args):
         result = {}
         # Load moving and fixed images
         idx2 = idx + args.gap
-        print(f"Registering pair : {idx} and {idx2}")  # noqa: T201
+        print(f"Registering pair : {idx} and {idx2}")
         # Read images
         moving = tiff.imread(frames_path_list[idx])
         fixed = tiff.imread(frames_path_list[idx2])
         # Interpole/Pad images to HEIGHT, WIDTH if needed
-        moving = interpole_and_pad(moving, [HEIGHT, WIDTH])
-        fixed = interpole_and_pad(fixed, [HEIGHT, WIDTH])
+        moving = interpole_and_pad(moving, [configs.HEIGHT, configs.WIDTH])
+        fixed = interpole_and_pad(fixed, [configs.HEIGHT, configs.WIDTH])
         # 3. Compute registration
         if (
             args.model_type == "voxelmorph"
@@ -427,15 +417,14 @@ def register_video(args):
                     )
                 plt.close(fig)
         else:
-            print("Segmentation files not found, skipping segmentation evaluation.")  # noqa: T201
+            print("Segmentation files not found, skipping segmentation evaluation.")
         results.append(result)
 
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")  # noqa: DTZ005
     metrics = {
         "data": args.video_path,
-        "date": timestamp,
+        "date": timestamp.strftime("%Y%m%d_%H%M%S"),
         "model": args.output_dir,
-        "device": str(device),
+        "device": str(configs.device),
         "gap": args.gap,
     }
     # 5. Global evaluation
@@ -506,10 +495,10 @@ def register_video(args):
         visualizer = FlowVisualizer(video, flow_maps, grid_step=20, gap=args.gap)
         visualizer.run()
 
-    end_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    time = end_timestamp - timestamp
+    end_timestamp = datetime.datetime.now(tz=datetime.UTC)
+    exec_time = (end_timestamp - timestamp).seconds
 
-    return (global_dice - global_ref_dice) / (1 - global_ref_dice), time
+    return (global_dice - global_ref_dice) / (1 - global_ref_dice), exec_time
 
 
 if __name__ == "__main__":
@@ -525,13 +514,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--video_path",
-        default=TEST_DATA_GOWT,
+        default=configs.TEST_DATA_GOWT,
         help="Moving image (source) filename",
     )
     parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
-        default=TEST_SEG_DATA_GOWT,
+        default=configs.TEST_SEG_DATA_GOWT,
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(

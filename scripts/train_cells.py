@@ -2,64 +2,52 @@
 """VoxelMorph: A Learning Framework for Deformable Medical Image Registration G. Balakrishnan, A.
 Zhao, M. R. Sabuncu, J. Guttag, A.V. Dalca. IEEE TMI: Transactions on Medical Imaging. 38(8).
 pp 1788-1800. 2019.
-"""  # noqa: D205
+"""
 
 # Core library imports
 import argparse
 import json
 import os
 import sys
-from collections.abc import Sequence  # noqa: TC003
+from collections.abc import Sequence
 from pathlib import Path
 
 os.environ["NEURITE_BACKEND"] = "pytorch"
 os.environ["VXM_BACKEND"] = "pytorch"
 # Third-party imports
 import datetime
-import numpy as np
 
 import mlflow
 import neurite as ne
+import numpy as np
 import torch
-from torch import nn
 import torch.nn.functional as F
+from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 # Local imports
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
-)  # noqa: PTH100, PTH118, PTH120
+)
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 sys.path.append(
     os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "voxelmorph_folder"
     )
-)  # noqa: PTH100, PTH118, PTH120
-from dataset import VxmVideoDataset, VxmMultipleVideoDataset
-from model import WarperVxm  # noqa: F401
-from my_utils.configs import (
-    TRAIN_DATA_MUSC,  # noqa: F401
-    TRAIN_SEG_DATA_MUSC,  # noqa: F401
-    TRAIN_DATA_GOWT,  # noqa: F401
-    TRAIN_SEG_DATA_GOWT,  # noqa: F401
-    TRAIN_DATA_HSC,  # noqa: F401
-    TRAIN_SEG_DATA_HSC,  # noqa: F401
-    TRAIN_DATA_HELA,  # noqa: F401
-    TRAIN_SEG_DATA_HELA,  # noqa: F401
-    device,
-    MLFLOW_TRACKING_URI,
-    SEED,
 )
-from my_utils.image_utils import linear_augment  # noqa: F401
-
 import voxelmorph as vxm
 
+from dataset import VxmMultipleVideoDataset, VxmVideoDataset
+from model import WarperVxm
+from my_utils import configs
+from my_utils.image_utils import linear_augment
+
 # for reproductability
-torch.manual_seed(SEED)
-np.random.seed(SEED)
-torch.cuda.manual_seed(SEED)
-torch.cuda.manual_seed_all(SEED)
+torch.manual_seed(configs.SEED)
+np.random.seed(configs.SEED)
+torch.cuda.manual_seed(configs.SEED)
+torch.cuda.manual_seed_all(configs.SEED)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
@@ -69,7 +57,7 @@ def pyramidal_flow(source, target, model, model_type, level=2):
     current_displacement = None
     spatial_transformer = vxm.nn.modules.SpatialTransformer(
         interpolation_mode="linear"
-    ).to(device)
+    ).to(configs.device)
     # Start from the lowest resolution and upsample the displacement at each level to use it as initial displacement for the next level
     for i in range(level):
         scale_factor = 1 / (2 ** (level - i - 1))  # 1/4, 1/2, 1 for 3 levels
@@ -217,13 +205,13 @@ def train_epoch(
         # Define warper for later use
         spatial_transformer = vxm.nn.modules.SpatialTransformer(
             interpolation_mode="linear"
-        ).to(device)
+        ).to(configs.device)
 
         # Move to device in training loop (not dataloader/dataset!)
         source = batch["source"]
         target = batch["target"]
-        source = source.to(device).unsqueeze(1)  # Add channel dimension
-        target = target.to(device).unsqueeze(1)  # Add channel dimension
+        source = source.to(configs.device).unsqueeze(1)  # Add channel dimension
+        target = target.to(configs.device).unsqueeze(1)  # Add channel dimension
 
         # Loss initialisation
         loss = 0.0
@@ -293,12 +281,16 @@ def train_epoch(
 
         # If segmentations are available, compute segmentation loss
         if "source_seg" in batch and "target_seg" in batch:
-            source_seg = batch["source_seg"].to(device).unsqueeze(1)  # add channel dim
-            target_seg = batch["target_seg"].to(device).unsqueeze(1)  # add channel dim
+            source_seg = (
+                batch["source_seg"].to(configs.device).unsqueeze(1)
+            )  # add channel dim
+            target_seg = (
+                batch["target_seg"].to(configs.device).unsqueeze(1)
+            )  # add channel dim
             flow_with_seg_loss = 0.0
             warped_source_seg = spatial_transformer(source_seg, displacement)
             warped_source_seg = torch.clamp(warped_source_seg, 0, 1)
-            # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)  # noqa: E501, ERA001
+            # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)
             flow_with_seg_loss += loss_computer.compute_flow_with_seg_loss(
                 target_seg, warped_source_seg
             ).squeeze()
@@ -306,7 +298,7 @@ def train_epoch(
             if "displacement_bwd" in res:
                 warped_target_seg = spatial_transformer(target_seg, displacement_bwd)
                 warped_target_seg = torch.clamp(warped_target_seg, 0, 1)
-                # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)  # noqa: E501, ERA001
+                # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)
                 flow_with_seg_loss += loss_computer.compute_flow_with_seg_loss(
                     source_seg, warped_target_seg
                 ).squeeze()
@@ -371,18 +363,18 @@ def train_epoch(
 def train(args):
     """Create the dataloader, create the model, train and save."""
     # Set device
-    print(f"Using device: {device}")  # noqa: T201
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    print(f"Using device: {configs.device}")
+    timestamp = datetime.datetime.now(tz=datetime.UTC)
     if args.seg_path is None:
         args.seg_type = None
         args.gamma_param = 0.0
     # MLflow set up
     if args.mlflow:
-        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+        mlflow.set_tracking_uri(configs.MLFLOW_TRACKING_URI)
         mlflow.start_run(
-            run_name=f"train_cells_{args.model_type}_{timestamp}_{args.video_path}"
-        )  # noqa: DTZ005
-        print("MLflow tracking enabled.")  # noqa: T201
+            run_name=f"train_cells_{args.model_type}_{timestamp.strftime('%Y%m%d_%H%M%S')}_{args.video_path}"
+        )
+        print("MLflow tracking enabled.")
         mlflow.log_params(vars(args))
 
     # Create model
@@ -404,7 +396,7 @@ def train(args):
     #         device=device,
     #     ).to(device)
     print(f"Load model type: {args.model_type}")
-    print(f"Using segmentation type: {args.seg_type}")  # noqa: T201
+    print(f"Using segmentation type: {args.seg_type}")
 
     if args.model_type == "voxelmorph":
         model = WarperVxm(
@@ -413,8 +405,8 @@ def train(args):
             target_channels=1,
             nb_features=[16, 16, 16, 16, 16],
             model_type=args.model_type,
-            device=device,
-        ).to(device)
+            device=configs.device,
+        ).to(configs.device)
     else:
         model = WarperVxm(
             ndim=2,
@@ -422,8 +414,8 @@ def train(args):
             target_channels=1,
             nb_features=[16, 32, 64, 128, 256],
             model_type=args.model_type,
-            device=device,
-        ).to(device)
+            device=configs.device,
+        ).to(configs.device)
 
     # Setup losses and optimizer
     if args.image_loss == "mse":
@@ -467,10 +459,18 @@ def train(args):
         multiplier=args.multiplier,
     )
     if args.multiple_videos:
-        print("Using multiple videos for training")  # noqa: T201
+        print("Using multiple videos for training")
         train_dataset = VxmMultipleVideoDataset(
-            video_paths=[TRAIN_DATA_GOWT, TRAIN_DATA_HELA, TRAIN_DATA_MUSC],
-            seg_paths=[TRAIN_SEG_DATA_GOWT, TRAIN_SEG_DATA_HELA, TRAIN_SEG_DATA_MUSC],
+            video_paths=[
+                configs.TRAIN_DATA_GOWT,
+                configs.TRAIN_DATA_HELA,
+                configs.TRAIN_DATA_MUSC,
+            ],
+            seg_paths=[
+                configs.TRAIN_SEG_DATA_GOWT,
+                configs.TRAIN_SEG_DATA_HELA,
+                configs.TRAIN_SEG_DATA_MUSC,
+            ],
             seg_type=args.seg_type,
             mode="train",
             gap=args.max_gap,
@@ -485,13 +485,13 @@ def train(args):
     )
 
     # Create output directory
-    output_dir = f"{args.output_dir}/{args.model_type}/output_{timestamp}"
+    output_dir = f"{args.output_dir}/{args.model_type}/output_{timestamp.strftime('%Y%m%d_%H%M%S')}"
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "checkpoints").mkdir(parents=True, exist_ok=True)
 
     # Training loop
-    print(f"Training for {args.epochs} epochs...")  # noqa: T201
+    print(f"Training for {args.epochs} epochs...")
     best_loss = float("inf")
     for epoch in tqdm(range(args.epochs), desc="Epochs"):
         # Train for one epoch
@@ -540,13 +540,13 @@ def train(args):
                 )
         # Print progress
         # if (epoch + 1) % 10 == 0:
-        print(f"Epoch {epoch + 1}/{args.epochs}, Loss: {avg_loss['loss']:.6f}")  # noqa: T201
+        print(f"Epoch {epoch + 1}/{args.epochs}, Loss: {avg_loss['loss']:.6f}")
 
         # Save periodic checkpoints
         if (epoch + 1) % args.save_every == 0:
             checkpoint_path = output_dir / f"checkpoints/checkpoint_epoch{epoch + 1}.pt"
             torch.save(model.state_dict(), checkpoint_path)
-            print(f"Checkpoint saved to {checkpoint_path}")  # noqa: T201
+            print(f"Checkpoint saved to {checkpoint_path}")
 
         # Save best model
         if avg_loss["loss"] < best_loss:
@@ -577,8 +577,8 @@ def train(args):
         "cycle_param": args.cycle_param,
         "seg_param": args.seg_param,
         "multiple_videos": args.multiple_videos,
-        "device": str(device),
-        "date": timestamp,
+        "device": str(configs.device),
+        "date": timestamp.strftime("%Y%m%d_%H%M%S"),
     }
     if mlflow.active_run():
         run_id = mlflow.active_run().info.run_id
@@ -586,16 +586,16 @@ def train(args):
     with Path.open(output_dir / "config.json", "w") as f:
         json.dump(config, f, indent=4)
 
-    print(f"Final model saved to {final_path}")  # noqa: T201
+    print(f"Final model saved to {final_path}")
 
     # End MLflow run
     if mlflow.active_run():
         mlflow.end_run()
 
-    end_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    time = end_timestamp - timestamp
+    end_timestamp = datetime.datetime.now(tz=datetime.UTC)
+    exec_time = (end_timestamp - timestamp).seconds
 
-    return output_dir, time
+    return output_dir, exec_time
 
 
 if __name__ == "__main__":
@@ -612,11 +612,13 @@ if __name__ == "__main__":
         help="Output directory",
     )
     parser.add_argument(
-        "--video-path", default=TRAIN_DATA_MUSC, help="Path to the training video"
+        "--video-path",
+        default=configs.TRAIN_DATA_MUSC,
+        help="Path to the training video",
     )
     parser.add_argument(
         "--seg-path",
-        default=TRAIN_SEG_DATA_MUSC,
+        default=configs.TRAIN_SEG_DATA_MUSC,
         help="Path to the segmentation of the training video, if not available set to None",
     )
     # Dataset parameters

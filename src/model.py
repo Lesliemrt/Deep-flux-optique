@@ -1,11 +1,11 @@
-from typing import List, Optional, Sequence, Tuple, Union
+from collections.abc import Sequence
 
-import torch
-from torch import nn
-import torch.nn.functional as F
 import neurite as ne
-
+import torch
+import torch.nn.functional as F
 import voxelmorph as vxm
+from torch import nn
+
 from transformer_model import TransFlowSegUNet
 
 
@@ -41,7 +41,7 @@ def downsampling_conv_blocks(
     in_channels: int,
     nb_features: Sequence[int],
     kernel_size: int = 3,
-) -> Tuple[nn.ModuleList, List[int]]:
+) -> tuple[nn.ModuleList, list[int]]:
     """
     Create an `nn.ModuleList` of downsampling conv blocks based the number of features per layer.
 
@@ -97,9 +97,9 @@ def upsampling_conv_blocks(
     ndim: int,
     nb_features: Sequence[int],
     kernel_size: int = 3,
-    skip_channels: Union[Sequence[int], None] = None,
-    in_channels: Optional[int] = None,
-) -> Tuple[nn.ModuleList, List[int]]:
+    skip_channels: Sequence[int] | None = None,
+    in_channels: int | None = None,
+) -> tuple[nn.ModuleList, list[int]]:
     """
     Create an `nn.ModuleList` of upsampling conv blocks based the number of features per layer/
     level.
@@ -195,7 +195,7 @@ class TwoFlowsUNet(nn.Module):
         ndim: int,
         in_channels: int,
         out_channels: int,
-        nb_features: Union[Sequence[int], Sequence[Sequence[int]]] = (
+        nb_features: Sequence[int] | Sequence[Sequence[int]] = (
             16,
             16,
             16,
@@ -427,7 +427,7 @@ class FlowSegUNet(nn.Module):
         in_channels: int,
         out_channels: int,
         nb_class_segmentation: int = 1,
-        nb_features: Union[Sequence[int], Sequence[Sequence[int]]] = (
+        nb_features: Sequence[int] | Sequence[Sequence[int]] = (
             16,
             32,
             64,
@@ -650,7 +650,7 @@ class WarperVxm(nn.Module):
         target images.
     """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         ndim: int,
         source_channels: int,
