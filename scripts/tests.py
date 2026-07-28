@@ -539,7 +539,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/transflowseg/output_20260728_084107",
+        default="outputs/transflowseg/output_20260728_094007",
         help="Directory to find model and to save results",
     )
     parser.add_argument(
