@@ -29,7 +29,7 @@ from my_utils import configs
 
 if __name__ == "__main__":
     seeds = [42, 123, 456, 54321, 98765]
-    model = ["flowseg", "voxelmorph", "tvl1", "transflowseg"]
+    model = ["flowseg", "voxelmorph", "transflowseg", "tvl1"]
     datasets = ["GOWT", "HELA", "MUSC", "HSC"]
 
     base_train_args = {
@@ -89,6 +89,7 @@ if __name__ == "__main__":
                     multiplier = 3
                 else:
                     max_gap, multiplier = 1, 1
+
                 additionnal_train_args = {
                     "video_path": video_path,
                     "seg_path": seg_path,
@@ -96,11 +97,15 @@ if __name__ == "__main__":
                     "max_gap": max_gap,
                     "multiplier": multiplier,
                 }
+
                 train_args = argparse.Namespace(
                     **base_train_args, **additionnal_train_args
                 )
 
-                output_dir, train_time = train(train_args)
+                if model_name == "tvl1":
+                    output_dir, train_time = None, 0
+                else:
+                    output_dir, train_time = train(train_args)
 
                 additionnal_test_args = {
                     "video_path": getattr(configs, f"TEST_DATA_{dataset}"),
