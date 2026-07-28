@@ -192,12 +192,12 @@ class TransFlowSegUNet(nn.Module):
 
         self.transformer = timm.create_model(
             "swinv2_tiny_window8_256",
-            pretrained=True,
+            pretrained=False,
             img_size=1024,
             in_chans=2,
             features_only=True,
             out_indices=[0, 1, 2, 3],
-        )
+        )  # source code at : https://github.com/huggingface/pytorch-image-models/blob/main/timm/models/swin_transformer_v2.py
 
         # -------- Bottleneck---------
         bottleneck_channels = embed_dim * 8
