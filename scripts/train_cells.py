@@ -1,5 +1,8 @@
-#!/usr/bin/env python3
-"""VoxelMorph: A Learning Framework for Deformable Medical Image Registration G. Balakrishnan, A.
+#!/usr/bin/env python
+"""
+Script to train different model.
+Adapted from :
+VoxelMorph: A Learning Framework for Deformable Medical Image Registration G. Balakrishnan, A.
 Zhao, M. R. Sabuncu, J. Guttag, A.V. Dalca. IEEE TMI: Transactions on Medical Imaging. 38(8).
 pp 1788-1800. 2019.
 """
@@ -125,6 +128,20 @@ def pyramidal_flow(source, target, model, model_type, level=2):
 
 
 class LossComputer(nn.Module):
+    """Compute different type of loss.
+
+    Attributes
+    -----------
+    image_loss_fn : nn.Modules
+        Function to compute differences in appearance between 2 images.
+    grad_loss_fn : nn.Module
+        Function that penalizes local spatial variations.
+    flow_with_seg_loss_fn : nn.Module
+        Function to compare alignments of binary segmentations between 2 images.
+    seg_loss_fn : nn.Module
+        Function to compare predicted segmentations and ground truth.
+    """
+
     def __init__(self, image_loss_fn, grad_loss_fn, flow_with_seg_loss_fn, seg_loss_fn):
         super().__init__()
         self.image_loss_fn = image_loss_fn
@@ -182,12 +199,16 @@ def train_epoch(
         The dataloader to use for training.
     optimizer : torch.optim.Optimizer
         The optimizer to use for training.
-    image_loss_fn : nn.Module
-        The image loss function to use.
-    grad_loss_fn : nn.Module
-        The gradient loss function to use.
+    loss_computer : LossComputer
+        Respnsible of computing loss functions
     loss_weights : Sequence[float]
-        The weights for the image and gradient losses.
+        The weights for the different losses.
+    background : Bool
+        If True, add a loss to avoid displacement in the background.
+    cycle_consistency : Bool
+        If True, compute backward displpacement and corresponding losses.
+    seg_type : str
+        Segmentation type to use.
     """
     model.train()
     total_loss = 0.0
@@ -198,16 +219,14 @@ def train_epoch(
     epoch_background_loss = 0.0
     epoch_cycle_loss = 0.0
 
-    # Si get_iter dans dataset : for _ in range(steps_per_epoch): puis batch = next(dataloader)
     for batch in tqdm(dataloader, total=len(dataloader), desc="Training"):
         optimizer.zero_grad()
 
-        # Define warper for later use
+        # Define warper for later use #TODO : mettre or de cette fonoction ou créer classe
         spatial_transformer = vxm.nn.modules.SpatialTransformer(
             interpolation_mode="linear"
         ).to(configs.device)
 
-        # Move to device in training loop (not dataloader/dataset!)
         source = batch["source"]
         target = batch["target"]
         source = source.to(configs.device).unsqueeze(1)  # Add channel dimension
@@ -268,15 +287,7 @@ def train_epoch(
             epoch_cycle_loss += cycle_loss.item()
         # ---------------------------------------------------------------------------------------------------------
 
-        # Image loss for forward displacement
-        # if background:
-        #     # Multiply image * mask to focus only on cells not background
-        #     warped_source_seg = spatial_transformer(source_seg, displacement)
-        #     warped_source_seg = torch.clamp(warped_source_seg, 0, 1)
-        #     target = target * target_seg
-        #     warped_source = warped_source * warped_source_seg
-
-        # Add to the total loss
+        # Add final img_loss and final grad_loss to the total loss
         loss += loss_weights[0] * img_loss + loss_weights[1] * grad_loss
 
         # If segmentations are available, compute segmentation loss
@@ -290,7 +301,6 @@ def train_epoch(
             flow_with_seg_loss = 0.0
             warped_source_seg = spatial_transformer(source_seg, displacement)
             warped_source_seg = torch.clamp(warped_source_seg, 0, 1)
-            # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)
             flow_with_seg_loss += loss_computer.compute_flow_with_seg_loss(
                 target_seg, warped_source_seg
             ).squeeze()
@@ -298,7 +308,6 @@ def train_epoch(
             if "displacement_bwd" in res:
                 warped_target_seg = spatial_transformer(target_seg, displacement_bwd)
                 warped_target_seg = torch.clamp(warped_target_seg, 0, 1)
-                # print(" NB CLASSES",len(torch.unique(target_seg.long()).tolist()),len(torch.unique(warped_source_seg).tolist()),)
                 flow_with_seg_loss += loss_computer.compute_flow_with_seg_loss(
                     source_seg, warped_target_seg
                 ).squeeze()
@@ -361,7 +370,15 @@ def train_epoch(
 
 
 def train(args):
-    """Create the dataloader, create the model, train and save."""
+    """Create the dataloader, create the model, train and save.
+
+    Returns
+    -----------
+    output_dir :
+        Relative path where checkpoints, config, best and final model are saved.
+    exec_time :
+        Training time.
+    """
     # Set device
     print(f"Using device: {configs.device}")
     timestamp = datetime.datetime.now(tz=datetime.UTC)
@@ -378,44 +395,31 @@ def train(args):
         mlflow.log_params(vars(args))
 
     # Create model
-    # if args.bidirectionnal:
-    #     model = TwoHeadsVxm(
-    #         ndim=2,
-    #         source_channels=1,
-    #         target_channels=1,
-    #         nb_features=[16, 16, 16, 16, 16],
-    #         device=device,
-    #     ).to(device)
-    # else:
-    #     model = vxm.nn.models.VxmPairwise(
-    #         ndim=2,
-    #         source_channels=1,
-    #         target_channels=1,
-    #         nb_features=[16, 16, 16, 16, 16],
-    #         integration_steps=0,
-    #         device=device,
-    #     ).to(device)
+    # model = vxm.nn.models.VxmPairwise(
+    #     ndim=2,
+    #     source_channels=1,
+    #     target_channels=1,
+    #     nb_features=[16, 16, 16, 16, 16],
+    #     integration_steps=0,
+    #     device=device,
+    # ).to(device)
     print(f"Load model type: {args.model_type}")
     print(f"Using segmentation type: {args.seg_type}")
 
+    nb_features = [16, 32, 64, 128, 256]  # For better performances
     if args.model_type == "voxelmorph":
-        model = WarperVxm(
-            ndim=2,
-            source_channels=1,
-            target_channels=1,
-            nb_features=[16, 16, 16, 16, 16],
-            model_type=args.model_type,
-            device=configs.device,
-        ).to(configs.device)
-    else:
-        model = WarperVxm(
-            ndim=2,
-            source_channels=1,
-            target_channels=1,
-            nb_features=[16, 32, 64, 128, 256],
-            model_type=args.model_type,
-            device=configs.device,
-        ).to(configs.device)
+        # To match model from : VoxelMorph: A Learning Framework for Deformable Medical Image Registration G. Balakrishnan, A.
+        # Zhao, M. R. Sabuncu, J. Guttag, A.V. Dalca. IEEE TMI: Transactions on Medical Imaging. 38(8).
+        # pp 1788-1800. 2019.
+        nb_features = [16, 16, 16, 16, 16]
+    model = WarperVxm(
+        ndim=2,
+        source_channels=1,
+        target_channels=1,
+        nb_features=nb_features,
+        model_type=args.model_type,
+        device=configs.device,
+    ).to(configs.device)
 
     # Setup losses and optimizer
     if args.image_loss == "mse":

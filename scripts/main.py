@@ -1,3 +1,7 @@
+"""
+Script to train and test different models with multiple seed and on multiple dataset.
+"""
+
 # Core library imports
 import argparse
 import os

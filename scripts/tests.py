@@ -1,5 +1,9 @@
-# personnal tetst file
-"""Example script to test registration of frames of a video with VoxelMorph models."""
+"""Script to test registration of frames of a video with different models.
+
+Adapted from :
+VoxelMorph: A Learning Framework for Deformable Medical Image Registration G. Balakrishnan, A.
+Zhao, M. R. Sabuncu, J. Guttag, A.V. Dalca. IEEE TMI: Transactions on Medical Imaging. 38(8).
+pp 1788-1800. 2019."""
 
 # Core library imports
 import argparse
@@ -15,7 +19,6 @@ import mlflow
 import numpy as np
 import tifffile as tiff
 
-# from argparse import Namespace
 # Third-party imports
 import torch
 
@@ -240,7 +243,7 @@ def register_video(args):
     print(f"Using device: {configs.device}")
     timestamp = datetime.datetime.now(tz=datetime.UTC)
 
-    # 1. Load video and segmentations frames
+    # Load video and segmentations frames
     frames_path_list = sorted(Path(args.video_path).iterdir())
     seg_path_list = (
         (sorted(Path(args.seg_path).iterdir())) if args.seg_path is not None else None
@@ -271,7 +274,7 @@ def register_video(args):
         print("MLflow tracking enabled.")
         mlflow.log_params(vars(args))
 
-    # 2. Create model
+    # Create model
     model = create_model(args)
 
     # Create results directory if it doesn't exist
@@ -379,10 +382,7 @@ def register_video(args):
                 fig, artifact_file=f"viz/registration_result_for_paire_{idx}-{idx2}.png"
             )
 
-        # 4. Evaluation for the pair
-        # Compute mse to evaluate visual aspect
-        # score_pair = evaluate_registration(moving, fixed, displacement)
-        # result.update(score_pair)
+        # Evaluation for the pair
         # If segmentations available, load them and warp the moving segmentation with the predicted displacement for evaluation
         if args.seg_path is not None:
             # Load segmentation masks
@@ -427,7 +427,7 @@ def register_video(args):
         "device": str(configs.device),
         "gap": args.gap,
     }
-    # 5. Global evaluation
+    # Global evaluation
     # Compute mse to evaluate the global visual aspect
     # mse_per_pair = [result["mse"] for result in results if result is not None]
     # ref_mse_scores_per_pair = [
@@ -514,13 +514,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--video_path",
-        default=configs.TEST_DATA_MUSC,
+        default=configs.TEST_DATA_GOWT,
         help="Moving image (source) filename",
     )
     parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
-        default=configs.TEST_SEG_DATA_MUSC,
+        default=configs.TEST_SEG_DATA_GOWT,
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
@@ -539,7 +539,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/transflowseg/output_20260728_094007",
+        default="outputs/transflowseg/output_20260728_124601",
         help="Directory to find model and to save results",
     )
     parser.add_argument(
