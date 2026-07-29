@@ -66,7 +66,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train VoxelMorph")
     parser.add_argument(
         "--path",
-        default="data/data/BF-C2DL-HSC",
+        default="PhC-C2DH-U373",
         help="Path to the dataset to process",
     )
     args = parser.parse_args()

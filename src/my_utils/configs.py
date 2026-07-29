@@ -44,7 +44,9 @@ TRAIN_DATA_HUH = "data/data/Fluo-C2DL-Huh7/01"
 TEST_DATA_HUH = "data/data/Fluo-C2DL-Huh7/02"
 # u373 video
 TRAIN_DATA_U373 = "data/data/PhC-C2DH-U373/01"
+TRAIN_SEG_DATA_U373 = "data/data/PhC-C2DH-U373/01_ERR_SEG_TRA"
 TEST_DATA_U373 = "data/data/PhC-C2DH-U373/02"
+TEST_SEG_DATA_U373 = "data/data/PhC-C2DH-U373/02_ERR_SEG_TRA"
 
 
 # Constants
