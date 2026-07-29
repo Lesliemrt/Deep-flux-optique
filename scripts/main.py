@@ -16,9 +16,8 @@ import numpy as np
 import pandas as pd
 import tifffile as tiff
 import torch
-
-# from cellpose import models
-# from cellpose.io import imread
+from cellpose import models
+from cellpose.io import imread
 
 # Local imports
 sys.path.append(
@@ -99,26 +98,25 @@ if __name__ == "__main__":
                 # ----------------------------------- SEGMENTATION ------------------------------------------
                 # Create segmentation with Cellpose
 
-                output_path = Path(video_path).parent / "CELLPOSE_SEG"
+                # output_path = Path(video_path).parent / "CELLPOSE_SEG"
 
-                if output_path.exists():
-                    seg_path = output_path
-                else:
-                    # use Cellpose to create segmentations
-                    output_path.mkdir(parents=True, exist_ok=True)
-                    frames_path_list = sorted(Path(video_path).iterdir())
-                    imgs = [imread(f) for f in frames_path_list]
+                # if not output_path.exists():
+                #     # use Cellpose to create segmentations
+                #     output_path.mkdir(parents=True, exist_ok=True)
+                #     frames_path_list = sorted(Path(video_path).iterdir())
+                #     imgs = [imread(f) for f in frames_path_list]
 
-                    model = models.CellposeModel(gpu=True)
+                #     model = models.CellposeModel(gpu=True)
 
-                    masks, _, _, _ = model.eval(
-                        imgs, flow_threshold=0.4, cellprob_threshold=0.0
-                    )
-                    for mask, idx in enumerate(masks):
-                        mask_binary = mask > 0
-                        tiff.imwrite(
-                            output_path / f"cellpose_{idx:04d}.tif", mask_binary
-                        )
+                #     masks, _, _ = model.eval(
+                #         imgs, flow_threshold=0.4, cellprob_threshold=0.0
+                #     )
+                #     for idx, mask in enumerate(masks):
+                #         mask_binary = (mask > 0).astype(np.float32)
+                #         tiff.imwrite(
+                #             output_path / f"cellpose_{idx:04d}.tif", mask_binary
+                #         )
+                # seg_path = output_path
 
                 # ----------------------------------- TRAINING ------------------------------------------
                 if dataset == "GOWT" or dataset == "HELA":
