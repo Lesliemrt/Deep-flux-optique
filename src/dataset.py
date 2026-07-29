@@ -20,7 +20,6 @@ sys.path.append(
 )
 from my_utils.configs import (
     HEIGHT,
-    NB_CLASSES,
     TRAIN_DATA_GOWT,  # noqa: F401
     TRAIN_DATA_HSC,  # noqa: F401
     TRAIN_DATA_MUSC,  # noqa: F401
@@ -155,22 +154,22 @@ class VxmVideoDataset(Dataset):
                 if self.seg_type == "binary" or self.seg_type is None:
                     source_seg = source_seg > 0
                     target_seg = target_seg > 0
-                elif self.seg_type == "labels":
-                    target_seg_oh = (  # noqa: F841
-                        torch.nn.functional.one_hot(
-                            target_seg.long(), num_classes=NB_CLASSES
-                        )
-                        .permute(0, 3, 1, 2)
-                        .float()
-                    )
-                    source_seg_oh = (  # noqa: F841
-                        torch.nn.functional.one_hot(
-                            source_seg.long(), num_classes=NB_CLASSES
-                        )
-                        .permute(0, 3, 1, 2)
-                        .float()
-                    )
-                    # Not enough memory to use labels (and one hot)
+                # elif self.seg_type == "labels":
+                #     target_seg_oh = (
+                #         torch.nn.functional.one_hot(
+                #             target_seg.long(), num_classes=NB_CLASSES
+                #         )
+                #         .permute(0, 3, 1, 2)
+                #         .float()
+                #     )
+                #     source_seg_oh = (
+                #         torch.nn.functional.one_hot(
+                #             source_seg.long(), num_classes=NB_CLASSES
+                #         )
+                #         .permute(0, 3, 1, 2)
+                #         .float()
+                #     )
+                # Not enough memory to use labels (and one hot)
                 source_seg = torch.from_numpy(source_seg).float()
                 target_seg = torch.from_numpy(target_seg).float()
             return {
@@ -319,22 +318,22 @@ class VxmMultipleVideoDataset(Dataset):
                 if self.seg_type == "binary" or self.seg_type is None:
                     source_seg = source_seg > 0
                     target_seg = target_seg > 0
-                elif self.seg_type == "labels":
-                    target_seg_oh = (  # noqa: F841
-                        torch.nn.functional.one_hot(
-                            target_seg.long(), num_classes=NB_CLASSES
-                        )
-                        .permute(0, 3, 1, 2)
-                        .float()
-                    )
-                    source_seg_oh = (  # noqa: F841
-                        torch.nn.functional.one_hot(
-                            source_seg.long(), num_classes=NB_CLASSES
-                        )
-                        .permute(0, 3, 1, 2)
-                        .float()
-                    )
-                    # Not enough memory to use labels (and one hot)
+                # elif self.seg_type == "labels":
+                # target_seg_oh = (
+                #     torch.nn.functional.one_hot(
+                #         target_seg.long(), num_classes=NB_CLASSES
+                #     )
+                #     .permute(0, 3, 1, 2)
+                #     .float()
+                # )
+                # source_seg_oh = (
+                #     torch.nn.functional.one_hot(
+                #         source_seg.long(), num_classes=NB_CLASSES
+                #     )
+                #     .permute(0, 3, 1, 2)
+                #     .float()
+                # )
+                # Not enough memory to use labels (and one hot)
                 source_seg = torch.from_numpy(source_seg).float()
                 target_seg = torch.from_numpy(target_seg).float()
             return {
