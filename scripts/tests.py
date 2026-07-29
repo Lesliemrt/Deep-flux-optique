@@ -348,6 +348,7 @@ def register_video(args):
                 args.model_type == "voxelmorph"
                 or args.model_type == "flowseg"
                 or args.model_type == "transflowseg"
+                or args.model_type == "transmorph2d"
             ):
                 res = register_pair(fixed, moving, model, global_min, global_max)
                 displacement_bwd = res["displacement"]
