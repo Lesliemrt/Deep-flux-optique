@@ -92,14 +92,20 @@ if __name__ == "__main__":
                 torch.backends.cudnn.benchmark = False
 
                 video_path = getattr(configs, f"TRAIN_DATA_{dataset}")
+                seg_path = getattr(
+                    configs, f"TRAIN_SEG_DATA_{dataset}"
+                )  # to use given segmentation
 
                 # ----------------------------------- SEGMENTATION ------------------------------------------
+                # Create segmentation with Cellpose
+
                 # output_path = Path(video_path).parent / "CELLPOSE_SEG"
 
                 # if output_path.exists():
                 #     seg_path = output_path
                 # else:
                 #     # use Cellpose to create segmentations
+                #     output_path.mkdir(parents=True, exist_ok=True)
                 #     frames_path_list = sorted(Path(video_path).iterdir())
                 #     imgs = [imread(f) for f in frames_path_list]
 
@@ -109,11 +115,7 @@ if __name__ == "__main__":
                 #         imgs, flow_threshold=0.4, cellprob_threshold=0.0
                 #     )
                 #     for mask, idx in enumerate(masks):
-                #         tiff.imwrite(
-                #             output_path / f"relabeled_{idx:04d}.tif", relabeled
-                #         )
-
-                seg_path = getattr(configs, f"TRAIN_SEG_DATA_{dataset}")
+                #         tiff.imwrite(output_path / f"cellpose_{idx:04d}.tif", mask)
 
                 # ----------------------------------- TRAINING ------------------------------------------
                 if dataset == "GOWT" or dataset == "HELA":

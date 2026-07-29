@@ -647,7 +647,7 @@ if __name__ == "__main__":
         "--model_type",
         type=str,
         default="voxelmorph",
-        choices=["voxelmorph", "twoflows", "flowseg", "transflowseg"],
+        choices=["voxelmorph", "twoflows", "flowseg", "transflowseg", "transmorph2d"],
         help="Type of model to train : voxelmorph, twoflows flowseg",
     )
     parser.add_argument("--epochs", type=int, default=30, help="Number of epochs")

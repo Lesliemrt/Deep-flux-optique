@@ -182,7 +182,7 @@ def create_model(args):
         or args.model_type == "flowseg"
         or args.model_type == "twoflows"
         or args.model_type == "transflowseg"
-        or args.model_type == "transmoprh2d"
+        or args.model_type == "transmorph2d"
     ):
         model = WarperVxm(
             ndim=2,
@@ -523,6 +523,7 @@ if __name__ == "__main__":
             "twoflows",
             "flowseg",
             "transflowseg",
+            "transmorph2d",
             "tvl1",
             "raft",
             "farnback",
