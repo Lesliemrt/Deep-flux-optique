@@ -1,12 +1,11 @@
 # To do once on segmentation dataset
 import argparse
-from pathlib import Path
-import tifffile as tiff
 from collections import Counter
+from pathlib import Path
 
-
-from skimage.measure import regionprops
 import numpy as np
+import tifffile as tiff
+from skimage.measure import regionprops
 from tqdm import tqdm
 
 

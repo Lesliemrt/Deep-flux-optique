@@ -1,5 +1,5 @@
 """
-Script to train and test different models with multiple seed and on multiple dataset.
+Script to execute the complete pipeline : segmentation, training and testing different models with multiple seed and on multiple dataset.
 """
 
 # Core library imports
@@ -14,7 +14,11 @@ os.environ["VXM_BACKEND"] = "pytorch"
 # Third-party imports
 import numpy as np
 import pandas as pd
+import tifffile as tiff
 import torch
+
+# from cellpose import models
+# from cellpose.io import imread
 
 # Local imports
 sys.path.append(
@@ -88,7 +92,30 @@ if __name__ == "__main__":
                 torch.backends.cudnn.benchmark = False
 
                 video_path = getattr(configs, f"TRAIN_DATA_{dataset}")
+
+                # ----------------------------------- SEGMENTATION ------------------------------------------
+                # output_path = Path(video_path).parent / "CELLPOSE_SEG"
+
+                # if output_path.exists():
+                #     seg_path = output_path
+                # else:
+                #     # use Cellpose to create segmentations
+                #     frames_path_list = sorted(Path(video_path).iterdir())
+                #     imgs = [imread(f) for f in frames_path_list]
+
+                #     model = models.CellposeModel(gpu=True)
+
+                #     masks, _, _, _ = model.eval(
+                #         imgs, flow_threshold=0.4, cellprob_threshold=0.0
+                #     )
+                #     for mask, idx in enumerate(masks):
+                #         tiff.imwrite(
+                #             output_path / f"relabeled_{idx:04d}.tif", relabeled
+                #         )
+
                 seg_path = getattr(configs, f"TRAIN_SEG_DATA_{dataset}")
+
+                # ----------------------------------- TRAINING ------------------------------------------
                 if dataset == "GOWT" or dataset == "HELA":
                     max_gap = 20
                     multiplier = 3
@@ -111,6 +138,8 @@ if __name__ == "__main__":
                     output_dir, train_time = None, 0
                 else:
                     output_dir, train_time = train(train_args)
+
+                # ----------------------------------- TESTING ------------------------------------------
 
                 additionnal_test_args = {
                     "video_path": getattr(configs, f"TEST_DATA_{dataset}"),

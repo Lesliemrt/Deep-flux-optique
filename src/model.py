@@ -800,7 +800,7 @@ class WarperVxm(nn.Module):
         elif self.model_type == "flowseg" or self.model_type == "transflowseg":
             displacement, segmentation = self.model(combined_features)
             res["source_segmentation"] = segmentation
-        elif self.model_tpe == "transmorph2d":
+        elif self.model_type == "transmorph2d":
             displacement = self.model(combined_features)
 
         if return_warped_source:
