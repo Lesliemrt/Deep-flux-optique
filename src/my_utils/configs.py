@@ -22,7 +22,6 @@ SEED = 42
 # GOWT video
 TRAIN_DATA_GOWT = "data/data/Fluo-N2DH-GOWT1_train/01"
 TRAIN_SEG_DATA_GOWT = "data/data/Fluo-N2DH-GOWT1_train/01_ERR_SEG_TRA"
-NB_CLASSES = 36  # max number of cells in the video + 1 for the background
 TEST_DATA_GOWT = "data/data/Fluo-N2DH-GOWT1_train/02"
 TEST_SEG_DATA_GOWT = "data/data/Fluo-N2DH-GOWT1_train/02_ERR_SEG_TRA"
 # HeLa video
@@ -40,6 +39,12 @@ TRAIN_DATA_MUSC = "data/data/BF-C2DL-MuSC/01"
 TRAIN_SEG_DATA_MUSC = "data/data/BF-C2DL-MuSC/01_ERR_SEG_TRA"
 TEST_DATA_MUSC = "data/data/BF-C2DL-MuSC/02"
 TEST_SEG_DATA_MUSC = "data/data/BF-C2DL-MuSC/02_ERR_SEG_TRA"
+# huh video
+TRAIN_DATA_HUH = "data/data/Fluo-C2DL-Huh7/01"
+TEST_DATA_HUH = "data/data/Fluo-C2DL-Huh7/02"
+# u373 video
+TRAIN_DATA_U373 = "data/data/PhC-C2DH-U373/01"
+TEST_DATA_U373 = "data/data/PhC-C2DH-U373/02"
 
 
 # Constants

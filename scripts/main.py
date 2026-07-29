@@ -36,9 +36,8 @@ from my_utils import configs
 
 if __name__ == "__main__":
     seeds = [42, 123, 456, 54321, 98765]
-    # model = ["flowseg", "voxelmorph", "transflowseg", "tvl1"]
-    model = ["transmorph2d"]
-    datasets = ["GOWT", "HELA", "MUSC", "HSC"]
+    model = ["flowseg", "voxelmorph", "transflowseg", "transmorph2d"]
+    datasets = ["GOWT", "HELA", "MUSC", "HSC", "HUH", "U373"]
 
     base_train_args = {
         "mlflow": False,
@@ -180,6 +179,6 @@ if __name__ == "__main__":
         df = pd.DataFrame(data=inf_time_per_data, index=[model_name])
         inf_time_df = pd.concat([inf_time_df, df], axis=0)
 
-dice_df.to_csv("RESULTS.csv")
-train_time_df.to_csv("TRAIN_TIME_RESULTS.csv")
-inf_time_df.to_csv("INF_TIME_RESULTS.csv")
+dice_df.to_csv("RESULTS_CP.csv")
+train_time_df.to_csv("TRAIN_TIME_RESULTS_CP.csv")
+inf_time_df.to_csv("INF_TIME_RESULTS_CP.csv")
