@@ -1,3 +1,7 @@
+"""
+Class definitions for different model + a warper class.
+"""
+
 from collections.abc import Sequence
 
 import neurite as ne
@@ -6,7 +10,7 @@ import torch.nn.functional as F
 import voxelmorph as vxm
 from torch import nn
 
-from transformer_model import TransFlowSegUNet
+from model_transformer import TransFlowSegUNet
 
 
 class ConvBlock(nn.Module):

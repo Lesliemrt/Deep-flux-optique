@@ -1,3 +1,7 @@
+"""
+Class definitions for models with transformers.
+"""
+
 from collections.abc import Sequence
 
 import timm
@@ -87,7 +91,13 @@ def upsampling_2conv_blocks(
 
 class TransFlowSegUNet(nn.Module):
     """
-    Flexible UNet with many configuration options.
+    UNet for 2D images with 2 decoders, one for the source segmentation and one for the flow, and with a SwinTransformer encoder.
+
+    Widely inspired by :
+    Chen, Junyu, Eric C. Frey, Yufan He, William P. Segars, Ye Li, and Yong Du.
+    “TransMorph: Transformer for Unsupervised Medical Image Registration.”
+    Medical Image Analysis 82 (November 2022): 102615. https://doi.org/10.1016/j.media.2022.102615.
+
 
     Attributes
     ----------
@@ -101,33 +111,6 @@ class TransFlowSegUNet(nn.Module):
         Final output layer.
     down_actual_channels : list[int]
         Actual output channel counts for each downsampling block (accounts for pass-through levels).
-
-    Notes
-    -----
-    `BasicUNet` is derived from the architecture of the UNet described in
-    [Olaf Ronneberger](https://arxiv.org/pdf/1505.04597)
-
-    Use `0` in `nb_features` to indicate pass-through levels that skip convolutions:
-    - Downsampling `0`: Pool only, no convolution. Channels preserved from input.
-    - Upsampling `0`: Upsample + concat skip only, no conv. Output = upsampled + skip channels.
-
-    Examples
-    --------
-    >>> model = BasicUNet(
-    ...     ndim=2, in_channels=1, out_channels=1,
-    ...     nb_features=[16, 32, 64],
-    ...     normalizations='instance', activations=nn.ReLU
-    ... )
-    >>> input_tensor = torch.randn(1, 1, 128, 128)
-    >>> output = model(input_tensor)
-    >>> output.shape
-    torch.Size([1, 1, 128, 128])
-
-    >>> # Skip full-resolution convolutions using 0
-    >>> model = BasicUNet(
-    ...     ndim=2, in_channels=1, out_channels=1,
-    ...     nb_features=[0, 32, 64],  # Pass-through at full resolution
-    ... )
     """
 
     def __init__(
@@ -192,7 +175,7 @@ class TransFlowSegUNet(nn.Module):
 
         self.transformer = timm.create_model(
             "swinv2_tiny_window8_256",
-            pretrained=False,
+            pretrained=True,
             img_size=1024,
             in_chans=2,
             features_only=True,
@@ -310,3 +293,155 @@ class TransFlowSegUNet(nn.Module):
         feature_tensor_seg = self.seg_head(feature_tensor_seg)
 
         return feature_tensor_fwd, feature_tensor_seg
+
+
+class TransMorph2D(nn.Module):
+    """
+    UNet with a SwinTransformer encoder for 2D images.
+
+    Widely inspired by :
+    Chen, Junyu, Eric C. Frey, Yufan He, William P. Segars, Ye Li, and Yong Du.
+    “TransMorph: Transformer for Unsupervised Medical Image Registration.”
+    Medical Image Analysis 82 (November 2022): 102615. https://doi.org/10.1016/j.media.2022.102615.
+
+    Attributes
+    ----------
+    downsampling_conv_blocks : nn.ModuleList
+        Downsampling convolutional blocks.
+    lowest_resolution_conv_block : nn.Module
+        Central convolutional block at the lowest spatial resolution.
+    upsampling_conv_blocks : nn.ModuleList
+        Upsampling convolutional blocks.
+    out_layer : nn.Module
+        Final output layer.
+    down_actual_channels : list[int]
+        Actual output channel counts for each downsampling block (accounts for pass-through levels).
+    """
+
+    def __init__(
+        self,
+        ndim: int,
+        in_channels: int,
+        out_channels: int,
+        nb_class_segmentation: int = 1,
+        embed_dim: int = 96,
+        reg_head_channels: int = 16,
+    ):
+        """
+        Initialize `TransMorph2D`
+
+        Parameters
+        ----------
+        ndim : int
+            Number of spatial dimensions of the input (1, 2, or 3).
+        in_channels : int
+            Number of input channels.
+        out_channels : int
+            Number of output channels.
+        embed_dim : int
+            Embeding dimension.
+        reg_head_channels : int
+            Number of input channels of the last layer.
+        """
+        super().__init__()
+
+        self.ndim = ndim
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.nb_class_segmentation = nb_class_segmentation
+        self.reg_head_channels = reg_head_channels
+
+        # Symmetric Unet
+        nb_features = [
+            self.reg_head_channels,
+            embed_dim // 2,
+            embed_dim,
+            embed_dim * 2,
+            embed_dim * 4,
+        ]
+        nb_upsampling_features = tuple(reversed(nb_features))
+        nb_skip_channels = tuple(reversed(nb_features))
+
+        # -------- Encoder ---------
+        self.avg_pool = nn.AvgPool2d(kernel_size=3, stride=2, padding=1)
+        self.convrelu1 = ConvBlock(
+            ndim=ndim, in_channels=2, out_channels=embed_dim // 2
+        )
+        self.convrelu2 = ConvBlock(
+            ndim=ndim, in_channels=2, out_channels=self.reg_head_channels
+        )
+
+        self.transformer = timm.create_model(
+            "swinv2_tiny_window8_256",
+            pretrained=True,
+            img_size=1024,
+            in_chans=2,
+            features_only=True,
+            out_indices=[0, 1, 2, 3],
+        )  # source code at : https://github.com/huggingface/pytorch-image-models/blob/main/timm/models/swin_transformer_v2.py
+
+        # -------- Bottleneck---------
+        bottleneck_channels = embed_dim * 8
+        # self.lowest_resolution_conv_block = ConvBlock(
+        #     ndim=ndim,
+        #     in_channels=bottleneck_channels,
+        #     out_channels=bottleneck_channels,
+        # )
+
+        # Upsampling
+        self.upsample = nn.Upsample(scale_factor=2, mode="bilinear")
+        # final_channels = nb_upsampling_features[-1]
+
+        # -------- Decoder Flow FWD ---------
+        self.upsampling_conv_blocks_fwd = upsampling_2conv_blocks(
+            ndim=ndim,
+            nb_features=nb_upsampling_features,
+            in_channels=bottleneck_channels,
+            skip_channels=nb_skip_channels,
+        )
+
+        self.reg_head = nn.Conv2d(
+            self.reg_head_channels, out_channels, kernel_size=1, padding=0
+        )
+
+    def forward(self, feature_tensor: torch.Tensor):
+        """
+        Forward pass through the `TransMorph2D` model.
+
+        Parameters
+        ----------
+        feature_tensor : torch.Tensor
+            Tensor to be passed through the model. Assumed to have batch and channel dimensions.
+
+        Returns
+        -------
+        torch.Tensor
+            Result of forward pass of the model.
+        """
+
+        # -------------------------- Downsampling path ----------------------------------------
+        f4 = self.convrelu1(self.avg_pool(feature_tensor))
+        f5 = self.convrelu2(feature_tensor.clone())
+
+        out = self.transformer(feature_tensor)
+
+        f1 = out[-2].permute(0, 3, 1, 2).contiguous()
+        f2 = out[-3].permute(0, 3, 1, 2).contiguous()
+        f3 = out[-4].permute(0, 3, 1, 2).contiguous()
+
+        skip_connections = [f1, f2, f3, f4, f5]
+
+        # -------------------------- Bottleneck ----------------------------------------
+        feature_tensor = out[-1].permute(0, 3, 1, 2).contiguous()
+
+        # -------------------------- Upsampling path FWD ----------------------------------------
+        feature_tensor_fwd = feature_tensor
+        for block, skip in zip(self.upsampling_conv_blocks_fwd, skip_connections):
+            feature_tensor_fwd = self.upsample(feature_tensor_fwd)
+            feature_tensor_fwd = torch.cat([feature_tensor_fwd, skip], dim=1)
+            feature_tensor_fwd = block(feature_tensor_fwd)
+        # feature_tensor_fwd = self.out_layer_fwd(feature_tensor_fwd)
+
+        feature_tensor_fwd = self.reg_head(feature_tensor_fwd)
+
+        return feature_tensor_fwd
