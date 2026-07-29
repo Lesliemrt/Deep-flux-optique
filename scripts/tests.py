@@ -166,6 +166,7 @@ def evaluate_segmentation(segmentation_pred, segmentation_gt):
 
 def create_model(args):
     """Create the model for registration."""
+    nb_features = [16, 32, 64, 128, 256]
     if args.model_type == "voxelmorph":
         # model = vxm.nn.models.VxmPairwise(
         #     ndim=2,
@@ -175,30 +176,19 @@ def create_model(args):
         #     integration_steps=0,
         #     device=device,
         # ).to(device) #TODO mettre option pour utiliser ce model vxm ?
-        model = WarperVxm(
-            ndim=2,
-            source_channels=1,
-            target_channels=1,
-            nb_features=[16, 16, 16, 16, 16],
-            model_type=args.model_type,
-            device=configs.device,
-        ).to(configs.device)
-        model_path = f"{args.output_dir}/best.pt"
-        model.load_state_dict(torch.load(model_path, map_location=configs.device))
-        print(f"Load model : {model_path}")
-        model.eval()
-        if mlflow.active_run():
-            mlflow.log_param("model_path", model_path)
-    elif (
-        args.model_type == "flowseg"
+        nb_features = [16, 16, 16, 16, 16]
+    if (
+        args.model_type == "voxelmorph"
+        or args.model_type == "flowseg"
         or args.model_type == "twoflows"
         or args.model_type == "transflowseg"
+        or args.model_type == "transmoprh2d"
     ):
         model = WarperVxm(
             ndim=2,
             source_channels=1,
             target_channels=1,
-            nb_features=[16, 32, 64, 128, 256],
+            nb_features=nb_features,
             model_type=args.model_type,
             device=configs.device,
         ).to(configs.device)
@@ -256,6 +246,7 @@ def register_video(args):
         or args.model_type == "twoflows"
         or args.model_type == "flowseg"
         or args.model_type == "transflowseg"
+        or args.model_type == "transmorph2d"
     ):
         with Path(f"{args.output_dir}/config.json").open() as j:
             config = json.load(j)  # To get informations from vxm training
@@ -302,6 +293,7 @@ def register_video(args):
             or args.model_type == "twoflows"
             or args.model_type == "flowseg"
             or args.model_type == "transflowseg"
+            or args.model_type == "transmorph2d"
         ):
             res = register_pair(moving, fixed, model, global_min, global_max)
             displacement, fig, input_moving, input_fixed = (

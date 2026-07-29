@@ -10,7 +10,7 @@ import torch.nn.functional as F
 import voxelmorph as vxm
 from torch import nn
 
-from model_transformer import TransFlowSegUNet
+from model_transformer import TransFlowSegUNet, TransMorph2D
 
 
 class ConvBlock(nn.Module):
@@ -614,12 +614,17 @@ class FlowSegUNet(nn.Module):
 
 
 class WarperVxm(nn.Module):
-    """A network architecture built on `BasicUNet` to perform nD image registration using a flow field.
+    """A warper architecture to perform 2D image registration using a flow field.
+
+    Inspired by 'VxmPairWise' from :
+    VoxelMorph: A Learning Framework for Deformable Medical Image Registration G. Balakrishnan, A.
+    Zhao, M. R. Sabuncu, J. Guttag, A.V. Dalca. IEEE TMI: Transactions on Medical Imaging. 38(8).
+    pp 1788-1800. 2019.
 
     Parameters
     ----------
     ndim : int
-        Number of spatial dimensions (e.g., 2 for 2D, 3 for 3D).
+        Number of spatial dimensions (2).
     source_channels : int
         Number of channels in the source image.
     target_channels : int
@@ -627,18 +632,13 @@ class WarperVxm(nn.Module):
     nb_features : List[int], optional
         List of integers specifying the number of features in each
         level of the UNet architecture. Default is `[16, 16, 16, 16, 16]`.
-    activations : Union[List[str], str], optional
-        Activation functions for the UNet layers. Can be a list of
-        activation functions or a single function. Default is `nn.ReLU`.
-    final_activation : Union[str, nn.Module, None], optional
-        The activation applied to the final output of the network. Default is `None`.
+    model_type : str
+        Model to use, choices are "voxelmorph", "flowseg", "transflowseg", "transmorph2d". Default is "voxelmorph".
     flow_initializer : float, optional
         Standard deviation for initializing the flow layer weights with a
         normal distribution (mean=0). Default is `1e-5`.
-    integration_steps : int, optional
-        Number of steps to take in integrating the flow field. Default is 5.
-    unet_kwargs : dict or None, optional
-        Additional keyword arguments passed to the `BasicUNet` constructor.
+    device : str
+        Device : 'cpu' or 'cuda'.
 
     Attributes:
     ----------
@@ -650,7 +650,7 @@ class WarperVxm(nn.Module):
     -------
     forward(source, target, return_warped_source, return_warped_target, return_field_type)
         Combines source and target images, processes them through the UNet and the flow layer,
-        and returns the velocity or displacement field. Optionally returns warped source and/or
+        and returns the displacement field. Optionally returns warped source and/or
         target images.
     """
 
@@ -728,8 +728,15 @@ class WarperVxm(nn.Module):
                 in_channels=(source_channels + target_channels),
                 out_channels=ndim,
             ).to(self.device)
+        elif self.model_type == "transmorph2d":
+            self.model = TransMorph2D(
+                ndim=ndim,
+                in_channels=(source_channels + target_channels),
+                out_channels=ndim,
+            ).to(self.device)
 
-        self._init_flow_layer(ndim, 1e-5)
+        self.flow_initializer = flow_initializer
+        self._init_flow_layer(ndim, self.flow_initializer)
 
         # Initialize the spatial transformer
         self.spatial_transformer = vxm.nn.modules.SpatialTransformer().to(self.device)
@@ -741,16 +748,10 @@ class WarperVxm(nn.Module):
         return_warped_source: bool = False,
         return_warped_target: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, ...]:
-        """Forward pass of `VxmPairwise`.
+        """Forward pass of `WarperVxm`.
 
-        This forward pass concatenates the `source` and `target` images, processes them with a
-        `BasicUNet` backbone, and uses a flow layer to predict a velocity field (source -> target).
-
-        By default, this method returns only the predicted displacement field. You can optionally
-        request warped versions of the source and/or target images using the return flags.
-        The displacement field is obtained by integrating the velocity field when
-        `integration_steps > 0`; otherwise, the velocity field is used directly as the
-        displacement for warping.
+        This forward pass concatenates the `source` and `target` images, processes them with the
+        chosen backbone, and uses a flow layer to predict a displacement field.
 
         Parameters
         ----------
@@ -778,21 +779,13 @@ class WarperVxm(nn.Module):
             - No flags (default): field (velocity or displacement based on return_field_type)
             - `return_warped_source=True` only: (field, warped_source)
             - `return_warped_target=True` only: (field, warped_target)
-            - Both flags: (field, warped_source, warped_target)
+            - Both flags: (field, warped_source, warped_target) #TODO
 
             Where:
             - field shape (B, ndim, *spatial_dims) - velocity or displacement based on
               return_field_type
             - warped_source shape (B, C_source, *spatial_dims)
             - warped_target shape (B, C_target, *spatial_dims)
-
-        Raises:
-        ------
-        ValueError
-            If `return_warped_target=True` but `integration_steps=0`. Returning the warped
-            target requires diffeomorphic registration to compute a proper inverse transformation.
-        ValueError
-            If `return_field_type` is not one of {'velocity', 'svf', 'displacement'}.
         """
         res = {}
 
@@ -807,6 +800,8 @@ class WarperVxm(nn.Module):
         elif self.model_type == "flowseg" or self.model_type == "transflowseg":
             displacement, segmentation = self.model(combined_features)
             res["source_segmentation"] = segmentation
+        elif self.model_tpe == "transmorph2d":
+            displacement = self.model(combined_features)
 
         if return_warped_source:
             warped_source = self.spatial_transformer(source, displacement)
@@ -857,7 +852,9 @@ class WarperVxm(nn.Module):
                 if self.model.out_layer_bwd.conv[0].bias is not None:
                     self.model.out_layer_bwd.conv[0].bias.zero_()
         elif self.model_type == "voxelmorph":
-            flow_layer = ne.nn.modules.ConvBlock(ndim, 2, 2).to(self.device)
+            flow_layer = ne.nn.modules.ConvBlock(ndim, 2, 2).to(
+                self.device
+            )  # reproduit VxmPairWise mais est ce que utile?
             # Initialize weights from Normal(mean=0, std=flow_initializer)
             with torch.no_grad():
                 torch.nn.init.normal_(
@@ -879,7 +876,7 @@ class WarperVxm(nn.Module):
                 if self.model.out_layer_fwd.conv[0].bias is not None:
                     self.model.out_layer_fwd.conv[0].bias.zero_()
 
-        elif self.model_type == "transflowseg":
+        elif self.model_type == "transflowseg" or self.model_type == "transmorph2d":
             with torch.no_grad():
                 torch.nn.init.normal_(
                     self.model.reg_head.weight,

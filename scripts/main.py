@@ -33,7 +33,8 @@ from my_utils import configs
 
 if __name__ == "__main__":
     seeds = [42, 123, 456, 54321, 98765]
-    model = ["flowseg", "voxelmorph", "transflowseg", "tvl1"]
+    # model = ["flowseg", "voxelmorph", "transflowseg", "tvl1"]
+    model = ["transmorph2d"]
     datasets = ["GOWT", "HELA", "MUSC", "HSC"]
 
     base_train_args = {
