@@ -5,6 +5,8 @@ from pathlib import Path
 
 import numpy as np
 import tifffile as tiff
+from cellpose import models
+from cellpose.io import imread
 from skimage.measure import regionprops
 from tqdm import tqdm
 
@@ -62,6 +64,27 @@ def mask_to_gaussian(segmentation, sigma_scale=0.25):
     return heatmap
 
 
+def cellpose(video_path):
+
+    output_path = Path(video_path).parent / "CELLPOSE_SEG"
+
+    if output_path.exists():
+        raise ValueError(f"Output path : {output_path} already exists")
+    else:
+        # use Cellpose to create segmentations
+        output_path.mkdir(parents=True, exist_ok=True)
+        frames_path_list = sorted(Path(video_path).iterdir())
+        imgs = [imread(f) for f in frames_path_list]
+
+        model = models.CellposeModel(gpu=True)
+
+        masks, _, _ = model.eval(imgs, flow_threshold=0.4, cellprob_threshold=0.0)
+        for idx, mask in enumerate(masks):
+            mask_binary = (mask > 0).astype(np.float32)
+            tiff.imwrite(output_path / f"cellpose_{idx:04d}.tif", mask_binary)
+    return output_path
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train VoxelMorph")
     parser.add_argument(
@@ -70,21 +93,25 @@ if __name__ == "__main__":
         help="Path to the dataset to process",
     )
     args = parser.parse_args()
-    # Relabel the segmentation videos with the labels from the tracking videos
-    output_path = Path(f"data/data/{args.path}/01_ERR_SEG_TRA")
-    output_path.mkdir(exist_ok=True)
-    relabel_video(
-        seg_video_path=Path(f"data/data/{args.path}/01_ERR_SEG"),
-        tra_video_path=Path(f"data/data/{args.path}/01_GT/TRA"),
-        output_path=output_path,
-    )
-    output_path = Path(f"data/data/{args.path}/02_ERR_SEG_TRA")
-    output_path.mkdir(exist_ok=True)
-    relabel_video(
-        seg_video_path=Path(f"data/data/{args.path}/02_ERR_SEG"),
-        tra_video_path=Path(f"data/data/{args.path}/02_GT/TRA"),
-        output_path=output_path,
-    )
+
+    # Create segmentations
+    _ = cellpose("data/data/Fluo-C2DL-Huh7/01")
+
+    # # Relabel the segmentation videos with the labels from the tracking videos
+    # output_path = Path(f"data/data/{args.path}/01_ERR_SEG_TRA")
+    # output_path.mkdir(exist_ok=True)
+    # relabel_video(
+    #     seg_video_path=Path(f"data/data/{args.path}/01_ERR_SEG"),
+    #     tra_video_path=Path(f"data/data/{args.path}/01_GT/TRA"),
+    #     output_path=output_path,
+    # )
+    # output_path = Path(f"data/data/{args.path}/02_ERR_SEG_TRA")
+    # output_path.mkdir(exist_ok=True)
+    # relabel_video(
+    #     seg_video_path=Path(f"data/data/{args.path}/02_ERR_SEG"),
+    #     tra_video_path=Path(f"data/data/{args.path}/02_GT/TRA"),
+    #     output_path=output_path,
+    # )
 
     # # Create Gaussian heatmaps from the relabeled segmentation videos
     # path = Path(f"data/data/{args.path}/01_ERR_SEG_TRA")

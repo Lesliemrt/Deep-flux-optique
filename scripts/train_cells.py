@@ -617,12 +617,12 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--video-path",
-        default=configs.TRAIN_DATA_U373,
+        default=configs.TRAIN_DATA_HUH,
         help="Path to the training video",
     )
     parser.add_argument(
         "--seg-path",
-        default=configs.TRAIN_SEG_DATA_U373,
+        default=configs.TRAIN_SEG_DATA_HUH,
         help="Path to the segmentation of the training video, if not available set to None",
     )
     # Dataset parameters
