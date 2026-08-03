@@ -78,7 +78,7 @@ class LossComputer(nn.Module):
 
     def compute_image_loss(self, img1, img2):
         if isinstance(self.image_loss_fn, ne.nn.modules.NCC):
-            return (1 - self.image_loss_fn(img1, img2))[0][0]  # to minimize ncc loss
+            return (1 - self.image_loss_fn(img1, img2)).mean()  # to minimize ncc loss
         else:
             return self.image_loss_fn(img1, img2)
 
