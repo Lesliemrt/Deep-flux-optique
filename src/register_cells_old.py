@@ -57,10 +57,13 @@ def register_pair(moving, fixed, model, global_min, global_max):
     input_moving = torch.from_numpy(moving).float().to(device).unsqueeze(0).unsqueeze(0)
     input_fixed = torch.from_numpy(fixed).float().to(device).unsqueeze(0).unsqueeze(0)
 
-    # Normalisation
-    normalise = NormalizeMinMax(global_min=global_min, global_max=global_max)
-    input_moving = normalise(input_moving)
-    input_fixed = normalise(input_fixed)
+    # # Normalisation
+    # normalise = NormalizeMinMax(global_min=global_min, global_max=global_max)
+    # input_moving = normalise(input_moving)
+    # input_fixed = normalise(input_fixed)
+
+    print("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBB")
+    print(torch.min(input_moving), torch.max(input_moving))
 
     # Predict
     with torch.no_grad():
@@ -81,8 +84,12 @@ def register_pair(moving, fixed, model, global_min, global_max):
     ax[0, 1].set_title("Moved")
     ax[0, 1].imshow(moved.squeeze().cpu().numpy(), cmap="gray")
     plt.subplot(2, 2, 3)
-    ax[1, 0].set_title("Moving")
-    ax[1, 0].imshow(input_moving.squeeze().cpu().numpy(), cmap="gray")
+    ax[1, 0].set_title("Fixed-Moved")
+    # ax[1, 0].imshow(input_moving.squeeze().cpu().numpy(), cmap="gray")
+    ax[1, 0].imshow(
+        np.abs(input_fixed.squeeze().cpu().numpy() - moved.squeeze().cpu().numpy()),
+        cmap="gray",
+    )
     plt.subplot(2, 2, 4)
     ax[1, 1].set_title("Flow")
     viz(flo=displacement, ax=ax[1, 1])
@@ -126,10 +133,13 @@ def register_pair_twoheads_vxm(moving, fixed, model, global_min, global_max):
     input_moving = torch.from_numpy(moving).float().to(device).unsqueeze(0).unsqueeze(0)
     input_fixed = torch.from_numpy(fixed).float().to(device).unsqueeze(0).unsqueeze(0)
 
-    # Normalisation
-    normalise = NormalizeMinMax(global_min=global_min, global_max=global_max)
-    input_moving = normalise(input_moving)
-    input_fixed = normalise(input_fixed)
+    # # Normalisation
+    # normalise = NormalizeMinMax(global_min=global_min, global_max=global_max)
+    # input_moving = normalise(input_moving)
+    # input_fixed = normalise(input_fixed)
+
+    print("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBB")
+    print(torch.min(input_moving), torch.max(input_moving))
 
     # Predict
     with torch.no_grad():

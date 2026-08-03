@@ -37,7 +37,13 @@ import voxelmorph as vxm
 from flow_visualizer import FlowVisualizer
 from model import WarperVxm
 from my_utils import configs
-from my_utils.image_utils import interpole_and_pad, iou, normalisation_params, viz
+from my_utils.image_utils import (
+    interpole_and_pad,
+    iou,
+    normalisation_params,
+    normalise,
+    viz,
+)
 
 # from raft import RAFT
 from register_cells_old import (
@@ -109,8 +115,10 @@ def evaluate_registration_with_seg(
     ax[0, 1].set_title("Warped moving segmentation")
     ax[0, 1].imshow(warped_seg_moving.squeeze().cpu().numpy(), cmap="gray")
     plt.subplot(2, 2, 3)
-    ax[1, 0].set_title("Moving segmentation")
-    ax[1, 0].imshow(seg_moving, cmap="gray")
+    ax[1, 0].set_title("Fixed - warped segmentation")
+    ax[1, 0].imshow(
+        np.abs(seg_fixed - warped_seg_moving.squeeze().cpu().numpy()), cmap="gray"
+    )
     plt.subplot(2, 2, 4)
     ax[1, 1].set_title("Flow")
     viz(flo=displacement, ax=ax[1, 1])
@@ -131,13 +139,15 @@ def evaluate_registration(moving, fixed, displacement):
         interpolation_mode="linear"
     ).to(configs.device)
     warped_moving = spatial_transformer(tensor_moving, displacement)
-    # Compute MSE score
-    mse = np.square(np.subtract(fixed, warped_moving.squeeze().cpu().numpy())).mean()
-    ref_mse = np.square(
-        np.subtract(fixed, moving)
-    ).mean()  # reference dice to compare with the mse after registration
-    score["mse"] = mse
-    score["ref_mse"] = ref_mse
+    # Compute RMSE score
+    print("AAAAAAAAAAAAAAAAAAA")
+    print(np.min(fixed), np.max(fixed))
+    rmse = np.sqrt(np.mean((fixed - warped_moving.squeeze().cpu().numpy()) ** 2))
+    ref_rmse = np.sqrt(
+        np.mean((fixed - moving) ** 2)
+    )  # reference dice to compare with the mse after registration
+    score["rmse"] = rmse
+    score["ref_rmse"] = ref_rmse
     return score
 
 
@@ -176,7 +186,7 @@ def create_model(args):
         #     integration_steps=0,
         #     device=device,
         # ).to(device) #TODO mettre option pour utiliser ce model vxm ?
-        nb_features = [16, 16, 16, 16, 16]
+        nb_features = [16, 32, 64, 128, 256]
     if (
         args.model_type == "voxelmorph"
         or args.model_type == "flowseg"
@@ -287,6 +297,9 @@ def register_video(args):
         # Interpole/Pad images to HEIGHT, WIDTH if needed
         moving = interpole_and_pad(moving, [configs.HEIGHT, configs.WIDTH])
         fixed = interpole_and_pad(fixed, [configs.HEIGHT, configs.WIDTH])
+        # Normalise
+        moving = normalise(moving, global_min, global_max)
+        fixed = normalise(fixed, global_min, global_max)
         # 3. Compute registration
         if (
             args.model_type == "voxelmorph"
@@ -376,6 +389,9 @@ def register_video(args):
             )
 
         # Evaluation for the pair
+        eval_res = evaluate_registration(moving, fixed, displacement)
+        score_pair = eval_res
+        result.update(score_pair)
         # If segmentations available, load them and warp the moving segmentation with the predicted displacement for evaluation
         if args.seg_path is not None:
             # Load segmentation masks
@@ -422,14 +438,14 @@ def register_video(args):
     }
     # Global evaluation
     # Compute mse to evaluate the global visual aspect
-    # mse_per_pair = [result["mse"] for result in results if result is not None]
-    # ref_mse_scores_per_pair = [
-    #     result["ref_mse"] for result in results if result is not None
-    # ]
-    # global_mse = np.mean(mse_per_pair)
-    # global_ref_mse = np.mean(ref_mse_scores_per_pair)
-    # metrics["global_mse"] = global_mse
-    # metrics["global_ref_mse"] = global_ref_mse
+    rmse_per_pair = [result["rmse"] for result in results if result is not None]
+    ref_rmse_scores_per_pair = [
+        result["ref_rmse"] for result in results if result is not None
+    ]
+    global_rmse = np.mean(rmse_per_pair)
+    global_ref_rmse = np.mean(ref_rmse_scores_per_pair)
+    metrics["global_rmse"] = global_rmse
+    metrics["global_ref_rmse"] = global_ref_rmse
     # Compute de global dice score an iou score
     if args.seg_path is not None:
         dice_per_pair = [result["dice"] for result in results if result is not None]
@@ -458,6 +474,8 @@ def register_video(args):
         metrics["global_ref_dice"] = global_ref_dice
         metrics["global_iou"] = global_iou
         metrics["global_ref_iou"] = global_ref_iou
+        metrics["global_rmse"] = float(global_rmse)
+        metrics["global_ref_rmse"] = float(global_ref_rmse)
         metrics["dice_per_pair"] = dice_per_pair
         metrics["ref_dice_per_pair"] = ref_dice_scores_per_pair
         metrics["iou_per_pair"] = iou_scores_per_pair
@@ -470,6 +488,8 @@ def register_video(args):
                     "global_ref_dice": global_ref_dice,
                     "global_iou": global_iou,
                     "global_ref_iou": global_ref_iou,
+                    "global_rmse": global_rmse,
+                    "global_ref_rmse": global_ref_rmse,
                 }
             )
     with Path.open(results_dir / "metrics.json", "w") as f:
@@ -507,13 +527,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--video_path",
-        default=configs.TEST_DATA_GOWT,
+        default=configs.TEST_DATA_MUSC,
         help="Moving image (source) filename",
     )
     parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
-        default=configs.TEST_SEG_DATA_GOWT,
+        default=configs.TEST_SEG_DATA_MUSC,
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
@@ -533,7 +553,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/transflowseg/output_20260728_124601",
+        default="outputs/transflowseg/output_20260728_084107",
         help="Directory to find model and to save results",
     )
     parser.add_argument(

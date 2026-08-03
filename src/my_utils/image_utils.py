@@ -1,14 +1,14 @@
-# utils.py  # noqa: ERA001, INP001
+# utils.py
 from collections import Counter
 
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy
 import tifffile as tiff
+import voxelmorph as vxm
 from skimage.measure import regionprops
 from torch import nn
 
-import voxelmorph as vxm
 from my_utils.flow_viz import flow_to_image  # code from raft
 
 

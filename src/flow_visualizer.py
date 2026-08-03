@@ -44,7 +44,7 @@ def _convert_to_uint8(frame: np.ndarray) -> np.ndarray:
             )
             frame = frame / frame.max()
         frame = (frame * 255).round()
-    elif frame.max() > 255:  # noqa: PLR2004
+    elif frame.max() > 255:
         warnings.warn(
             "Integer videos are expected to be normalized in [0, 255].\n"
             "The simple normalization implemented here is suboptimal.",
@@ -119,7 +119,7 @@ def temporal_projection(
     frames = torch.arange(len(tracks_tensor))
 
     if background is not None:
-        if background.ndim == 2:  # noqa: PLR2004
+        if background.ndim == 2:
             background = background[..., None]
         image = _convert_to_uint8(background)
         if image.shape[2] == 1:
@@ -136,7 +136,7 @@ def temporal_projection(
         if not is_defined[:, track_i].any():  # No points for this track
             continue
 
-        points = points[is_defined[:, track_i]] - offset  # noqa: PLW2901
+        points = points[is_defined[:, track_i]] - offset
 
         if color_by_time:
             valid_frames = frames[is_defined[:, track_i]]
@@ -240,7 +240,7 @@ class FlowVisualizer:
         self.grid_step = grid_step
         self.frame_shape = video[0].shape[:-1]
         print("frame shape", self.frame_shape)
-        if len(self.frame_shape) != 2:  # noqa: PLR2004
+        if len(self.frame_shape) != 2:
             raise ValueError("This visualization only supports 2D videos")
 
         self.n_frames = len(video)
