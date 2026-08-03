@@ -37,7 +37,7 @@ from my_utils import configs
 
 if __name__ == "__main__":
     seeds = [42, 123, 456, 54321, 98765]
-    model = ["flowseg", "voxelmorph", "transflowseg", "transmorph2d"]
+    model = ["flowseg", "voxelmorph", "transflowseg", "transmorph2d", "tvl1"]
     datasets = ["U373", "GOWT", "HELA", "MUSC", "HSC"]
 
     base_train_args = {
@@ -180,7 +180,7 @@ if __name__ == "__main__":
         df = pd.DataFrame(data=inf_time_per_data, index=[model_name])
         inf_time_df = pd.concat([inf_time_df, df], axis=0)
 
-res_path = Path("RESULTS_CP_base_train_args")
+res_path = Path("RESULTS_CP_new_train_args")
 res_path.mkdir(parents=True, exist_ok=True)
 with Path.open(res_path / "training_args.json", "w") as f:
     json.dump(base_train_args, f, indent=4)
