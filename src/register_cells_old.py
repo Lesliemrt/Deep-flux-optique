@@ -228,8 +228,11 @@ def register_pair_tvl1(moving, fixed, global_min, global_max):
     ax[0, 1].set_title("Moved")
     ax[0, 1].imshow(moved.squeeze().cpu().numpy(), cmap="gray")
     plt.subplot(2, 2, 3)
-    ax[1, 0].set_title("Moving")
-    ax[1, 0].imshow(input_moving, cmap="gray")
+    ax[1, 0].set_title("Fixed-Moved")
+    ax[1, 0].imshow(
+        np.abs(input_fixed - moved.squeeze().cpu().numpy()),
+        cmap="gray",
+    )
     plt.subplot(2, 2, 4)
     ax[1, 1].set_title("Flow")
     viz(flo=tensor_displacement, ax=ax[1, 1])
