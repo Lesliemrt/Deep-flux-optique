@@ -4,6 +4,7 @@ Script to execute the complete pipeline : segmentation, training and testing dif
 
 # Core library imports
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -179,6 +180,10 @@ if __name__ == "__main__":
         df = pd.DataFrame(data=inf_time_per_data, index=[model_name])
         inf_time_df = pd.concat([inf_time_df, df], axis=0)
 
-dice_df.to_csv("RESULTS_CP.csv")
-train_time_df.to_csv("TRAIN_TIME_RESULTS_CP.csv")
-inf_time_df.to_csv("INF_TIME_RESULTS_CP.csv")
+res_path = Path("RESULTS_CP_base_train_args")
+res_path.mkdir(parents=True, exist_ok=True)
+with Path.open(res_path / "training_args.json", "w") as f:
+    json.dump(base_train_args, f, indent=4)
+dice_df.to_csv(res_path / "RESULTS.csv")
+train_time_df.to_csv(res_path / "TRAIN_TIME_RESULTS.csv")
+inf_time_df.to_csv(res_path / "INF_TIME_RESULTS.csv")

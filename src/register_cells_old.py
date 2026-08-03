@@ -23,7 +23,7 @@ sys.path.append(
 import voxelmorph as vxm
 
 from my_utils.configs import device
-from my_utils.image_utils import NormalizeMinMax, normalise, viz
+from my_utils.image_utils import viz
 
 
 def register_pair(moving, fixed, model, global_min, global_max):
@@ -61,9 +61,6 @@ def register_pair(moving, fixed, model, global_min, global_max):
     # normalise = NormalizeMinMax(global_min=global_min, global_max=global_max)
     # input_moving = normalise(input_moving)
     # input_fixed = normalise(input_fixed)
-
-    print("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBB")
-    print(torch.min(input_moving), torch.max(input_moving))
 
     # Predict
     with torch.no_grad():
@@ -138,9 +135,6 @@ def register_pair_twoheads_vxm(moving, fixed, model, global_min, global_max):
     # input_moving = normalise(input_moving)
     # input_fixed = normalise(input_fixed)
 
-    print("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBB")
-    print(torch.min(input_moving), torch.max(input_moving))
-
     # Predict
     with torch.no_grad():
         res = model(
@@ -202,9 +196,8 @@ def register_pair_tvl1(moving, fixed, global_min, global_max):
         Normalized fixed image.
     """
 
-    # Normalisation
-    input_moving = normalise(moving, global_min, global_max)
-    input_fixed = normalise(fixed, global_min, global_max)
+    input_moving = moving
+    input_fixed = fixed
 
     # To tensor
     tensor_moving = (
@@ -291,11 +284,6 @@ def register_pair_raft(moving_path, fixed_path, model, global_min, global_max):
     input_fixed = (
         torch.from_numpy(fixed).permute(2, 0, 1).float().unsqueeze(0).to(device)
     )
-
-    # Normalisation
-    normalise = NormalizeMinMax(global_min=global_min, global_max=global_max)
-    input_moving = normalise(input_moving)
-    input_fixed = normalise(input_fixed)
 
     # Predict
     with torch.no_grad():

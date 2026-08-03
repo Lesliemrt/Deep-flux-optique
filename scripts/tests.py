@@ -140,8 +140,6 @@ def evaluate_registration(moving, fixed, displacement):
     ).to(configs.device)
     warped_moving = spatial_transformer(tensor_moving, displacement)
     # Compute RMSE score
-    print("AAAAAAAAAAAAAAAAAAA")
-    print(np.min(fixed), np.max(fixed))
     rmse = np.sqrt(np.mean((fixed - warped_moving.squeeze().cpu().numpy()) ** 2))
     ref_rmse = np.sqrt(
         np.mean((fixed - moving) ** 2)
@@ -186,7 +184,7 @@ def create_model(args):
         #     integration_steps=0,
         #     device=device,
         # ).to(device) #TODO mettre option pour utiliser ce model vxm ?
-        nb_features = [16, 32, 64, 128, 256]
+        nb_features = [16, 16, 16, 16, 16]
     if (
         args.model_type == "voxelmorph"
         or args.model_type == "flowseg"
