@@ -24,7 +24,6 @@ import mlflow
 import neurite as ne
 import numpy as np
 import torch
-import torch.nn.functional as F
 from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -53,78 +52,6 @@ torch.cuda.manual_seed(configs.SEED)
 torch.cuda.manual_seed_all(configs.SEED)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
-
-
-def pyramidal_flow(source, target, model, model_type, level=2):
-    """Compute the pyramidal flow to allow the model to understand bigger movements."""
-    current_displacement = None
-    spatial_transformer = vxm.nn.modules.SpatialTransformer(
-        interpolation_mode="linear"
-    ).to(configs.device)
-    # Start from the lowest resolution and upsample the displacement at each level to use it as initial displacement for the next level
-    for i in range(level):
-        scale_factor = 1 / (2 ** (level - i - 1))  # 1/4, 1/2, 1 for 3 levels
-        source_down = F.interpolate(
-            source, scale_factor=scale_factor, mode="bilinear", align_corners=False
-        )
-        target_down = F.interpolate(
-            target, scale_factor=scale_factor, mode="bilinear", align_corners=False
-        )
-
-        if current_displacement is None:
-            if model_type == "voxelmorph":
-                current_displacement = model(
-                    source_down,
-                    target_down,
-                    return_warped_source=False,
-                    return_field_type="displacement",
-                )
-            elif model_type == "twoheads_vxm":
-                current_displacement, current_displacement_inv = model(
-                    source_down,
-                    target_down,
-                    return_warped_source=False,
-                )
-        else:
-            displacement_up = (
-                F.interpolate(
-                    current_displacement,
-                    scale_factor=2,
-                    mode="bilinear",
-                    align_corners=False,
-                )
-                * 2
-            )  # because the displacement is in the original resolution, we need to multiply by 2 to get the correct displacement in the downsampled resolution
-            warped_source_down = spatial_transformer(source_down, displacement_up)
-            if model_type == "voxelmorph":
-                displacement = model(
-                    warped_source_down,
-                    target_down,
-                    return_warped_source=False,
-                    return_field_type="displacement",
-                )
-            elif model_type == "twoheads_vxm":
-                displacement, displacement_inv = model(
-                    warped_source_down,
-                    target_down,
-                    return_warped_source=False,
-                )
-                displacement_inv_up = (
-                    F.interpolate(
-                        current_displacement_inv,
-                        scale_factor=2,
-                        mode="bilinear",
-                        align_corners=False,
-                    )
-                    * 2
-                )
-                current_displacement_inv = displacement_inv + displacement_inv_up
-            current_displacement = (
-                displacement + displacement_up
-            )  # composition of the two displacements
-    if model_type == "voxelmorph":
-        return displacement
-    return displacement, displacement_inv
 
 
 class LossComputer(nn.Module):
@@ -242,12 +169,6 @@ def train_epoch(
         res = model(source, target, return_warped_source=True)
         displacement = res["displacement"]
         warped_source = res["warped_source"]
-
-        # if args.pyramidal:
-        #     displacement = pyramidal_flow(
-        #         source, target, model, model_type="voxelmorph", level=2
-        #     )
-        #     warped_source = spatial_transformer(source, displacement) # TODO : change that
 
         if cycle_consistency and "displacement_bwd" not in res:
             res_bwd = model(target, source, return_warped_source=True)
@@ -622,7 +543,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--seg-path",
-        default=configs.TRAIN_SEG_DATA_HUH,
+        default="data/data/Fluo-C2DL-Huh7/CELLPOSE_SEG",
         help="Path to the segmentation of the training video, if not available set to None",
     )
     # Dataset parameters
@@ -705,11 +626,6 @@ if __name__ == "__main__":
         type=float,
         default=0.01,
         help="Parameter for background loss, only available if segmentations available",
-    )
-    parser.add_argument(
-        "--pyramidal",
-        action="store_true",
-        help="Use pyramidal method for training, to allow the model to understand bigger movements",
     )
     parser.add_argument(
         "--multiple_videos",
