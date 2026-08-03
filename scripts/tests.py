@@ -509,7 +509,20 @@ def register_video(args):
     end_timestamp = datetime.datetime.now(tz=datetime.UTC)
     exec_time = (end_timestamp - timestamp).seconds
 
-    return (global_dice - global_ref_dice) / (1 - global_ref_dice), exec_time
+    # Relativ Error reduction
+    RER_dice = (
+        (global_dice - global_ref_dice) / (1 - global_ref_dice)
+        if (global_ref_dice != 1)
+        else 0
+    )
+
+    RER_rmse = (
+        (global_ref_rmse - global_rmse) / (global_ref_rmse)
+        if (global_ref_rmse != 0)
+        else 0
+    )
+
+    return RER_dice, RER_rmse, exec_time
 
 
 if __name__ == "__main__":

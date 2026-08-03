@@ -72,13 +72,16 @@ if __name__ == "__main__":
     train_time_df = pd.DataFrame(columns=datasets)
     inf_time_df = pd.DataFrame(columns=datasets)
     dice_df = pd.DataFrame(columns=datasets)
+    rmse_df = pd.DataFrame(columns=datasets)
 
     for model_name in model:
         dice_res_per_data = {}
+        rmse_res_per_data = {}
         train_time_per_data = {}
         inf_time_per_data = {}
         for dataset in datasets:
             dice_res_per_seed = []
+            rmse_res_per_seed = []
             train_time_per_seed = []
             inf_time_per_seed = []
             for seed in seeds:
@@ -155,9 +158,10 @@ if __name__ == "__main__":
                     **base_test_args, **additionnal_test_args
                 )
 
-                dice, inf_time = register_video(test_args)
+                dice, rmse, inf_time = register_video(test_args)
 
                 dice_res_per_seed.append(dice)
+                rmse_res_per_seed.append(rmse)
                 train_time_per_seed.append(train_time)
                 inf_time_per_seed.append(inf_time)
 
@@ -170,6 +174,9 @@ if __name__ == "__main__":
             inf_time_per_data[dataset] = (
                 f"{np.mean(inf_time_per_seed)!s}({np.std(inf_time_per_seed)})"
             )
+            rmse_res_per_data[dataset] = (
+                f"{np.mean(rmse_res_per_seed)!s}({np.std(rmse_res_per_seed)})"
+            )
 
         df = pd.DataFrame(data=dice_res_per_data, index=[model_name])
         dice_df = pd.concat([dice_df, df], axis=0)
@@ -177,13 +184,17 @@ if __name__ == "__main__":
         df = pd.DataFrame(data=train_time_per_data, index=[model_name])
         train_time_df = pd.concat([train_time_df, df], axis=0)
 
+        df = pd.DataFrame(data=rmse_res_per_data, index=[model_name])
+        rmse_df = pd.concat([rmse_df, df], axis=0)
+
         df = pd.DataFrame(data=inf_time_per_data, index=[model_name])
         inf_time_df = pd.concat([inf_time_df, df], axis=0)
 
-res_path = Path("RESULTS_CP_new_new_train_args")
+res_path = Path("RESULTS_CP_new_train_args")
 res_path.mkdir(parents=True, exist_ok=True)
 with Path.open(res_path / "training_args.json", "w") as f:
     json.dump(base_train_args, f, indent=4)
 dice_df.to_csv(res_path / "RESULTS.csv")
 train_time_df.to_csv(res_path / "TRAIN_TIME_RESULTS.csv")
 inf_time_df.to_csv(res_path / "INF_TIME_RESULTS.csv")
+rmse_df.to_csv(res_path / "RMSE_RESULTS.csv")
