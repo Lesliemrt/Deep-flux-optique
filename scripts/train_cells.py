@@ -589,7 +589,7 @@ if __name__ == "__main__":
         help="Regularisation parameter for cycle loss",
     )
     parser.add_argument(
-        "--image-loss", type=str, default="mse", help="Image loss to use: 'mse' or 'cc'"
+        "--image-loss", type=str, default="cc", help="Image loss to use: 'mse' or 'cc'"
     )
     parser.add_argument(
         "--grad_loss", type=str, default="l2", help="Gradient loss to use: 'l1' or 'l2'"
