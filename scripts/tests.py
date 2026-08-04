@@ -178,7 +178,7 @@ def evaluate_segmentation(segmentation_pred, segmentation_gt):
 def create_model(args):
     """Create the model for registration."""
     nb_features = [16, 32, 64, 128, 256]
-    if args.model_type == "voxelmorph":
+    if args.model_type == "voxelmorph" or args.model_type == "twoflows":
         # model = vxm.nn.models.VxmPairwise(
         #     ndim=2,
         #     source_channels=1,
@@ -567,7 +567,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/flowseg/output_20260720_143502",
+        default="outputs/flowseg/output_20260804_091720",
         help="Directory to find model and to save results",
     )
     parser.add_argument(
