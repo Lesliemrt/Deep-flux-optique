@@ -81,10 +81,10 @@ def register_pair(moving, fixed, model, global_min, global_max):
     ax[0, 1].set_title("Moved")
     ax[0, 1].imshow(moved.squeeze().cpu().numpy(), cmap="gray")
     plt.subplot(2, 2, 3)
-    ax[1, 0].set_title("Fixed-Moved")
+    ax[1, 0].set_title("Moved - Moving")
     # ax[1, 0].imshow(input_moving.squeeze().cpu().numpy(), cmap="gray")
     ax[1, 0].imshow(
-        np.abs(input_fixed.squeeze().cpu().numpy() - moved.squeeze().cpu().numpy()),
+        np.abs(moved.squeeze().cpu().numpy() - input_moving.squeeze().cpu().numpy()),
         cmap="gray",
     )
     plt.subplot(2, 2, 4)
@@ -98,76 +98,76 @@ def register_pair(moving, fixed, model, global_min, global_max):
     return res
 
 
-def register_pair_twoheads_vxm(moving, fixed, model, global_min, global_max):
-    """Register a pair of frames using Voxelmorph model.
+# def register_pair_twoheads_vxm(moving, fixed, model, global_min, global_max):
+#     """Register a pair of frames using Voxelmorph model.
 
-    Parameters
-    ----------
-    moving : numpy.ndarray
-        Moving image.
-    fixed : numpy.ndarray
-        Fixed image.
-    model : torch.nn.Module
-        Model to use for registration.
-    global_min : float
-        Global minimum for normalization.
-    global_max : float
-        Global maximum for normalization.
+#     Parameters
+#     ----------
+#     moving : numpy.ndarray
+#         Moving image.
+#     fixed : numpy.ndarray
+#         Fixed image.
+#     model : torch.nn.Module
+#         Model to use for registration.
+#     global_min : float
+#         Global minimum for normalization.
+#     global_max : float
+#         Global maximum for normalization.
 
-    Returns
-    -------
-    displacement : torch.Tensor
-        Predicted deformation field.
-    fig : matplotlib.figure.Figure
-        Figure showing the fixed image, the moved image, the moving image and the flow field.
-    input_moving : numpy.ndarray
-        Normalized moving image.
-    input_fixed : numpy.ndarray
-        Normalized fixed image.
-    """
+#     Returns
+#     -------
+#     displacement : torch.Tensor
+#         Predicted deformation field.
+#     fig : matplotlib.figure.Figure
+#         Figure showing the fixed image, the moved image, the moving image and the flow field.
+#     input_moving : numpy.ndarray
+#         Normalized moving image.
+#     input_fixed : numpy.ndarray
+#         Normalized fixed image.
+#     """
 
-    # To tensor
-    input_moving = torch.from_numpy(moving).float().to(device).unsqueeze(0).unsqueeze(0)
-    input_fixed = torch.from_numpy(fixed).float().to(device).unsqueeze(0).unsqueeze(0)
+#     # To tensor
+#     input_moving = torch.from_numpy(moving).float().to(device).unsqueeze(0).unsqueeze(0)
+#     input_fixed = torch.from_numpy(fixed).float().to(device).unsqueeze(0).unsqueeze(0)
 
-    # # Normalisation
-    # normalise = NormalizeMinMax(global_min=global_min, global_max=global_max)
-    # input_moving = normalise(input_moving)
-    # input_fixed = normalise(input_fixed)
+#     # # Normalisation
+#     # normalise = NormalizeMinMax(global_min=global_min, global_max=global_max)
+#     # input_moving = normalise(input_moving)
+#     # input_fixed = normalise(input_fixed)
 
-    # Predict
-    with torch.no_grad():
-        res = model(
-            source=input_moving,
-            target=input_fixed,
-            return_warped_source=True,
-        )
-    displacement, displacement_bwd, moved = (
-        res["displacement"],
-        res["displacement_bwd"],
-        res["warped_source"],
-    )
-    fig, ax = plt.subplots(2, 2, figsize=(12, 12))
-    plt.subplot(2, 2, 1)
-    ax[0, 0].set_title("Fixed")
-    ax[0, 0].imshow(input_fixed.squeeze().cpu().numpy(), cmap="gray")
-    plt.subplot(2, 2, 2)
-    ax[0, 1].set_title("Moved")
-    ax[0, 1].imshow(moved.squeeze().cpu().numpy(), cmap="gray")
-    plt.subplot(2, 2, 3)
-    ax[1, 0].set_title("Moving")
-    ax[1, 0].imshow(input_moving.squeeze().cpu().numpy(), cmap="gray")
-    plt.subplot(2, 2, 4)
-    ax[1, 1].set_title("Flow")
-    viz(flo=displacement, ax=ax[1, 1])
+#     # Predict
+#     with torch.no_grad():
+#         res = model(
+#             source=input_moving,
+#             target=input_fixed,
+#             return_warped_source=True,
+#         )
+#     displacement, displacement_bwd, moved = (
+#         res["displacement"],
+#         res["displacement_bwd"],
+#         res["warped_source"],
+#     )
+#     fig, ax = plt.subplots(2, 2, figsize=(12, 12))
+#     plt.subplot(2, 2, 1)
+#     ax[0, 0].set_title("Fixed")
+#     ax[0, 0].imshow(input_fixed.squeeze().cpu().numpy(), cmap="gray")
+#     plt.subplot(2, 2, 2)
+#     ax[0, 1].set_title("Moved")
+#     ax[0, 1].imshow(moved.squeeze().cpu().numpy(), cmap="gray")
+#     plt.subplot(2, 2, 3)
+#     ax[1, 0].set_title("Moving")
+#     ax[1, 0].imshow(input_moving.squeeze().cpu().numpy(), cmap="gray")
+#     plt.subplot(2, 2, 4)
+#     ax[1, 1].set_title("Flow")
+#     viz(flo=displacement, ax=ax[1, 1])
 
-    return (
-        displacement,
-        displacement_bwd,
-        fig,
-        input_moving.squeeze().cpu().numpy(),
-        input_fixed.squeeze().cpu().numpy(),
-    )
+#     return (
+#         displacement,
+#         displacement_bwd,
+#         fig,
+#         input_moving.squeeze().cpu().numpy(),
+#         input_fixed.squeeze().cpu().numpy(),
+#     )
 
 
 def register_pair_tvl1(moving, fixed, global_min, global_max):

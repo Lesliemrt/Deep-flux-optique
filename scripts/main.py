@@ -13,6 +13,8 @@ os.environ["NEURITE_BACKEND"] = "pytorch"
 os.environ["VXM_BACKEND"] = "pytorch"
 
 # Third-party imports
+import datetime
+
 import numpy as np
 import pandas as pd
 import tifffile as tiff
@@ -54,7 +56,7 @@ if __name__ == "__main__":
         "grad_loss": "l2",
         "lr": 1e-3,
         "lambda_param": 0.01,
-        "gamma_param": 0.01,
+        "gamma_param": 0.001,
         "seg_param": 0.01,
         "background": False,
         "background_param": 0.01,
@@ -190,11 +192,18 @@ if __name__ == "__main__":
         df = pd.DataFrame(data=inf_time_per_data, index=[model_name])
         inf_time_df = pd.concat([inf_time_df, df], axis=0)
 
-res_path = Path("RESULTS_CP_base_train_args")
+timestamp = datetime.datetime.now(tz=datetime.UTC)
+res_path = Path(f"RESULTS_CP_less_seg_{timestamp.strftime('%Y%m%d_%H%M%S')}")
 res_path.mkdir(parents=True, exist_ok=True)
-with Path.open(res_path / "training_args.json", "w") as f:
+with Path.open(
+    res_path / f"training_args.json_{timestamp.strftime('%Y%m%d_%H%M%S')}", "w"
+) as f:
     json.dump(base_train_args, f, indent=4)
-dice_df.to_csv(res_path / "RESULTS.csv")
-train_time_df.to_csv(res_path / "TRAIN_TIME_RESULTS.csv")
-inf_time_df.to_csv(res_path / "INF_TIME_RESULTS.csv")
-rmse_df.to_csv(res_path / "RMSE_RESULTS.csv")
+dice_df.to_csv(res_path / f"RESULTS_{timestamp.strftime('%Y%m%d_%H%M%S')}.csv")
+train_time_df.to_csv(
+    res_path / f"TRAIN_TIME_RESULTS_{timestamp.strftime('%Y%m%d_%H%M%S')}.csv"
+)
+inf_time_df.to_csv(
+    res_path / f"INF_TIME_RESULTS_{timestamp.strftime('%Y%m%d_%H%M%S')}.csv"
+)
+rmse_df.to_csv(res_path / f"RMSE_RESULTS_{timestamp.strftime('%Y%m%d_%H%M%S')}.csv")

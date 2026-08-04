@@ -115,9 +115,12 @@ def evaluate_registration_with_seg(
     ax[0, 1].set_title("Warped moving segmentation")
     ax[0, 1].imshow(warped_seg_moving.squeeze().cpu().numpy(), cmap="gray")
     plt.subplot(2, 2, 3)
-    ax[1, 0].set_title("Fixed - warped segmentation")
+    ax[1, 0].set_title("Warped segmentation - Moving segmentation")
+    # ax[1, 0].imshow(
+    #     np.abs(seg_fixed - warped_seg_moving.squeeze().cpu().numpy()), cmap="gray"
+    # )
     ax[1, 0].imshow(
-        np.abs(seg_fixed - warped_seg_moving.squeeze().cpu().numpy()), cmap="gray"
+        np.abs(warped_seg_moving.squeeze().cpu().numpy() - seg_moving), cmap="gray"
     )
     plt.subplot(2, 2, 4)
     ax[1, 1].set_title("Flow")
@@ -564,7 +567,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/transflowseg/output_20260728_084107",
+        default="outputs/flowseg/output_20260720_133631",
         help="Directory to find model and to save results",
     )
     parser.add_argument(
