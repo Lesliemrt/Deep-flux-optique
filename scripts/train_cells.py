@@ -606,7 +606,7 @@ if __name__ == "__main__":
         "--gamma",
         type=float,
         dest="gamma_param",
-        default=0.001,
+        default=0.01,
         help="Regularisation parameter for dice loss between source and warped target, not used if seg_path is set to None",
     )
     parser.add_argument(
