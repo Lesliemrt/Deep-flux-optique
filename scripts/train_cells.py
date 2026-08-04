@@ -538,22 +538,22 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--video-path",
-        default=configs.TRAIN_DATA_HUH,
+        default=configs.TRAIN_DATA_GOWT,
         help="Path to the training video",
     )
     parser.add_argument(
         "--seg-path",
-        default="data/data/Fluo-C2DL-Huh7/CELLPOSE_SEG",
+        default=configs.TRAIN_SEG_DATA_GOWT,
         help="Path to the segmentation of the training video, if not available set to None",
     )
     # Dataset parameters
     parser.add_argument(
-        "--max_gap", type=int, default=1, help="Maximum temporal gap between 2 frames"
+        "--max_gap", type=int, default=20, help="Maximum temporal gap between 2 frames"
     )
     parser.add_argument(
         "--multiplier",
         type=int,
-        default=1,
+        default=3,
         help="Multiplier to have more pairs per epoch",
     )
     parser.add_argument(
@@ -599,14 +599,14 @@ if __name__ == "__main__":
         "--lambda",
         type=float,
         dest="lambda_param",
-        default=0.01,
+        default=0.5,
         help="Regularisation parameter for smooth loss",
     )
     parser.add_argument(
         "--gamma",
         type=float,
         dest="gamma_param",
-        default=0.01,
+        default=0.001,
         help="Regularisation parameter for dice loss between source and warped target, not used if seg_path is set to None",
     )
     parser.add_argument(
