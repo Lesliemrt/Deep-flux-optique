@@ -87,19 +87,16 @@ def evaluate_registration_with_seg(
         interpolation_mode="nearest"
     ).to(configs.device)
     warped_seg_moving = spatial_transformer(tensor_seg_moving, displacement)
+    warped_seg_moving_np = warped_seg_moving.squeeze().cpu().numpy()
     # Compute Dice score
-    dice = vxm.py.utils.dice(
-        warped_seg_moving.squeeze().cpu().numpy(), seg_fixed, include_zero=False
-    )
+    dice = vxm.py.utils.dice(warped_seg_moving_np, seg_fixed, include_zero=False)
     ref_dice = vxm.py.utils.dice(
         seg_moving, seg_fixed, include_zero=False
     )  # reference dice to compare with the dice after registration
     score["dice"] = np.mean(dice)
     score["ref_dice"] = np.mean(ref_dice)
     # Compute IoU score
-    iou_score = iou(
-        warped_seg_moving.squeeze().cpu().numpy(), seg_fixed, include_zero=False
-    )
+    iou_score = iou(warped_seg_moving_np, seg_fixed, include_zero=False)
     ref_iou_score = iou(
         seg_moving, seg_fixed, include_zero=False
     )  # reference iou to compare with the iou after registration
@@ -113,18 +110,25 @@ def evaluate_registration_with_seg(
     ax[0, 0].imshow(seg_fixed, cmap="gray")
     plt.subplot(2, 2, 2)
     ax[0, 1].set_title("Warped moving segmentation")
-    ax[0, 1].imshow(warped_seg_moving.squeeze().cpu().numpy(), cmap="gray")
+    ax[0, 1].imshow(warped_seg_moving_np, cmap="gray")
     plt.subplot(2, 2, 3)
     ax[1, 0].set_title("Fixed segmentation - Warped segmentation")
     # ax[1, 0].imshow(
-    #     np.abs(seg_fixed - warped_seg_moving.squeeze().cpu().numpy()), cmap="gray"
+    #     np.abs(seg_fixed - warped_seg_moving_np), cmap="gray"
     # )
-    ax[1, 0].imshow(
-        np.abs(seg_fixed - warped_seg_moving.squeeze().cpu().numpy()), cmap="gray"
-    )
+    ax[1, 0].imshow(np.abs(seg_fixed - warped_seg_moving_np), cmap="gray")
     plt.subplot(2, 2, 4)
-    ax[1, 1].set_title("Flow")
-    viz(flo=displacement, ax=ax[1, 1])
+    # ax[1, 1].set_title("Flow")
+    # viz(flo=displacement, ax=ax[1, 1])
+    ax[1, 1].set_title(
+        "Purple : Moving segmentation, Green : Fixed segmentation,\n Orange : Warped moving segmentation"
+    )
+    seg_moving = np.where(seg_moving > 0, 1, 0)
+    seg_fixed = np.where(seg_fixed > 0, 1, 0)
+    warped_seg_moving_np = np.where(warped_seg_moving_np > 0, 1, 0)
+    ax[1, 1].imshow(seg_moving, cmap="Purples", alpha=0.5)
+    ax[1, 1].imshow(seg_fixed, cmap="Greens", alpha=0.5)
+    ax[1, 1].imshow(warped_seg_moving_np, cmap="Oranges", alpha=0.5)
     return score, fig
 
 
@@ -567,7 +571,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/voxelmorph/output_20260804_135540",
+        default="outputs/flowseg/output_20260804_135513",
         help="Directory to find model and to save results",
     )
     parser.add_argument(
