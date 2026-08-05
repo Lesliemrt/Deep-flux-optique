@@ -29,6 +29,7 @@ neurite/
 .env
 mlartifacts/
 mlflow.db
+mlruns/
 
 # Data files
 data.tar.gz
