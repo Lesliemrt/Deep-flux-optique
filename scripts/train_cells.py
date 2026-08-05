@@ -538,12 +538,12 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--video-path",
-        default=configs.TRAIN_DATA_GOWT,
+        default=configs.TRAIN_DATA_MUSC,
         help="Path to the training video",
     )
     parser.add_argument(
         "--seg-path",
-        default=configs.TRAIN_SEG_DATA_GOWT,
+        default=configs.TRAIN_SEG_DATA_MUSC,
         help="Path to the segmentation of the training video, if not available set to None",
     )
     # Dataset parameters
@@ -589,7 +589,7 @@ if __name__ == "__main__":
         help="Regularisation parameter for cycle loss",
     )
     parser.add_argument(
-        "--image-loss", type=str, default="cc", help="Image loss to use: 'mse' or 'cc'"
+        "--image-loss", type=str, default="mse", help="Image loss to use: 'mse' or 'cc'"
     )
     parser.add_argument(
         "--grad_loss", type=str, default="l2", help="Gradient loss to use: 'l1' or 'l2'"
