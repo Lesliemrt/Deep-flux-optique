@@ -1,0 +1,14 @@
+artifact_uri: mlflow-artifacts:/0/a3a74bae89bd4877bc8f65a16069b7cf/artifacts
+end_time: 1783341187454
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: a3a74bae89bd4877bc8f65a16069b7cf
+run_name: train_cells_flowseg_20260706_143224_data/data/BF-C2DL-MuSC/01
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1783341145025
+status: 3
+tags: []
+user_id: lmurat
