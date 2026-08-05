@@ -42,7 +42,6 @@ from my_utils.image_utils import (
     iou,
     normalisation_params,
     normalise,
-    viz,
 )
 
 # from raft import RAFT
@@ -63,7 +62,7 @@ torch.backends.cudnn.benchmark = False
 
 
 def evaluate_registration_with_seg(
-    segmentation_moving, segmentation_fixed, displacement
+    segmentation_moving, segmentation_fixed, displacement, fixed
 ):
     """Evaluate the registration results."""
     score = {}
@@ -121,14 +120,15 @@ def evaluate_registration_with_seg(
     # ax[1, 1].set_title("Flow")
     # viz(flo=displacement, ax=ax[1, 1])
     ax[1, 1].set_title(
-        "Purple : Moving segmentation, Green : Fixed segmentation,\n Orange : Warped moving segmentation"
+        "Red : Moving segmentation, Green : Fixed segmentation,\n Blue : Warped moving segmentation"
     )
     seg_moving = np.where(seg_moving > 0, 1, 0)
     seg_fixed = np.where(seg_fixed > 0, 1, 0)
     warped_seg_moving_np = np.where(warped_seg_moving_np > 0, 1, 0)
-    ax[1, 1].imshow(seg_moving, cmap="Purples", alpha=0.5)
-    ax[1, 1].imshow(seg_fixed, cmap="Greens", alpha=0.5)
-    ax[1, 1].imshow(warped_seg_moving_np, cmap="Oranges", alpha=0.5)
+    ax[1, 1].imshow(fixed, cmap="gray")
+    ax[1, 1].contour(seg_moving, levels=[0.5], colors="red", alpha=0.7, linewidths=0.5)
+    ax[1, 1].contour(seg_fixed, levels=[0.5], colors="green", linewidths=0.5)
+    ax[1, 1].contour(warped_seg_moving_np, levels=[0.5], colors="blue", linewidths=0.5)
     return score, fig
 
 
@@ -403,7 +403,7 @@ def register_video(args):
             seg_moving = tiff.imread(seg_path_list[idx])
             seg_fixed = tiff.imread(seg_path_list[idx2])
             eval_res = evaluate_registration_with_seg(
-                seg_moving, seg_fixed, displacement
+                seg_moving, seg_fixed, displacement, fixed
             )
             if eval_res is None:
                 continue
@@ -545,13 +545,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--video_path",
-        default=configs.TEST_DATA_GOWT,
+        default=configs.TEST_DATA_MUSC,
         help="Moving image (source) filename",
     )
     parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
-        default=configs.TEST_SEG_DATA_GOWT,
+        default=configs.TEST_SEG_DATA_MUSC,
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
@@ -571,7 +571,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/flowseg/output_20260804_135513",
+        default="outputs/flowseg/output_20260720_140401",
         help="Directory to find model and to save results",
     )
     parser.add_argument(
