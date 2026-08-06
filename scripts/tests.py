@@ -267,7 +267,7 @@ def register_video(args):
             config = json.load(j)  # To get informations from vxm training
     else:
         config = {}
-        args.output_dir = f"outputs/{args.model_type}"
+        args.output_dir = f"outputs/{args.model_type}/{args.video_path.split('/')[-2]}"
 
     if args.mlflow:
         mlflow.set_tracking_uri(configs.MLFLOW_TRACKING_URI)
@@ -545,13 +545,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--video_path",
-        default=configs.TEST_DATA_MUSC,
+        default=configs.TEST_DATA_HSC,
         help="Moving image (source) filename",
     )
     parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
-        default=configs.TEST_SEG_DATA_MUSC,
+        default=configs.TEST_SEG_DATA_HSC,
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
@@ -571,7 +571,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/flowseg/output_20260720_140401",
+        default="outputs/voxelmorph/output_20260728_154447",
         help="Directory to find model and to save results",
     )
     parser.add_argument(
