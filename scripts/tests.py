@@ -69,11 +69,7 @@ def evaluate_registration_with_seg(
     # Load segmentation masks
     seg_moving = interpole_and_pad(segmentation_moving, [configs.HEIGHT, configs.WIDTH])
     seg_fixed = interpole_and_pad(segmentation_fixed, [configs.HEIGHT, configs.WIDTH])
-    # Take only pairs of frame with same nbr of cells (to have max dice = 1 in case of disappaering cell in vid)
-    moving_labels = set(np.unique([seg_moving]))
-    fixed_labels = set(np.unique([seg_fixed]))
-    if moving_labels != fixed_labels:
-        return None
+
     # Warp moving segmentation with the predicted displacement
     tensor_seg_moving = (
         torch.from_numpy(seg_moving)
@@ -87,22 +83,30 @@ def evaluate_registration_with_seg(
     ).to(configs.device)
     warped_seg_moving = spatial_transformer(tensor_seg_moving, displacement)
     warped_seg_moving_np = warped_seg_moving.squeeze().cpu().numpy()
-    # Compute Dice score
-    dice = vxm.py.utils.dice(warped_seg_moving_np, seg_fixed, include_zero=False)
-    ref_dice = vxm.py.utils.dice(
-        seg_moving, seg_fixed, include_zero=False
-    )  # reference dice to compare with the dice after registration
-    score["dice"] = np.mean(dice)
-    score["ref_dice"] = np.mean(ref_dice)
-    # Compute IoU score
-    iou_score = iou(warped_seg_moving_np, seg_fixed, include_zero=False)
-    ref_iou_score = iou(
-        seg_moving, seg_fixed, include_zero=False
-    )  # reference iou to compare with the iou after registration
-    score["iou"] = np.mean(iou_score)
-    score["ref_iou"] = np.mean(ref_iou_score)
 
-    # To visulaise seg evaluation
+    # Compute scores
+    # Take only pairs of frame with same nbr of cells (to have max dice = 1 in case of disappaering cell in vid)
+    moving_labels = set(np.unique([seg_moving]))
+    fixed_labels = set(np.unique([seg_fixed]))
+    if moving_labels != fixed_labels:
+        score = None
+    else:
+        # Compute Dice score only for pairs of frames with same number of cells
+        dice = vxm.py.utils.dice(warped_seg_moving_np, seg_fixed, include_zero=False)
+        ref_dice = vxm.py.utils.dice(
+            seg_moving, seg_fixed, include_zero=False
+        )  # reference dice to compare with the dice after registration
+        score["dice"] = np.mean(dice)
+        score["ref_dice"] = np.mean(ref_dice)
+        # Compute IoU score only for pairs of frames with same number of cells
+        iou_score = iou(warped_seg_moving_np, seg_fixed, include_zero=False)
+        ref_iou_score = iou(
+            seg_moving, seg_fixed, include_zero=False
+        )  # reference iou to compare with the iou after registration
+        score["iou"] = np.mean(iou_score)
+        score["ref_iou"] = np.mean(ref_iou_score)
+
+    # To visualise seg evaluation
     fig, ax = plt.subplots(2, 2, figsize=(12, 12))
     plt.subplot(2, 2, 1)
     ax[0, 0].set_title(
@@ -410,16 +414,16 @@ def register_video(args):
             eval_res = evaluate_registration_with_seg(
                 seg_moving, seg_fixed, displacement, fixed
             )
-            if eval_res is None:
-                continue
             score_pair, fig = eval_res
-            result.update(score_pair)
             fig.savefig(viz_dir / f"seg_eval_for_paire_{idx}-{idx2}.png")
             if mlflow.active_run():
                 mlflow.log_figure(
                     fig, artifact_file=f"seg_eval_for_paire_{idx}-{idx2}.png"
                 )
             plt.close("all")
+
+            if score_pair is not None:
+                result.update(score_pair)
             # ------------------------- SEGMENTATION EVALUATION ------------------------------------
             if "source_segmentation" in res:
                 eval_seg_res = evaluate_segmentation(
@@ -448,7 +452,7 @@ def register_video(args):
     }
     # Global evaluation
     # Compute mse to evaluate the global visual aspect
-    rmse_per_pair = [result["rmse"] for result in results if result is not None]
+    rmse_per_pair = [result["rmse"] for result in results if "rmse" in result]
     ref_rmse_scores_per_pair = [
         result["ref_rmse"] for result in results if result is not None
     ]
@@ -458,15 +462,13 @@ def register_video(args):
     metrics["global_ref_rmse"] = global_ref_rmse
     # Compute de global dice score an iou score
     if args.seg_path is not None:
-        dice_per_pair = [result["dice"] for result in results if result is not None]
+        dice_per_pair = [result["dice"] for result in results if "dice" in result]
         ref_dice_scores_per_pair = [
-            result["ref_dice"] for result in results if result is not None
+            result["ref_dice"] for result in results if "ref_dice" in result
         ]
-        iou_scores_per_pair = [
-            result["iou"] for result in results if result is not None
-        ]
+        iou_scores_per_pair = [result["iou"] for result in results if "iou" in result]
         ref_iou_scores_per_pair = [
-            result["ref_iou"] for result in results if result is not None
+            result["ref_iou"] for result in results if "ref_iou" in result
         ]
         global_dice = np.mean(dice_per_pair)
         global_ref_dice = np.mean(ref_dice_scores_per_pair)
@@ -474,7 +476,9 @@ def register_video(args):
         global_ref_iou = np.mean(ref_iou_scores_per_pair)
         if "dice_segmentation" in results[0]:
             dice_segmentation_per_pair = [
-                result["dice_segmentation"] for result in results if result is not None
+                result["dice_segmentation"]
+                for result in results
+                if "dice_segmentation" in result
             ]
             global_dice_segmentation = np.mean(dice_segmentation_per_pair)
         else:
@@ -550,13 +554,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--video_path",
-        default=configs.TEST_DATA_MUSC,
+        default=configs.TEST_DATA_GOWT,
         help="Moving image (source) filename",
     )
     parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
-        default=configs.TEST_SEG_DATA_MUSC,
+        default=configs.TEST_SEG_DATA_GOWT,
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
@@ -576,7 +580,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/transflowseg/output_20260728_084107",  # "outputs/flowseg/output_20260720_140401"
+        default="outputs/voxelmorph/output_20260817_155447",  # "outputs/flowseg/output_20260720_140401"
         help="Directory to find model and to save results",
     )
     parser.add_argument(

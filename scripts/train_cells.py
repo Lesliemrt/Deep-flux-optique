@@ -592,14 +592,14 @@ if __name__ == "__main__":
         "--image-loss", type=str, default="mse", help="Image loss to use: 'mse' or 'cc'"
     )
     parser.add_argument(
-        "--grad_loss", type=str, default="l2", help="Gradient loss to use: 'l1' or 'l2'"
+        "--grad_loss", type=str, default="l1", help="Gradient loss to use: 'l1' or 'l2'"
     )
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument(
         "--lambda",
         type=float,
         dest="lambda_param",
-        default=0.5,
+        default=0.01,
         help="Regularisation parameter for smooth loss",
     )
     parser.add_argument(
