@@ -89,13 +89,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train VoxelMorph")
     parser.add_argument(
         "--path",
-        default="PhC-C2DH-U373",
+        default="BF-C2DL-MuSC",
         help="Path to the dataset to process",
     )
     args = parser.parse_args()
 
     # Create segmentations
-    _ = cellpose("data/data/Fluo-C2DL-Huh7/01")
+    _ = cellpose("data/data/BF-C2DL-MuSC/01")
 
     # # Relabel the segmentation videos with the labels from the tracking videos
     # output_path = Path(f"data/data/{args.path}/01_ERR_SEG_TRA")
