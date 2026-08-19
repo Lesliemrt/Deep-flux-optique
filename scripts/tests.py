@@ -520,7 +520,9 @@ def register_video(args):
             np.save(flow_dir / f"{name}.npy", value)
 
     if args.visualize:
-        visualizer = FlowVisualizer(video, flow_maps, grid_step=20, gap=args.gap)
+        visualizer = FlowVisualizer(
+            video, flow_maps, grid_step=20, gap=args.gap, grid_type="personalized"
+        )
         visualizer.run()
 
     end_timestamp = datetime.datetime.now(tz=datetime.UTC)
@@ -555,13 +557,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--video_path",
-        default=configs.TEST_DATA_HSC,
+        default=configs.TEST_DATA_GOWT,
         help="Moving image (source) filename",
     )
     parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
-        default=configs.TEST_SEG_DATA_HSC,
+        default=configs.TEST_SEG_DATA_GOWT,
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
@@ -581,7 +583,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/transflowseg/output_20260804_202152",  # "outputs/flowseg/output_20260720_140401"
+        default="outputs/transflowseg/output_20260728_181644",  # "outputs/flowseg/output_20260720_140401"
         help="Directory to find model and to save results",
     )
     parser.add_argument(

@@ -9,6 +9,8 @@ import numpy as np
 import scipy
 import torch
 import tqdm  # noqa: F401
+from cellpose import models
+from skimage.measure import find_contours
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -233,11 +235,13 @@ class FlowVisualizer:
         flow_maps: dict[tuple[int, int], np.ndarray],
         grid_step=20,
         gap=1,
+        grid_type="uniform",
     ):
         self.video = video
         self.flow_maps = flow_maps
         self.gap = gap
         self.grid_step = grid_step
+        self.grid_type = grid_type
         self.frame_shape = video[0].shape[:-1]
         print("frame shape", self.frame_shape)
         if len(self.frame_shape) != 2:
@@ -246,11 +250,20 @@ class FlowVisualizer:
         self.n_frames = len(video)
         self.colors = _colors
         self.scale = 1
-        self._grid = (
-            np.indices(self.frame_shape, dtype=np.float64)[:, ::grid_step, ::grid_step]
-            .reshape(2, -1)
-            .transpose()
-        )
+        if self.grid_type not in ("uniform", "personalized"):
+            raise ValueError(
+                f"grid_type should be either 'uniform' or 'personalized', got {self.grid_type}"
+            )
+        elif self.grid_type == "uniform":
+            self._grid = (
+                np.indices(self.frame_shape, dtype=np.float64)[
+                    :, ::grid_step, ::grid_step
+                ]
+                .reshape(2, -1)
+                .transpose()
+            )
+        elif self.grid_type == "personalized":
+            self._grid = self.personnalized_grid()
         self.points = self._grid.copy()
 
         self._frame_id = 0
@@ -355,6 +368,26 @@ class FlowVisualizer:
             self.points = self._grid
 
         return False
+
+    def personnalized_grid(self):
+        """Set a personnalized grid with points only at the border of cells."""
+        start_frame = self.video[self._frame_id]
+        model = models.CellposeModel(gpu=True)
+        mask, _, _ = model.eval(start_frame, flow_threshold=0.4, cellprob_threshold=0.0)
+
+        labels = np.unique(mask)
+        cells_points = []
+
+        for label in labels:
+            if label == 0:
+                continue
+            mask = mask == label
+            contour = find_contours(mask, level=0.5)
+            # contour[:, 1] = X, contour[:, 0] = Y
+            step = max(1, len(contour) // 10)  # Sample at most 10 points per contour
+            sampled_contour = contour[::step]
+            cells_points.append(sampled_contour)
+        return cells_points
 
 
 def flow_to_rgb(flow: np.ndarray, clip: float | None = None) -> np.ndarray:

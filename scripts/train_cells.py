@@ -20,6 +20,7 @@ os.environ["VXM_BACKEND"] = "pytorch"
 # Third-party imports
 import datetime
 
+import matplotlib.pyplot as plt
 import mlflow
 import neurite as ne
 import numpy as np
@@ -418,6 +419,7 @@ def train(args):
     # Training loop
     print(f"Training for {args.epochs} epochs...")
     best_loss = float("inf")
+    train_loss = []
     for epoch in tqdm(range(args.epochs), desc="Epochs"):
         # Train for one epoch
         avg_loss = train_epoch(
@@ -431,6 +433,7 @@ def train(args):
             cycle_consistency=args.cycle_consistency,
             seg_type=args.seg_type,
         )
+        train_loss.append(avg_loss["loss"])
         if mlflow.active_run():
             mlflow.log_metric("Train_loss", avg_loss["loss"], step=epoch)
             mlflow.log_metric("Train_img_loss", avg_loss["img_loss"], step=epoch)
@@ -505,6 +508,12 @@ def train(args):
         "device": str(configs.device),
         "date": timestamp.strftime("%Y%m%d_%H%M%S"),
     }
+    # create loss figure
+    plt.plot(train_loss)
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Training Loss")
+    plt.savefig(output_dir / "train_loss.png")
     if mlflow.active_run():
         run_id = mlflow.active_run().info.run_id
         config["mlflow_run_id"] = run_id
@@ -592,7 +601,7 @@ if __name__ == "__main__":
         "--image-loss", type=str, default="mse", help="Image loss to use: 'mse' or 'cc'"
     )
     parser.add_argument(
-        "--grad_loss", type=str, default="l1", help="Gradient loss to use: 'l1' or 'l2'"
+        "--grad_loss", type=str, default="l2", help="Gradient loss to use: 'l1' or 'l2'"
     )
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument(
