@@ -6,7 +6,7 @@ import numpy as np
 import scipy
 import tifffile as tiff
 import voxelmorph as vxm
-from skimage.measure import regionprops
+from skimage.measure import find_contours, regionprops
 from torch import nn
 
 from my_utils.flow_viz import flow_to_image  # code from raft
@@ -183,3 +183,19 @@ if __name__ == "__main__":
     plt.subplot(1, 2, 2)
     plt.imshow(hm, cmap="hot")
     plt.show()
+
+
+def plot_contours(seg, color, ax=None):
+    if ax is None:
+        ax = plt.gca()
+
+    labels = np.unique(seg)
+
+    for label in labels:
+        if label == 0:
+            continue
+        mask = seg == label
+        contours = find_contours(mask, level=0.5)
+        for contour in contours:
+            # contour[:, 1] = X, contour[:, 0] = Y
+            ax.plot(contour[:, 1], contour[:, 0], color=color, linewidth=1)

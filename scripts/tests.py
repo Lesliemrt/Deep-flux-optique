@@ -42,6 +42,7 @@ from my_utils.image_utils import (
     iou,
     normalisation_params,
     normalise,
+    plot_contours,
 )
 
 # from raft import RAFT
@@ -107,15 +108,19 @@ def evaluate_registration_with_seg(
         score["ref_iou"] = np.mean(ref_iou_score)
 
     # To visualise seg evaluation
+    # seg_moving = np.where(seg_moving > 0, 1, 0)
+    # seg_fixed = np.where(seg_fixed > 0, 1, 0)
+    # warped_seg_moving_np = np.where(warped_seg_moving_np > 0, 1, 0)
     fig, ax = plt.subplots(2, 2, figsize=(12, 12))
     plt.subplot(2, 2, 1)
     ax[0, 0].set_title(
         "Fixed image with moving (red) and fixed (green) segmentation contours"
     )
     ax[0, 0].imshow(fixed, cmap="gray")
-    ax[0, 0].contour(seg_moving, levels=[0.5], colors="red", alpha=0.7, linewidths=1)
-    ax[0, 0].contour(seg_fixed, levels=[0.5], colors="chartreuse", linewidths=1)
-    plt.subplot(2, 2, 2)
+    # ax[0, 0].contour(seg_moving, levels=[0.5], colors="red", alpha=0.7, linewidths=1)
+    # ax[0, 0].contour(seg_fixed, levels=[0.5], colors="chartreuse", linewidths=1)
+    plot_contours(seg_moving, color="red", ax=ax[0, 0])
+    plot_contours(seg_fixed, color="chartreuse", ax=ax[0, 0])
     ax[0, 1].set_title("Warped moving segmentation")
     ax[0, 1].imshow(warped_seg_moving_np, cmap="gray")
     plt.subplot(2, 2, 3)
@@ -130,14 +135,10 @@ def evaluate_registration_with_seg(
     ax[1, 1].set_title(
         "Green : Fixed segmentation, Magenta : Warped moving segmentation"
     )
-    seg_moving = np.where(seg_moving > 0, 1, 0)
-    seg_fixed = np.where(seg_fixed > 0, 1, 0)
-    warped_seg_moving_np = np.where(warped_seg_moving_np > 0, 1, 0)
-    ax[1, 1].set_facecolor("black")
-    # ax[1, 1].contour(seg_moving, levels=[0.5], colors="red", alpha=0.7, linewidths=0.5)
-    ax[1, 1].contour(seg_fixed, levels=[0.5], colors="chartreuse", linewidths=1)
-    ax[1, 1].contour(warped_seg_moving_np, levels=[0.5], colors="magenta", linewidths=1)
-    ax[1, 1].invert_yaxis()
+    black_background = np.zeros(fixed.shape)
+    ax[1, 1].imshow(black_background, cmap="gray")
+    plot_contours(seg_fixed, color="chartreuse", ax=ax[1, 1])
+    plot_contours(warped_seg_moving_np, color="magenta", ax=ax[1, 1])
     return score, fig
 
 
@@ -580,7 +581,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/voxelmorph/output_20260728_154447",  # "outputs/flowseg/output_20260720_140401"
+        default="outputs/transflowseg/output_20260804_202152",  # "outputs/flowseg/output_20260720_140401"
         help="Directory to find model and to save results",
     )
     parser.add_argument(
