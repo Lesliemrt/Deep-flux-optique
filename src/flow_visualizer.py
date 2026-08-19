@@ -250,6 +250,7 @@ class FlowVisualizer:
         self.n_frames = len(video)
         self.colors = _colors
         self.scale = 1
+        self._frame_id = 0
         if self.grid_type not in ("uniform", "personalized"):
             raise ValueError(
                 f"grid_type should be either 'uniform' or 'personalized', got {self.grid_type}"
@@ -265,8 +266,8 @@ class FlowVisualizer:
         elif self.grid_type == "personalized":
             self._grid = self.personnalized_grid()
         self.points = self._grid.copy()
+        print("points shape", self.points.shape)
 
-        self._frame_id = 0
         self._running = False
 
     def run(self, frame_id=0, fps=20) -> None:
@@ -384,9 +385,13 @@ class FlowVisualizer:
             mask = mask == label
             contour = find_contours(mask, level=0.5)
             # contour[:, 1] = X, contour[:, 0] = Y
-            step = max(1, len(contour) // 10)  # Sample at most 10 points per contour
+            step = 1  # Sample at most 10 points per contour
             sampled_contour = contour[::step]
-            cells_points.append(sampled_contour)
+
+            for point in sampled_contour:
+                cells_points.append(point[0])
+                cells_points.append(point[1])
+            cells_points = np.array(cells_points, dtype=np.float64)
         return cells_points
 
 
