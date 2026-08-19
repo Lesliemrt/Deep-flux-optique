@@ -374,21 +374,26 @@ class FlowVisualizer:
         """Set a personnalized grid with points only at the border of cells."""
         start_frame = self.video[self._frame_id]
         model = models.CellposeModel(gpu=True)
-        mask, _, _ = model.eval(start_frame, flow_threshold=0.4, cellprob_threshold=0.0)
+        seg, _, _ = model.eval(
+            start_frame, flow_threshold=0.4, cellprob_threshold=0.0
+        )  # TODO pb segmentation
 
-        labels = np.unique(mask)
+        labels = np.unique(seg)
         cells_points = []
 
+        # Y a 2 labels ?!
         for label in labels:
             if label == 0:
                 continue
-            mask = mask == label
+            mask = seg == label
             contour = find_contours(mask, level=0.5)
             # contour[:, 1] = X, contour[:, 0] = Y
             step = 1  # Sample at most 10 points per contour
             sampled_contour = contour[::step]
 
-            for point in sampled_contour:
+            print("sampled_contour shape", len(sampled_contour))
+
+            for point in contour:
                 cells_points.append(point[0])
                 cells_points.append(point[1])
             cells_points = np.array(cells_points, dtype=np.float64)
