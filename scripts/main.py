@@ -40,7 +40,7 @@ from my_utils import configs
 if __name__ == "__main__":
     seeds = [42, 123, 456, 54321, 98765]
     model = ["flowseg", "voxelmorph", "transflowseg", "transmorph2d", "tvl1"]
-    datasets = ["U373", "GOWT", "HELA", "MUSC", "HSC"]
+    datasets = ["MUSC"]
 
     base_train_args = {
         "mlflow": False,
@@ -61,7 +61,6 @@ if __name__ == "__main__":
         "background": False,
         "background_param": 0.01,
         "pyramidal": False,
-        "multiple_videos": False,
     }
 
     base_test_args = {
@@ -136,6 +135,7 @@ if __name__ == "__main__":
                     "model_type": model_name,
                     "max_gap": max_gap,
                     "multiplier": multiplier,
+                    "multiple_videos": True,
                 }
 
                 train_args = argparse.Namespace(

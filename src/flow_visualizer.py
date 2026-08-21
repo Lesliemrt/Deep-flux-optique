@@ -324,9 +324,12 @@ class FlowVisualizer:
                 draw = cv2.resize(draw, None, fx=self.scale, fy=self.scale)
 
             for k, (i, j) in enumerate(self.points * self.scale):
-                cv2.circle(
-                    draw, (round(j), round(i)), 3, self.colors[k % len(self.colors)]
+                color = (
+                    self.colors[k % len(self.colors)]
+                    if self.grid_type == "uniform"
+                    else (255, 0, 0)
                 )
+                cv2.circle(draw, (round(j), round(i)), 3, color)
 
             # Display the resulting frame
             cv2.imshow(self.window_name, np.flip(draw, 2))
@@ -381,22 +384,22 @@ class FlowVisualizer:
         labels = np.unique(seg)
         cells_points = []
 
-        # Y a 2 labels ?!
         for label in labels:
+            print("label", label)
             if label == 0:
                 continue
             mask = seg == label
-            contour = find_contours(mask, level=0.5)
+            contour = find_contours(mask)
             # contour[:, 1] = X, contour[:, 0] = Y
-            step = 1  # Sample at most 10 points per contour
-            sampled_contour = contour[::step]
+            step = 10
+            sampled_contour = contour[0][::step]
 
-            print("sampled_contour shape", len(sampled_contour))
-
-            for point in contour:
-                cells_points.append(point[0])
-                cells_points.append(point[1])
-            cells_points = np.array(cells_points, dtype=np.float64)
+            for point in sampled_contour:
+                print(point[0])
+                print(type(point))
+                print(type(cells_points))
+                cells_points.append(point)
+        cells_points = np.array(cells_points, dtype=np.float64)
         return cells_points
 
 
