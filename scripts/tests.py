@@ -583,7 +583,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/transflowseg/output_20260728_084107",  # "outputs/flowseg/output_20260720_140401"
+        default="outputs/voxelmorph/output_20260728_140843",  # "outputs/flowseg/output_20260720_140401"
         help="Directory to find model and to save results",
     )
     parser.add_argument(
