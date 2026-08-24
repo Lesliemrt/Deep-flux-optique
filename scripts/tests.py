@@ -301,7 +301,7 @@ def register_video(args):
     results = []
     flow_maps = {}
     video = []  # list of frames to visualize the flow maps on (only for gap=1 and if args.visualize is True)
-    for idx in range(min((len(frames_path_list) - args.gap), 100)):
+    for idx in range(170, min((len(frames_path_list) - args.gap), 200)):
         result = {}
         # Load moving and fixed images
         idx2 = idx + args.gap
@@ -557,13 +557,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--video_path",
-        default=configs.TEST_DATA_GOWT,
+        default=configs.TEST_DATA_HSC,
         help="Moving image (source) filename",
     )
     parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
-        default=configs.TEST_SEG_DATA_GOWT,
+        default=configs.TEST_SEG_DATA_HSC,
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
@@ -583,7 +583,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/voxelmorph/output_20260728_140843",  # "outputs/flowseg/output_20260720_140401"
+        default="outputs/transmorph2d/output_20260729_221205",  # "outputs/flowseg/output_20260720_140401"
         help="Directory to find model and to save results",
     )
     parser.add_argument(
