@@ -38,9 +38,10 @@ from train_cells import train
 from my_utils import configs
 
 if __name__ == "__main__":
-    seeds = [42, 123, 456, 54321, 98765]
+    # seeds = [42, 123, 456, 54321, 98765]
+    seeds = [42]
     model = ["flowseg", "voxelmorph", "transflowseg", "transmorph2d", "tvl1"]
-    datasets = ["MUSC"]
+    datasets = ["GOWT"]
 
     base_train_args = {
         "mlflow": False,
