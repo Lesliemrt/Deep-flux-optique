@@ -179,12 +179,12 @@ def evaluate_segmentation(segmentation_pred, segmentation_gt, img_moving):
     dice = vxm.py.utils.dice(seg_pred, seg_gt, include_zero=False)
     score["dice_segmentation"] = np.mean(dice)
     # To visulaise seg evaluation
-    fig = plt.figure(figsize=(12, 6))
-    plt.subplot(1, 2, 1)
+    fig = plt.figure(figsize=(6, 6))
     plt.title("Segmentation prediction vs GT")
     plt.imshow(img_moving, cmap="gray")
     plot_contours(seg_pred, "magenta")
     plot_contours(seg_gt, "chartreuse")
+    plt.axis("off")
     return score, fig
 
 
@@ -433,7 +433,7 @@ def register_video(args):
                     continue
                 score_pair, fig = eval_seg_res
                 result.update(score_pair)
-                # fig.savefig(viz_dir / f"segmentation_result_for_{idx}.png")
+                fig.savefig(viz_dir / f"segmentation_result_for_{idx}.png")
                 if mlflow.active_run():
                     mlflow.log_figure(
                         fig, artifact_file=f"segmentation_result_for_{idx}.png"
@@ -556,13 +556,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--video_path",
-        default=configs.TEST_DATA_HSC,
+        default=configs.TEST_DATA_U373,
         help="Moving image (source) filename",
     )
     parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
-        default=configs.TEST_SEG_DATA_HSC,
+        default=configs.TEST_SEG_DATA_U373,
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
@@ -582,7 +582,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/transmorph2d/output_20260729_221205",  # "outputs/flowseg/output_20260720_140401"
+        default="outputs/transflowseg/output_20260731_181631",  # "outputs/flowseg/output_20260720_140401"
         help="Directory to find model and to save results",
     )
     parser.add_argument(
