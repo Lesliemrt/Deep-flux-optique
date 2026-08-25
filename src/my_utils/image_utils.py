@@ -171,20 +171,6 @@ class NormalizeMinMax(nn.Module):
         return (x - self.min) / (self.max - self.min + self.eps)
 
 
-if __name__ == "__main__":
-    img = tiff.imread(
-        "data/train_data/Fluo-N2DH-GOWT1_train/01_ERR_SEG_TRA/relabeled_00.tif"
-    )
-    hm = mask_to_gaussian(img, sigma_scale=0.5)
-
-    plt.figure(figsize=(16, 8))
-    plt.subplot(1, 2, 1)
-    plt.imshow(img, cmap="gray")
-    plt.subplot(1, 2, 2)
-    plt.imshow(hm, cmap="hot")
-    plt.show()
-
-
 def plot_contours(seg, color, ax=None):
     if ax is None:
         ax = plt.gca()
@@ -199,3 +185,17 @@ def plot_contours(seg, color, ax=None):
         for contour in contours:
             # contour[:, 1] = X, contour[:, 0] = Y
             ax.plot(contour[:, 1], contour[:, 0], color=color, linewidth=1)
+
+
+if __name__ == "__main__":
+    img = tiff.imread(
+        "data/train_data/Fluo-N2DH-GOWT1_train/01_ERR_SEG_TRA/relabeled_00.tif"
+    )
+    hm = mask_to_gaussian(img, sigma_scale=0.5)
+
+    plt.figure(figsize=(16, 8))
+    plt.subplot(1, 2, 1)
+    plt.imshow(img, cmap="gray")
+    plt.subplot(1, 2, 2)
+    plt.imshow(hm, cmap="hot")
+    plt.show()

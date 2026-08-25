@@ -166,7 +166,7 @@ def evaluate_registration(moving, fixed, displacement):
     return score
 
 
-def evaluate_segmentation(segmentation_pred, segmentation_gt):
+def evaluate_segmentation(segmentation_pred, segmentation_gt, img_moving):
     """Evaluate the segmentation results."""
     score = {}
     # Load segmentation masks
@@ -179,13 +179,12 @@ def evaluate_segmentation(segmentation_pred, segmentation_gt):
     dice = vxm.py.utils.dice(seg_pred, seg_gt, include_zero=False)
     score["dice_segmentation"] = np.mean(dice)
     # To visulaise seg evaluation
-    fig, ax = plt.subplots(1, 2, figsize=(12, 6))
+    fig = plt.figure(figsize=(12, 6))
     plt.subplot(1, 2, 1)
-    ax[0].set_title("Segmentation prediction")
-    ax[0].imshow(seg_pred, cmap="gray")
-    plt.subplot(1, 2, 2)
-    ax[1].set_title("Segmentation Ground Truth")
-    ax[1].imshow(seg_gt, cmap="gray")
+    plt.title("Segmentation prediction vs GT")
+    plt.imshow(img_moving, cmap="gray")
+    plot_contours(seg_pred, "magenta")
+    plot_contours(seg_gt, "chartreuse")
     return score, fig
 
 
@@ -428,7 +427,7 @@ def register_video(args):
             # ------------------------- SEGMENTATION EVALUATION ------------------------------------
             if "source_segmentation" in res:
                 eval_seg_res = evaluate_segmentation(
-                    source_seg_pred.squeeze().cpu().numpy(), seg_moving
+                    source_seg_pred.squeeze().cpu().numpy(), seg_moving, moving
                 )
                 if eval_seg_res is None:
                     continue
