@@ -391,7 +391,7 @@ class FlowVisualizer:
             mask = seg == label
             contour = find_contours(mask)
             # contour[:, 1] = X, contour[:, 0] = Y
-            step = 10
+            step = 1
             sampled_contour = contour[0][::step]
 
             for point in sampled_contour:
