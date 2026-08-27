@@ -1,25 +1,21 @@
-# personnal tetst file # noqa: INP001
-"""Example script to test registration of frames of a video with VoxelMorph models."""
+"""Grid search for tvl1."""
 
 # Core library imports
 import argparse
 import json
-import os
-import sys
 from pathlib import Path
 
 import numpy as np
-from skimage.registration import optical_flow_tvl1
 import tifffile as tiff
 
 # Third-party imports
 import torch
+from skimage.registration import optical_flow_tvl1
 from tqdm import tqdm
 
+from my_utils import image_utils, spatial_transform
+
 # Local imports
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
-)  # noqa: PTH100, PTH118, PTH120
 from my_utils.configs import (
     HEIGHT,
     TRAIN_DATA,
@@ -27,15 +23,13 @@ from my_utils.configs import (
     WIDTH,
     device,
 )
-from my_utils.image_utils import interpole_and_pad, normalisation_params, normalise
-import voxelmorph_folder.voxelmorph as vxm
 
 
 def evaluate_registration(segmentation_moving, segmentation_fixed, field):
     """Evaluate the registration results."""
     # Load segmentation masks
-    seg_moving = interpole_and_pad(segmentation_moving, [HEIGHT, WIDTH])
-    seg_fixed = interpole_and_pad(segmentation_fixed, [HEIGHT, WIDTH])
+    seg_moving = image_utils.interpole_and_pad(segmentation_moving, [HEIGHT, WIDTH])
+    seg_fixed = image_utils.interpole_and_pad(segmentation_fixed, [HEIGHT, WIDTH])
     # Take only pairs of frame with same nbr of cells (to have max dice = 1 in case of disappaering cell in vid)
     moving_labels = set(np.unique([seg_moving]))
     fixed_labels = set(np.unique([seg_fixed]))
@@ -45,12 +39,12 @@ def evaluate_registration(segmentation_moving, segmentation_fixed, field):
     tensor_seg_moving = (
         torch.from_numpy(seg_moving).to(device).float().unsqueeze(0).unsqueeze(0)
     )
-    spatial_transformer = vxm.nn.modules.SpatialTransformer(
+    spatial_transformer = spatial_transform.SpatialTransformer(
         interpolation_mode="nearest"
     ).to(device)
     warped_seg_moving = spatial_transformer(tensor_seg_moving, field)
     # Compute Dice score
-    dice = vxm.py.utils.dice(
+    dice = image_utils.dice(
         warped_seg_moving.squeeze().cpu().numpy(), seg_fixed, include_zero=False
     )
 
@@ -65,14 +59,14 @@ def gridsearch(args):
     args : argparse.Namespace
         Commandline arguments.
     """
-    print(f"Using device: {device}")  # noqa: T201
+    print(f"Using device: {device}")
 
     # 1. Load video and segmentations frames
     frames_path_list = sorted(Path(args.video_path).iterdir())
     seg_path_list = (
         (sorted(Path(args.seg_path).iterdir())) if args.seg_path is not None else None
     )
-    global_min, global_max = normalisation_params(frames_path_list)
+    global_min, global_max = image_utils.normalisation_params(frames_path_list)
 
     # Create output directory if it doesn't exist
     results_dir = Path("outputs/tvl1")
@@ -90,7 +84,7 @@ def gridsearch(args):
         for tight in tightness:
             for num in num_warp:
                 print(
-                    f"Running grid search with attachement={attachement}, tightness={tight}, num_warp={num}"  # noqa: T201
+                    f"Running grid search with attachement={attachement}, tightness={tight}, num_warp={num}"
                 )
                 args.attachement = attachement
                 args.tightness = tight
@@ -106,14 +100,22 @@ def gridsearch(args):
                     moving = tiff.imread(frames_path_list[idx])
                     fixed = tiff.imread(frames_path_list[idx2])
 
-                    # 3. Compute registration
+                    # Compute registration
                     # Interpole/Pad images to HEIGHT, WIDTH if needed
-                    moving_resized = interpole_and_pad(moving, [HEIGHT, WIDTH])
-                    fixed_resized = interpole_and_pad(fixed, [HEIGHT, WIDTH])
+                    moving_resized = image_utils.interpole_and_pad(
+                        moving, [HEIGHT, WIDTH]
+                    )
+                    fixed_resized = image_utils.interpole_and_pad(
+                        fixed, [HEIGHT, WIDTH]
+                    )
 
                     # Normalisation
-                    input_moving = normalise(moving_resized, global_min, global_max)
-                    input_fixed = normalise(fixed_resized, global_min, global_max)
+                    input_moving = image_utils.normalise(
+                        moving_resized, global_min, global_max
+                    )
+                    input_fixed = image_utils.normalise(
+                        fixed_resized, global_min, global_max
+                    )
 
                     # Predict
                     field = optical_flow_tvl1(
@@ -127,7 +129,7 @@ def gridsearch(args):
                         torch.from_numpy(field).float().to(device).unsqueeze(0)
                     )
 
-                    # 4. Evaluation for the pair
+                    # Evaluation for the pair
                     # Load segmentation masks
                     seg_moving = tiff.imread(seg_path_list[idx])
                     seg_fixed = tiff.imread(seg_path_list[idx2])

@@ -10,7 +10,6 @@ import sys
 from pathlib import Path
 
 os.environ["NEURITE_BACKEND"] = "pytorch"
-os.environ["VXM_BACKEND"] = "pytorch"
 
 # Third-party imports
 import datetime
@@ -23,15 +22,7 @@ from cellpose import models
 from cellpose.io import imread
 
 # Local imports
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
-)
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-sys.path.append(
-    os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "voxelmorph_folder"
-    )
-)
 from tests import register_video
 from train_cells import train
 

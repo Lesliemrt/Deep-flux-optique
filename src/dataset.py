@@ -1,11 +1,7 @@
 # Core library imports
-import os
 import random
-import sys
 from pathlib import Path
 
-os.environ["NEURITE_BACKEND"] = "pytorch"
-os.environ["VXM_BACKEND"] = "pytorch"
 # Third-party imports
 import numpy as np
 import tifffile as tiff
@@ -15,22 +11,11 @@ from torch.utils.data import Dataset
 from torchvision.transforms import v2
 
 # Local imports
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
-)
 from my_utils.configs import (
     HEIGHT,
-    TRAIN_DATA_GOWT,  # noqa: F401
-    TRAIN_DATA_HSC,  # noqa: F401
-    TRAIN_DATA_MUSC,  # noqa: F401
-    TRAIN_SEG_DATA_GOWT,  # noqa: F401
-    TRAIN_SEG_DATA_HSC,  # noqa: F401
-    TRAIN_SEG_DATA_MUSC,  # noqa: F401
     WIDTH,
 )
 from my_utils.image_utils import interpole_and_pad
-
-# import voxelmorph_folder.voxelmorph as vxm
 
 
 class NormalizeMinMax(nn.Module):

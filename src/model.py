@@ -7,10 +7,10 @@ from collections.abc import Sequence
 import neurite as ne
 import torch
 import torch.nn.functional as F
-import voxelmorph as vxm
 from torch import nn
 
 from model_transformer import TransFlowSegUNet, TransMorph2D
+from my_utils import spatial_transform
 
 
 class ConvBlock(nn.Module):
@@ -739,7 +739,9 @@ class WarperVxm(nn.Module):
         self._init_flow_layer(ndim, self.flow_initializer)
 
         # Initialize the spatial transformer
-        self.spatial_transformer = vxm.nn.modules.SpatialTransformer().to(self.device)
+        self.spatial_transformer = spatial_transform.SpatialTransformer().to(
+            self.device
+        )
 
     def forward(
         self,

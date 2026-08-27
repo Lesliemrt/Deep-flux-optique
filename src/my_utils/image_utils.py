@@ -5,11 +5,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy
 import tifffile as tiff
-import voxelmorph as vxm
 from skimage.measure import find_contours, regionprops
 from torch import nn
 
-from my_utils.flow_viz import flow_to_image  # code from raft
+from my_utils.flow_viz import flow_to_image
 
 
 def normalisation_params(frames_path_list):
@@ -35,7 +34,24 @@ def interpole_and_pad(image, target_shape=(1024, 1024)):
             target_shape[1] / image.shape[1],
         ]
         image = scipy.ndimage.interpolation.zoom(image, dim_factors, order=0)
-    return vxm.py.utils.pad(image, target_shape)[0]
+    return pad(image, target_shape)[0]
+
+
+def pad(array, shape):
+    """
+    Zero-pads an array to a given shape. Returns the padded array and crop slices.
+    """
+    if array.shape == tuple(shape):
+        return array, ...
+
+    padded = np.zeros(shape, dtype=array.dtype)
+    offsets = [int((p - v) / 2) for p, v in zip(shape, array.shape)]
+    slices = tuple(
+        [slice(offset, l + offset) for offset, l in zip(offsets, array.shape)]
+    )
+    padded[slices] = array
+
+    return padded, slices
 
 
 def create_grid(shape, spacing=20):
@@ -67,6 +83,31 @@ def iou(array1, array2, labels=None, include_zero=False):
         bottom = np.sum(np.logical_or(array1 == label, array2 == label))
         ioum[idx] = top / bottom if bottom > 0 else 0.0
     return ioum
+
+
+def dice(array1, array2, labels=None, include_zero=False):
+    """
+    Computes the dice overlap between two arrays for a given set of integer labels.
+
+    Parameters:
+        array1: Input array 1.
+        array2: Input array 2.
+        labels: List of labels to compute dice on. If None, all labels will be used.
+        include_zero: Include label 0 in label list. Default is False.
+    """
+    if labels is None:
+        labels = np.concatenate([np.unique(a) for a in [array1, array2]])
+        labels = np.sort(np.unique(labels))
+    if not include_zero:
+        labels = np.delete(labels, np.argwhere(labels == 0))
+
+    dicem = np.zeros(len(labels))
+    for idx, label in enumerate(labels):
+        top = 2 * np.sum(np.logical_and(array1 == label, array2 == label))
+        bottom = np.sum(array1 == label) + np.sum(array2 == label)
+        bottom = np.maximum(bottom, np.finfo(float).eps)  # add epsilon
+        dicem[idx] = top / bottom
+    return dicem
 
 
 def relabel_cells(array, with_labels):

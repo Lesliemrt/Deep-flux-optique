@@ -9,6 +9,7 @@ pp 1788-1800. 2019.
 
 # Core library imports
 import argparse
+import datetime
 import json
 import os
 import sys
@@ -16,9 +17,6 @@ from collections.abc import Sequence
 from pathlib import Path
 
 os.environ["NEURITE_BACKEND"] = "pytorch"
-os.environ["VXM_BACKEND"] = "pytorch"
-# Third-party imports
-import datetime
 
 import matplotlib.pyplot as plt
 import mlflow
@@ -30,21 +28,10 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 # Local imports
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
-)
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-sys.path.append(
-    os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "voxelmorph_folder"
-    )
-)
-import voxelmorph as vxm
-
 from dataset import VxmMultipleVideoDataset, VxmVideoDataset
 from model import WarperVxm
-from my_utils import configs
-from my_utils.image_utils import linear_augment
+from my_utils import configs, image_utils, spatial_transform
 
 # for reproductability
 torch.manual_seed(configs.SEED)
@@ -151,7 +138,7 @@ def train_epoch(
         optimizer.zero_grad()
 
         # Define warper for later use #TODO : mettre or de cette fonoction ou créer classe
-        spatial_transformer = vxm.nn.modules.SpatialTransformer(
+        spatial_transformer = spatial_transform.SpatialTransformer(
             interpolation_mode="linear"
         ).to(configs.device)
 
@@ -202,7 +189,7 @@ def train_epoch(
                 displacement, warped_displacement_bwd
             )
             # Add a progressiv weight to loss (start at 0, max at loss_weights[4])
-            cycle_weight = linear_augment(
+            cycle_weight = image_utils.linear_augment(
                 start=5, end=15, max_weight=loss_weights[4], epoch=epoch
             )
             loss += cycle_weight * cycle_loss

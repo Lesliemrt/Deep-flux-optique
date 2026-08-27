@@ -9,7 +9,6 @@ pp 1788-1800. 2019."""
 import argparse
 import datetime
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -18,34 +17,14 @@ import matplotlib.pyplot as plt
 import mlflow
 import numpy as np
 import tifffile as tiff
-
-# Third-party imports
 import torch
 
 # Local imports
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
-)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-sys.path.append(
-    os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "voxelmorph_folder"
-    )
-)
-import voxelmorph as vxm
-
 from flow_visualizer import FlowVisualizer
 from model import WarperVxm
-from my_utils import configs
-from my_utils.image_utils import (
-    interpole_and_pad,
-    iou,
-    normalisation_params,
-    normalise,
-    plot_contours,
-)
-
-# from raft import RAFT
+from my_utils import configs, image_utils
+from my_utils.spatial_transform import SpatialTransformer
 from register_cells_old import (
     register_pair,
     register_pair_fb,
@@ -68,8 +47,12 @@ def evaluate_registration_with_seg(
     """Evaluate the registration results."""
     score = {}
     # Load segmentation masks
-    seg_moving = interpole_and_pad(segmentation_moving, [configs.HEIGHT, configs.WIDTH])
-    seg_fixed = interpole_and_pad(segmentation_fixed, [configs.HEIGHT, configs.WIDTH])
+    seg_moving = image_utils.interpole_and_pad(
+        segmentation_moving, [configs.HEIGHT, configs.WIDTH]
+    )
+    seg_fixed = image_utils.interpole_and_pad(
+        segmentation_fixed, [configs.HEIGHT, configs.WIDTH]
+    )
 
     # Warp moving segmentation with the predicted displacement
     tensor_seg_moving = (
@@ -79,9 +62,9 @@ def evaluate_registration_with_seg(
         .unsqueeze(0)
         .unsqueeze(0)
     )
-    spatial_transformer = vxm.nn.modules.SpatialTransformer(
-        interpolation_mode="nearest"
-    ).to(configs.device)
+    spatial_transformer = SpatialTransformer(interpolation_mode="nearest").to(
+        configs.device
+    )
     warped_seg_moving = spatial_transformer(tensor_seg_moving, displacement)
     warped_seg_moving_np = warped_seg_moving.squeeze().cpu().numpy()
 
@@ -93,15 +76,15 @@ def evaluate_registration_with_seg(
         score = None
     else:
         # Compute Dice score only for pairs of frames with same number of cells
-        dice = vxm.py.utils.dice(warped_seg_moving_np, seg_fixed, include_zero=False)
-        ref_dice = vxm.py.utils.dice(
+        dice = image_utils.dice(warped_seg_moving_np, seg_fixed, include_zero=False)
+        ref_dice = image_utils.dice(
             seg_moving, seg_fixed, include_zero=False
         )  # reference dice to compare with the dice after registration
         score["dice"] = np.mean(dice)
         score["ref_dice"] = np.mean(ref_dice)
         # Compute IoU score only for pairs of frames with same number of cells
-        iou_score = iou(warped_seg_moving_np, seg_fixed, include_zero=False)
-        ref_iou_score = iou(
+        iou_score = image_utils.iou(warped_seg_moving_np, seg_fixed, include_zero=False)
+        ref_iou_score = image_utils.iou(
             seg_moving, seg_fixed, include_zero=False
         )  # reference iou to compare with the iou after registration
         score["iou"] = np.mean(iou_score)
@@ -119,8 +102,8 @@ def evaluate_registration_with_seg(
     ax[0, 0].imshow(fixed, cmap="gray")
     # ax[0, 0].contour(seg_moving, levels=[0.5], colors="red", alpha=0.7, linewidths=1)
     # ax[0, 0].contour(seg_fixed, levels=[0.5], colors="chartreuse", linewidths=1)
-    plot_contours(seg_moving, color="red", ax=ax[0, 0])
-    plot_contours(seg_fixed, color="chartreuse", ax=ax[0, 0])
+    image_utils.plot_contours(seg_moving, color="red", ax=ax[0, 0])
+    image_utils.plot_contours(seg_fixed, color="chartreuse", ax=ax[0, 0])
     ax[0, 1].set_title("Warped moving segmentation")
     ax[0, 1].imshow(warped_seg_moving_np, cmap="gray")
     plt.subplot(2, 2, 3)
@@ -137,8 +120,8 @@ def evaluate_registration_with_seg(
     )
     black_background = np.zeros(fixed.shape)
     ax[1, 1].imshow(black_background, cmap="gray")
-    plot_contours(seg_fixed, color="chartreuse", ax=ax[1, 1])
-    plot_contours(warped_seg_moving_np, color="magenta", ax=ax[1, 1])
+    image_utils.plot_contours(seg_fixed, color="chartreuse", ax=ax[1, 1])
+    image_utils.plot_contours(warped_seg_moving_np, color="magenta", ax=ax[1, 1])
     return score, fig
 
 
@@ -146,15 +129,15 @@ def evaluate_registration(moving, fixed, displacement):
     """Evaluate the registration results with MSE : not relevant (ideally find another method to evaluate the visual aspect)."""
     score = {}
     # Load segmentation masks
-    moving = interpole_and_pad(moving, [configs.HEIGHT, configs.WIDTH])
-    fixed = interpole_and_pad(fixed, [configs.HEIGHT, configs.WIDTH])
+    moving = image_utils.interpole_and_pad(moving, [configs.HEIGHT, configs.WIDTH])
+    fixed = image_utils.interpole_and_pad(fixed, [configs.HEIGHT, configs.WIDTH])
     # Warp moving with the predicted displacement
     tensor_moving = (
         torch.from_numpy(moving).to(configs.device).float().unsqueeze(0).unsqueeze(0)
     )
-    spatial_transformer = vxm.nn.modules.SpatialTransformer(
-        interpolation_mode="linear"
-    ).to(configs.device)
+    spatial_transformer = SpatialTransformer(interpolation_mode="linear").to(
+        configs.device
+    )
     warped_moving = spatial_transformer(tensor_moving, displacement)
     # Compute RMSE score
     rmse = np.sqrt(np.mean((fixed - warped_moving.squeeze().cpu().numpy()) ** 2))
@@ -170,20 +153,24 @@ def evaluate_segmentation(segmentation_pred, segmentation_gt, img_moving):
     """Evaluate the segmentation results."""
     score = {}
     # Load segmentation masks
-    seg_pred = interpole_and_pad(segmentation_pred, [configs.HEIGHT, configs.WIDTH])
-    seg_gt = interpole_and_pad(segmentation_gt, [configs.HEIGHT, configs.WIDTH])
+    seg_pred = image_utils.interpole_and_pad(
+        segmentation_pred, [configs.HEIGHT, configs.WIDTH]
+    )
+    seg_gt = image_utils.interpole_and_pad(
+        segmentation_gt, [configs.HEIGHT, configs.WIDTH]
+    )
     # Binarise
     seg_gt = seg_gt > 0
     seg_pred = (seg_pred > 0.5).astype(int)
     # Compute Dice score
-    dice = vxm.py.utils.dice(seg_pred, seg_gt, include_zero=False)
+    dice = image_utils.dice(seg_pred, seg_gt, include_zero=False)
     score["dice_segmentation"] = np.mean(dice)
     # To visulaise seg evaluation
     fig = plt.figure(figsize=(6, 6))
     plt.title("Segmentation prediction vs GT")
     plt.imshow(img_moving, cmap="gray")
-    plot_contours(seg_pred, "magenta")
-    plot_contours(seg_gt, "chartreuse")
+    image_utils.plot_contours(seg_pred, "magenta")
+    image_utils.plot_contours(seg_gt, "chartreuse")
     plt.axis("off")
     return score, fig
 
@@ -262,7 +249,7 @@ def register_video(args):
     seg_path_list = (
         (sorted(Path(args.seg_path).iterdir())) if args.seg_path is not None else None
     )
-    global_min, global_max = normalisation_params(frames_path_list)
+    global_min, global_max = image_utils.normalisation_params(frames_path_list)
 
     # MLFLOW
     if (
@@ -309,11 +296,11 @@ def register_video(args):
         moving = tiff.imread(frames_path_list[idx])
         fixed = tiff.imread(frames_path_list[idx2])
         # Interpole/Pad images to HEIGHT, WIDTH if needed
-        moving = interpole_and_pad(moving, [configs.HEIGHT, configs.WIDTH])
-        fixed = interpole_and_pad(fixed, [configs.HEIGHT, configs.WIDTH])
+        moving = image_utils.interpole_and_pad(moving, [configs.HEIGHT, configs.WIDTH])
+        fixed = image_utils.interpole_and_pad(fixed, [configs.HEIGHT, configs.WIDTH])
         # Normalise
-        moving = normalise(moving, global_min, global_max)
-        fixed = normalise(fixed, global_min, global_max)
+        moving = image_utils.normalise(moving, global_min, global_max)
+        fixed = image_utils.normalise(fixed, global_min, global_max)
         # 3. Compute registration
         if (
             args.model_type == "voxelmorph"

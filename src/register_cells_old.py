@@ -5,9 +5,6 @@ The source and target input images are expected to be affinely registered.
 """  # noqa: EXE001
 
 # Core library imports
-import os
-import sys
-
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -17,13 +14,9 @@ from PIL import Image
 from skimage.registration import optical_flow_tvl1
 
 # Local imports
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "raft", "core"))
-)
-import voxelmorph as vxm
-
 from my_utils.configs import device
 from my_utils.image_utils import viz
+from my_utils.spatial_transform import SpatialTransformer
 
 
 def register_pair(moving, fixed, model, global_min, global_max):
@@ -213,9 +206,7 @@ def register_pair_tvl1(moving, fixed, global_min, global_max):
         num_warp=1,
     )  # Best params from grid search on the training set
     # Same way as voxelmorph
-    spatial_transformer = vxm.nn.modules.SpatialTransformer(
-        interpolation_mode="bilinear"
-    ).to(device)
+    spatial_transformer = SpatialTransformer(interpolation_mode="bilinear").to(device)
     tensor_displacement = torch.from_numpy(displacement).float().to(device).unsqueeze(0)
     moved = spatial_transformer(tensor_moving, tensor_displacement)
     #  moving_image : torch.Tensor shape: (B, C, *spatial_dims), deformation_field : torch.Tensor shape: (B, ndim, *spatial_dims).
@@ -298,9 +289,7 @@ def register_pair_raft(moving_path, fixed_path, model, global_min, global_max):
         )
     tensor_displacement = torch.flip(tensor_displacement, dims=[1])
 
-    spatial_transformer = vxm.nn.modules.SpatialTransformer(
-        interpolation_mode="bilinear"
-    ).to(device)
+    spatial_transformer = SpatialTransformer(interpolation_mode="bilinear").to(device)
     moved = spatial_transformer(input_moving, tensor_displacement)
 
     fig, ax = plt.subplots(2, 2, figsize=(12, 12))
@@ -373,9 +362,7 @@ def register_pair_fb(moving, fixed, model, global_min, global_max):
     displacement = model.calc(
         input_fixed, input_moving, None
     )  # prev = fixed, next = moving)
-    spatial_transformer = vxm.nn.modules.SpatialTransformer(
-        interpolation_mode="bilinear"
-    ).to(device)
+    spatial_transformer = SpatialTransformer(interpolation_mode="bilinear").to(device)
     tensor_displacement = (
         torch.from_numpy(displacement)
         .float()
