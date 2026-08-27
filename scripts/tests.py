@@ -520,7 +520,7 @@ def register_video(args):
 
     if args.visualize:
         visualizer = FlowVisualizer(
-            video, flow_maps, grid_step=20, gap=args.gap, grid_type="personalized"
+            video, flow_maps, grid_step=10, gap=args.gap, grid_type="uniform"
         )
         visualizer.run()
 
