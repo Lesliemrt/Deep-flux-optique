@@ -1,3 +1,19 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deepfluxoptique"
+version = "0.0.1"
+authors = [
+    {name = "Leslie Murat"}
+]
+description = "Deep flux optique"
+readme = "README.md"
+license = { file = "LICENSE"}
+
+
+
 [tool.ruff]
 line-length = 120
 indent-width = 4
@@ -35,18 +51,11 @@ lint.pep8-naming.ignore-names = [
 ]
 lint.pydocstyle.convention = "google"
 lint.pylint.max-args = 8
-
+lint.pylint.max-statements = 75
 
 [tool.mypy]
 enable_error_code = ["ignore-without-code"]
 check_untyped_defs = true
-
-[tool.ruff.lint.pylint]
-max-statements = 75
-
-[build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]

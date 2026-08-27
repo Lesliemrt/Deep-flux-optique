@@ -6,9 +6,6 @@ from pathlib import Path
 import numpy as np
 import tifffile as tiff
 import torch
-from torch import nn
-from torch.utils.data import Dataset
-from torchvision.transforms import v2
 
 # Local imports
 from my_utils.configs import (
@@ -16,6 +13,9 @@ from my_utils.configs import (
     WIDTH,
 )
 from my_utils.image_utils import interpole_and_pad
+from torch import nn
+from torch.utils.data import Dataset
+from torchvision.transforms import v2
 
 
 class NormalizeMinMax(nn.Module):
