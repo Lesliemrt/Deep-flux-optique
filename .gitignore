@@ -36,6 +36,8 @@ data.tar.gz
 fs_rgb.npy
 **/*.tif
 data/*
+deep-flux-optique/data/*
+deep-flux-optique/*
 TODOs
 voxelmorph-sandbox/
 th_*
