@@ -8,7 +8,7 @@ import tifffile as tiff
 from skimage.measure import find_contours, regionprops
 from torch import nn
 
-from my_utils.flow_viz import flow_to_image
+from deepfluxoptique.my_utils.flow_viz import flow_to_image
 
 
 def normalisation_params(frames_path_list):
@@ -46,9 +46,7 @@ def pad(array, shape):
 
     padded = np.zeros(shape, dtype=array.dtype)
     offsets = [int((p - v) / 2) for p, v in zip(shape, array.shape)]
-    slices = tuple(
-        [slice(offset, l + offset) for offset, l in zip(offsets, array.shape)]
-    )
+    slices = tuple([slice(offset, l + offset) for offset, l in zip(offsets, array.shape)])
     padded[slices] = array
 
     return padded, slices
@@ -180,12 +178,8 @@ def mask_to_gaussian(segmentation, sigma_scale=0.5):
             continue
         y, x = region.centroid
         cell_sigma = (region.equivalent_diameter_area / 2) * sigma_scale
-        cell_sigma = max(
-            cell_sigma, 1
-        )  # Ensure sigma is at least 1 to avoid very sharp peaks
-        heatmap += np.exp(
-            -((x_grid - x) ** 2 + (y_grid - y) ** 2) / (2 * cell_sigma**2)
-        ).astype(np.float32)
+        cell_sigma = max(cell_sigma, 1)  # Ensure sigma is at least 1 to avoid very sharp peaks
+        heatmap += np.exp(-((x_grid - x) ** 2 + (y_grid - y) ** 2) / (2 * cell_sigma**2)).astype(np.float32)
     return heatmap
 
 
@@ -229,9 +223,7 @@ def plot_contours(seg, color, ax=None):
 
 
 if __name__ == "__main__":
-    img = tiff.imread(
-        "data/train_data/Fluo-N2DH-GOWT1_train/01_ERR_SEG_TRA/relabeled_00.tif"
-    )
+    img = tiff.imread("data/train_data/Fluo-N2DH-GOWT1_train/01_ERR_SEG_TRA/relabeled_00.tif")
     hm = mask_to_gaussian(img, sigma_scale=0.5)
 
     plt.figure(figsize=(16, 8))

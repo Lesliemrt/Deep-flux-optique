@@ -14,9 +14,9 @@ from PIL import Image
 from skimage.registration import optical_flow_tvl1
 
 # Local imports
-from my_utils.configs import device
-from my_utils.image_utils import viz
-from my_utils.spatial_transform import SpatialTransformer
+from deepfluxoptique.my_utils.configs import device
+from deepfluxoptique.my_utils.image_utils import viz
+from deepfluxoptique.my_utils.spatial_transform import SpatialTransformer
 
 
 def register_pair(moving, fixed, model, global_min, global_max):
@@ -193,9 +193,7 @@ def register_pair_tvl1(moving, fixed, global_min, global_max):
     input_fixed = fixed
 
     # To tensor
-    tensor_moving = (
-        torch.from_numpy(input_moving).float().to(device).unsqueeze(0).unsqueeze(0)
-    )
+    tensor_moving = torch.from_numpy(input_moving).float().to(device).unsqueeze(0).unsqueeze(0)
 
     # Predict
     displacement = optical_flow_tvl1(
@@ -272,12 +270,8 @@ def register_pair_raft(moving_path, fixed_path, model, global_min, global_max):
     # fixed_resized = interpole_and_pad(fixed, [HEIGHT, WIDTH])
 
     # To tensor
-    input_moving = (
-        torch.from_numpy(moving).permute(2, 0, 1).float().unsqueeze(0).to(device)
-    )
-    input_fixed = (
-        torch.from_numpy(fixed).permute(2, 0, 1).float().unsqueeze(0).to(device)
-    )
+    input_moving = torch.from_numpy(moving).permute(2, 0, 1).float().unsqueeze(0).to(device)
+    input_fixed = torch.from_numpy(fixed).permute(2, 0, 1).float().unsqueeze(0).to(device)
 
     # Predict
     with torch.no_grad():
@@ -354,21 +348,13 @@ def register_pair_fb(moving, fixed, model, global_min, global_max):
     input_fixed = fixed.astype(np.uint8)
 
     # To tensor
-    tensor_moving = (
-        torch.from_numpy(input_moving).float().to(device).unsqueeze(0).unsqueeze(0)
-    )
+    tensor_moving = torch.from_numpy(input_moving).float().to(device).unsqueeze(0).unsqueeze(0)
 
     # Predict
-    displacement = model.calc(
-        input_fixed, input_moving, None
-    )  # prev = fixed, next = moving)
+    displacement = model.calc(input_fixed, input_moving, None)  # prev = fixed, next = moving)
     spatial_transformer = SpatialTransformer(interpolation_mode="bilinear").to(device)
     tensor_displacement = (
-        torch.from_numpy(displacement)
-        .float()
-        .to(device)
-        .unsqueeze(0)
-        .permute(0, 3, 1, 2)
+        torch.from_numpy(displacement).float().to(device).unsqueeze(0).permute(0, 3, 1, 2)
     )  # from (B, H, W, ndim) to (B, ndim, H, W)
     moved = spatial_transformer(tensor_moving, tensor_displacement)
     #  moving_image : torch.Tensor shape: (B, C, *spatial_dims), deformation_field : torch.Tensor shape: (B, ndim, *spatial_dims).

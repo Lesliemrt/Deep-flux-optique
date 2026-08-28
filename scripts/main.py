@@ -1,5 +1,5 @@
-"""
-Script to execute the complete pipeline : segmentation, training and testing different models with multiple seed and on multiple dataset.
+"""Script to execute the complete pipeline : segmentation, training and testing different models with multiple seed and
+on multiple dataset.
 """
 
 # Core library imports
@@ -85,9 +85,7 @@ if __name__ == "__main__":
                 torch.backends.cudnn.benchmark = False
 
                 video_path = getattr(configs, f"TRAIN_DATA_{dataset}")
-                seg_path = getattr(
-                    configs, f"TRAIN_SEG_DATA_{dataset}"
-                )  # to use given segmentation
+                seg_path = getattr(configs, f"TRAIN_SEG_DATA_{dataset}")  # to use given segmentation
 
                 # ----------------------------------- SEGMENTATION ------------------------------------------
                 # Create segmentation with Cellpose
@@ -102,14 +100,10 @@ if __name__ == "__main__":
 
                     model = models.CellposeModel(gpu=True)
 
-                    masks, _, _ = model.eval(
-                        imgs, flow_threshold=0.4, cellprob_threshold=0.0
-                    )
+                    masks, _, _ = model.eval(imgs, flow_threshold=0.4, cellprob_threshold=0.0)
                     for idx, mask in enumerate(masks):
                         mask_binary = (mask > 0).astype(np.float32)
-                        tiff.imwrite(
-                            output_path / f"cellpose_{idx:04d}.tif", mask_binary
-                        )
+                        tiff.imwrite(output_path / f"cellpose_{idx:04d}.tif", mask_binary)
                 seg_path = output_path
 
                 # ----------------------------------- TRAINING ------------------------------------------
@@ -128,9 +122,7 @@ if __name__ == "__main__":
                     "multiple_videos": True,
                 }
 
-                train_args = argparse.Namespace(
-                    **base_train_args, **additionnal_train_args
-                )
+                train_args = argparse.Namespace(**base_train_args, **additionnal_train_args)
 
                 if model_name == "tvl1":
                     output_dir, train_time = None, 0
@@ -146,9 +138,7 @@ if __name__ == "__main__":
                     "output_dir": str(output_dir),
                 }
 
-                test_args = argparse.Namespace(
-                    **base_test_args, **additionnal_test_args
-                )
+                test_args = argparse.Namespace(**base_test_args, **additionnal_test_args)
 
                 dice, rmse, inf_time = register_video(test_args)
 
@@ -157,18 +147,10 @@ if __name__ == "__main__":
                 train_time_per_seed.append(train_time)
                 inf_time_per_seed.append(inf_time)
 
-            dice_res_per_data[dataset] = (
-                f"{np.mean(dice_res_per_seed)!s}({np.std(dice_res_per_seed)})"
-            )
-            train_time_per_data[dataset] = (
-                f"{np.mean(train_time_per_seed)!s}({np.std(train_time_per_seed)})"
-            )
-            inf_time_per_data[dataset] = (
-                f"{np.mean(inf_time_per_seed)!s}({np.std(inf_time_per_seed)})"
-            )
-            rmse_res_per_data[dataset] = (
-                f"{np.mean(rmse_res_per_seed)!s}({np.std(rmse_res_per_seed)})"
-            )
+            dice_res_per_data[dataset] = f"{np.mean(dice_res_per_seed)!s}({np.std(dice_res_per_seed)})"
+            train_time_per_data[dataset] = f"{np.mean(train_time_per_seed)!s}({np.std(train_time_per_seed)})"
+            inf_time_per_data[dataset] = f"{np.mean(inf_time_per_seed)!s}({np.std(inf_time_per_seed)})"
+            rmse_res_per_data[dataset] = f"{np.mean(rmse_res_per_seed)!s}({np.std(rmse_res_per_seed)})"
 
         df = pd.DataFrame(data=dice_res_per_data, index=[model_name])
         dice_df = pd.concat([dice_df, df], axis=0)
@@ -185,15 +167,9 @@ if __name__ == "__main__":
 timestamp = datetime.datetime.now(tz=datetime.UTC)
 res_path = Path(f"RESULTS_CP_less_seg_{timestamp.strftime('%Y%m%d_%H%M%S')}")
 res_path.mkdir(parents=True, exist_ok=True)
-with Path.open(
-    res_path / f"training_args.json_{timestamp.strftime('%Y%m%d_%H%M%S')}", "w"
-) as f:
+with Path.open(res_path / f"training_args.json_{timestamp.strftime('%Y%m%d_%H%M%S')}", "w") as f:
     json.dump(base_train_args, f, indent=4)
 dice_df.to_csv(res_path / f"RESULTS_{timestamp.strftime('%Y%m%d_%H%M%S')}.csv")
-train_time_df.to_csv(
-    res_path / f"TRAIN_TIME_RESULTS_{timestamp.strftime('%Y%m%d_%H%M%S')}.csv"
-)
-inf_time_df.to_csv(
-    res_path / f"INF_TIME_RESULTS_{timestamp.strftime('%Y%m%d_%H%M%S')}.csv"
-)
+train_time_df.to_csv(res_path / f"TRAIN_TIME_RESULTS_{timestamp.strftime('%Y%m%d_%H%M%S')}.csv")
+inf_time_df.to_csv(res_path / f"INF_TIME_RESULTS_{timestamp.strftime('%Y%m%d_%H%M%S')}.csv")
 rmse_df.to_csv(res_path / f"RMSE_RESULTS_{timestamp.strftime('%Y%m%d_%H%M%S')}.csv")

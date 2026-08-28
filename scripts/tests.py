@@ -20,12 +20,11 @@ import tifffile as tiff
 import torch
 
 # Local imports
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-from flow_visualizer import FlowVisualizer
-from model import WarperVxm
-from my_utils import configs, image_utils
-from my_utils.spatial_transform import SpatialTransformer
-from register_cells_old import (
+from deepfluxoptique.flow_visualizer import FlowVisualizer
+from deepfluxoptique.model import WarperVxm
+from deepfluxoptique.my_utils import configs, image_utils
+from deepfluxoptique.my_utils.spatial_transform import SpatialTransformer
+from deepfluxoptique.register_cells_old import (
     register_pair,
     register_pair_fb,
     register_pair_raft,
@@ -41,30 +40,16 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
 
-def evaluate_registration_with_seg(
-    segmentation_moving, segmentation_fixed, displacement, fixed
-):
+def evaluate_registration_with_seg(segmentation_moving, segmentation_fixed, displacement, fixed):
     """Evaluate the registration results."""
     score = {}
     # Load segmentation masks
-    seg_moving = image_utils.interpole_and_pad(
-        segmentation_moving, [configs.HEIGHT, configs.WIDTH]
-    )
-    seg_fixed = image_utils.interpole_and_pad(
-        segmentation_fixed, [configs.HEIGHT, configs.WIDTH]
-    )
+    seg_moving = image_utils.interpole_and_pad(segmentation_moving, [configs.HEIGHT, configs.WIDTH])
+    seg_fixed = image_utils.interpole_and_pad(segmentation_fixed, [configs.HEIGHT, configs.WIDTH])
 
     # Warp moving segmentation with the predicted displacement
-    tensor_seg_moving = (
-        torch.from_numpy(seg_moving)
-        .to(configs.device)
-        .float()
-        .unsqueeze(0)
-        .unsqueeze(0)
-    )
-    spatial_transformer = SpatialTransformer(interpolation_mode="nearest").to(
-        configs.device
-    )
+    tensor_seg_moving = torch.from_numpy(seg_moving).to(configs.device).float().unsqueeze(0).unsqueeze(0)
+    spatial_transformer = SpatialTransformer(interpolation_mode="nearest").to(configs.device)
     warped_seg_moving = spatial_transformer(tensor_seg_moving, displacement)
     warped_seg_moving_np = warped_seg_moving.squeeze().cpu().numpy()
 
@@ -96,9 +81,7 @@ def evaluate_registration_with_seg(
     # warped_seg_moving_np = np.where(warped_seg_moving_np > 0, 1, 0)
     fig, ax = plt.subplots(2, 2, figsize=(12, 12))
     plt.subplot(2, 2, 1)
-    ax[0, 0].set_title(
-        "Fixed image with moving (red) and fixed (green) segmentation contours"
-    )
+    ax[0, 0].set_title("Fixed image with moving (red) and fixed (green) segmentation contours")
     ax[0, 0].imshow(fixed, cmap="gray")
     # ax[0, 0].contour(seg_moving, levels=[0.5], colors="red", alpha=0.7, linewidths=1)
     # ax[0, 0].contour(seg_fixed, levels=[0.5], colors="chartreuse", linewidths=1)
@@ -115,9 +98,7 @@ def evaluate_registration_with_seg(
     plt.subplot(2, 2, 4)
     # ax[1, 1].set_title("Flow")
     # viz(flo=displacement, ax=ax[1, 1])
-    ax[1, 1].set_title(
-        "Green : Fixed segmentation, Magenta : Warped moving segmentation"
-    )
+    ax[1, 1].set_title("Green : Fixed segmentation, Magenta : Warped moving segmentation")
     black_background = np.zeros(fixed.shape)
     ax[1, 1].imshow(black_background, cmap="gray")
     image_utils.plot_contours(seg_fixed, color="chartreuse", ax=ax[1, 1])
@@ -132,18 +113,12 @@ def evaluate_registration(moving, fixed, displacement):
     moving = image_utils.interpole_and_pad(moving, [configs.HEIGHT, configs.WIDTH])
     fixed = image_utils.interpole_and_pad(fixed, [configs.HEIGHT, configs.WIDTH])
     # Warp moving with the predicted displacement
-    tensor_moving = (
-        torch.from_numpy(moving).to(configs.device).float().unsqueeze(0).unsqueeze(0)
-    )
-    spatial_transformer = SpatialTransformer(interpolation_mode="linear").to(
-        configs.device
-    )
+    tensor_moving = torch.from_numpy(moving).to(configs.device).float().unsqueeze(0).unsqueeze(0)
+    spatial_transformer = SpatialTransformer(interpolation_mode="linear").to(configs.device)
     warped_moving = spatial_transformer(tensor_moving, displacement)
     # Compute RMSE score
     rmse = np.sqrt(np.mean((fixed - warped_moving.squeeze().cpu().numpy()) ** 2))
-    ref_rmse = np.sqrt(
-        np.mean((fixed - moving) ** 2)
-    )  # reference dice to compare with the mse after registration
+    ref_rmse = np.sqrt(np.mean((fixed - moving) ** 2))  # reference dice to compare with the mse after registration
     score["rmse"] = rmse
     score["ref_rmse"] = ref_rmse
     return score
@@ -153,12 +128,8 @@ def evaluate_segmentation(segmentation_pred, segmentation_gt, img_moving):
     """Evaluate the segmentation results."""
     score = {}
     # Load segmentation masks
-    seg_pred = image_utils.interpole_and_pad(
-        segmentation_pred, [configs.HEIGHT, configs.WIDTH]
-    )
-    seg_gt = image_utils.interpole_and_pad(
-        segmentation_gt, [configs.HEIGHT, configs.WIDTH]
-    )
+    seg_pred = image_utils.interpole_and_pad(segmentation_pred, [configs.HEIGHT, configs.WIDTH])
+    seg_gt = image_utils.interpole_and_pad(segmentation_gt, [configs.HEIGHT, configs.WIDTH])
     # Binarise
     seg_gt = seg_gt > 0
     seg_pred = (seg_pred > 0.5).astype(int)
@@ -246,9 +217,7 @@ def register_video(args):
 
     # Load video and segmentations frames
     frames_path_list = sorted(Path(args.video_path).iterdir())
-    seg_path_list = (
-        (sorted(Path(args.seg_path).iterdir())) if args.seg_path is not None else None
-    )
+    seg_path_list = (sorted(Path(args.seg_path).iterdir())) if args.seg_path is not None else None
     global_min, global_max = image_utils.normalisation_params(frames_path_list)
 
     # MLFLOW
@@ -287,7 +256,7 @@ def register_video(args):
     results = []
     flow_maps = {}
     video = []  # list of frames to visualize the flow maps on (only for gap=1 and if args.visualize is True)
-    for idx in range(min((len(frames_path_list) - args.gap), 100)):
+    for idx in range(min((len(frames_path_list) - args.gap), 5)):
         result = {}
         # Load moving and fixed images
         idx2 = idx + args.gap
@@ -352,12 +321,8 @@ def register_video(args):
         if args.visualize or args.save_flow_maps:
             flow_maps[(idx2, idx)] = displacement.squeeze().cpu().numpy()
             if idx == 0:
-                video.append(
-                    np.expand_dims(input_moving, axis=-1)
-                )  # channel dimension needed for visualization
-            video.append(
-                np.expand_dims(input_fixed, axis=-1)
-            )  # channel dimension neededfor visualization
+                video.append(np.expand_dims(input_moving, axis=-1))  # channel dimension needed for visualization
+            video.append(np.expand_dims(input_fixed, axis=-1))  # channel dimension neededfor visualization
             if (
                 args.model_type == "voxelmorph"
                 or args.model_type == "flowseg"
@@ -379,15 +344,11 @@ def register_video(args):
                 )
                 displacement_bwd = res["displacement"]
             elif args.model_type == "farnback":
-                displacement_bwd, _, _, _ = register_pair_fb(
-                    fixed, moving, model, global_min, global_max
-                )
+                displacement_bwd, _, _, _ = register_pair_fb(fixed, moving, model, global_min, global_max)
             flow_maps[(idx, idx2)] = displacement_bwd.squeeze().cpu().numpy()
 
         if mlflow.active_run():
-            mlflow.log_figure(
-                fig, artifact_file=f"viz/registration_result_for_paire_{idx}-{idx2}.png"
-            )
+            mlflow.log_figure(fig, artifact_file=f"viz/registration_result_for_paire_{idx}-{idx2}.png")
 
         # Evaluation for the pair
         eval_res = evaluate_registration(moving, fixed, displacement)
@@ -398,33 +359,25 @@ def register_video(args):
             # Load segmentation masks
             seg_moving = tiff.imread(seg_path_list[idx])
             seg_fixed = tiff.imread(seg_path_list[idx2])
-            eval_res = evaluate_registration_with_seg(
-                seg_moving, seg_fixed, displacement, fixed
-            )
+            eval_res = evaluate_registration_with_seg(seg_moving, seg_fixed, displacement, fixed)
             score_pair, fig = eval_res
             fig.savefig(viz_dir / f"seg_eval_for_paire_{idx}-{idx2}.png")
             if mlflow.active_run():
-                mlflow.log_figure(
-                    fig, artifact_file=f"seg_eval_for_paire_{idx}-{idx2}.png"
-                )
+                mlflow.log_figure(fig, artifact_file=f"seg_eval_for_paire_{idx}-{idx2}.png")
             plt.close("all")
 
             if score_pair is not None:
                 result.update(score_pair)
             # ------------------------- SEGMENTATION EVALUATION ------------------------------------
             if "source_segmentation" in res:
-                eval_seg_res = evaluate_segmentation(
-                    source_seg_pred.squeeze().cpu().numpy(), seg_moving, moving
-                )
+                eval_seg_res = evaluate_segmentation(source_seg_pred.squeeze().cpu().numpy(), seg_moving, moving)
                 if eval_seg_res is None:
                     continue
                 score_pair, fig = eval_seg_res
                 result.update(score_pair)
                 fig.savefig(viz_dir / f"segmentation_result_for_{idx}.png")
                 if mlflow.active_run():
-                    mlflow.log_figure(
-                        fig, artifact_file=f"segmentation_result_for_{idx}.png"
-                    )
+                    mlflow.log_figure(fig, artifact_file=f"segmentation_result_for_{idx}.png")
                 plt.close("all")
         else:
             print("Segmentation files not found, skipping segmentation evaluation.")
@@ -440,9 +393,7 @@ def register_video(args):
     # Global evaluation
     # Compute mse to evaluate the global visual aspect
     rmse_per_pair = [result["rmse"] for result in results if "rmse" in result]
-    ref_rmse_scores_per_pair = [
-        result["ref_rmse"] for result in results if result is not None
-    ]
+    ref_rmse_scores_per_pair = [result["ref_rmse"] for result in results if result is not None]
     global_rmse = np.mean(rmse_per_pair)
     global_ref_rmse = np.mean(ref_rmse_scores_per_pair)
     metrics["global_rmse"] = global_rmse
@@ -450,22 +401,16 @@ def register_video(args):
     # Compute de global dice score an iou score
     if args.seg_path is not None:
         dice_per_pair = [result["dice"] for result in results if "dice" in result]
-        ref_dice_scores_per_pair = [
-            result["ref_dice"] for result in results if "ref_dice" in result
-        ]
+        ref_dice_scores_per_pair = [result["ref_dice"] for result in results if "ref_dice" in result]
         iou_scores_per_pair = [result["iou"] for result in results if "iou" in result]
-        ref_iou_scores_per_pair = [
-            result["ref_iou"] for result in results if "ref_iou" in result
-        ]
+        ref_iou_scores_per_pair = [result["ref_iou"] for result in results if "ref_iou" in result]
         global_dice = np.mean(dice_per_pair)
         global_ref_dice = np.mean(ref_dice_scores_per_pair)
         global_iou = np.mean(iou_scores_per_pair)
         global_ref_iou = np.mean(ref_iou_scores_per_pair)
         if "dice_segmentation" in results[0]:
             dice_segmentation_per_pair = [
-                result["dice_segmentation"]
-                for result in results
-                if "dice_segmentation" in result
+                result["dice_segmentation"] for result in results if "dice_segmentation" in result
             ]
             global_dice_segmentation = np.mean(dice_segmentation_per_pair)
         else:
@@ -506,26 +451,16 @@ def register_video(args):
             np.save(flow_dir / f"{name}.npy", value)
 
     if args.visualize:
-        visualizer = FlowVisualizer(
-            video, flow_maps, grid_step=10, gap=args.gap, grid_type="uniform"
-        )
+        visualizer = FlowVisualizer(video, flow_maps, grid_step=10, gap=args.gap, grid_type="uniform")
         visualizer.run()
 
     end_timestamp = datetime.datetime.now(tz=datetime.UTC)
     exec_time = (end_timestamp - timestamp).seconds
 
     # Relativ Error reduction
-    RER_dice = (
-        (global_dice - global_ref_dice) / (1 - global_ref_dice)
-        if (global_ref_dice != 1)
-        else 0
-    )
+    RER_dice = (global_dice - global_ref_dice) / (1 - global_ref_dice) if (global_ref_dice != 1) else 0
 
-    RER_rmse = (
-        (global_ref_rmse - global_rmse) / (global_ref_rmse)
-        if (global_ref_rmse != 0)
-        else 0
-    )
+    RER_rmse = (global_ref_rmse - global_rmse) / (global_ref_rmse) if (global_ref_rmse != 0) else 0
 
     return RER_dice, RER_rmse, exec_time
 
@@ -533,9 +468,7 @@ def register_video(args):
 if __name__ == "__main__":
     # Parse commandline args
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--mlflow", action="store_true", help="Enable mlflow tracking during training"
-    )
+    parser.add_argument("--mlflow", action="store_true", help="Enable mlflow tracking during training")
     parser.add_argument(
         "--visualize",
         action="store_true",

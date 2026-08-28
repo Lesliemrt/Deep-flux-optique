@@ -9,8 +9,8 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from model_transformer import TransFlowSegUNet, TransMorph2D
-from my_utils import spatial_transform
+from deepfluxoptique.model_transformer import TransFlowSegUNet, TransMorph2D
+from deepfluxoptique.my_utils import spatial_transform
 
 
 class ConvBlock(nn.Module):
@@ -25,11 +25,7 @@ class ConvBlock(nn.Module):
         batchnorm=True,
     ):
         super().__init__()
-        modules = [
-            nn.Conv2d(
-                in_channels, out_channels, kernel_size=kernel_size, padding=padding
-            )
-        ]
+        modules = [nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, padding=padding)]
         if activation:
             modules.append(nn.ReLU())  # the one used by default in vxm
         if batchnorm:
@@ -76,7 +72,7 @@ def downsampling_conv_blocks(
     ...     nb_features=[3, 16, 32],
     ...     kernel_size=3,
     ...     normalizations=["batch", "instance", "batch"],
-    ...     activations="relu"
+    ...     activations="relu",
     ... )
     >>> actual_ch
     [16, 32]
@@ -178,9 +174,12 @@ class TwoFlowsUNet(nn.Module):
     Examples
     --------
     >>> model = BasicUNet(
-    ...     ndim=2, in_channels=1, out_channels=1,
+    ...     ndim=2,
+    ...     in_channels=1,
+    ...     out_channels=1,
     ...     nb_features=[16, 32, 64],
-    ...     normalizations='instance', activations=nn.ReLU
+    ...     normalizations="instance",
+    ...     activations=nn.ReLU,
     ... )
     >>> input_tensor = torch.randn(1, 1, 128, 128)
     >>> output = model(input_tensor)
@@ -189,7 +188,9 @@ class TwoFlowsUNet(nn.Module):
 
     >>> # Skip full-resolution convolutions using 0
     >>> model = BasicUNet(
-    ...     ndim=2, in_channels=1, out_channels=1,
+    ...     ndim=2,
+    ...     in_channels=1,
+    ...     out_channels=1,
     ...     nb_features=[0, 32, 64],  # Pass-through at full resolution
     ... )
     """
@@ -248,21 +249,21 @@ class TwoFlowsUNet(nn.Module):
         Examples
         --------
         >>> # Symmetric UNet (default behavior)
-        >>> model = BasicUNet(
-        ...     ndim=2, in_channels=1, out_channels=1,
-        ...     nb_features=[16, 32, 64],
-        ...     activations=nn.ReLU
-        ... )
+        >>> model = BasicUNet(ndim=2, in_channels=1, out_channels=1, nb_features=[16, 32, 64], activations=nn.ReLU)
         >>> # Asymmetric UNet with different downsampling/upsampling features
         >>> model = BasicUNet(
-        ...     ndim=2, in_channels=1, out_channels=1,
+        ...     ndim=2,
+        ...     in_channels=1,
+        ...     out_channels=1,
         ...     nb_features=[[16, 32, 64], [128, 64, 32]],  # Lowest resolution: 64 -> 128
         ...     skip_connections=True,  # Fully supports asymmetric architectures!
-        ...     activations=nn.ReLU
+        ...     activations=nn.ReLU,
         ... )
         >>> # Skip full-resolution convolutions
         >>> model = BasicUNet(
-        ...     ndim=2, in_channels=1, out_channels=1,
+        ...     ndim=2,
+        ...     in_channels=1,
+        ...     out_channels=1,
         ...     nb_features=[0, 32, 64],  # First level: pool only, no conv
         ... )
         """
@@ -359,9 +360,7 @@ class TwoFlowsUNet(nn.Module):
 
         # -------------------------- Upsampling path FWD ----------------------------------------
         feature_tensor_fwd = feature_tensor
-        for block, skip in zip(
-            self.upsampling_conv_blocks_fwd, reversed(skip_connections)
-        ):
+        for block, skip in zip(self.upsampling_conv_blocks_fwd, reversed(skip_connections)):
             feature_tensor_fwd = self.upsample(feature_tensor_fwd)
             feature_tensor_fwd = torch.cat([feature_tensor_fwd, skip], dim=1)
             feature_tensor_fwd = block(feature_tensor_fwd)
@@ -369,9 +368,7 @@ class TwoFlowsUNet(nn.Module):
 
         # -------------------------- Upsampling path BWD ----------------------------------------
         feature_tensor_bwd = feature_tensor
-        for block, skip in zip(
-            self.upsampling_conv_blocks_bwd, reversed(skip_connections)
-        ):
+        for block, skip in zip(self.upsampling_conv_blocks_bwd, reversed(skip_connections)):
             feature_tensor_bwd = self.upsample(feature_tensor_bwd)
             feature_tensor_bwd = torch.cat([feature_tensor_bwd, skip], dim=1)
             feature_tensor_bwd = block(feature_tensor_bwd)
@@ -409,9 +406,12 @@ class FlowSegUNet(nn.Module):
     Examples
     --------
     >>> model = BasicUNet(
-    ...     ndim=2, in_channels=1, out_channels=1,
+    ...     ndim=2,
+    ...     in_channels=1,
+    ...     out_channels=1,
     ...     nb_features=[16, 32, 64],
-    ...     normalizations='instance', activations=nn.ReLU
+    ...     normalizations="instance",
+    ...     activations=nn.ReLU,
     ... )
     >>> input_tensor = torch.randn(1, 1, 128, 128)
     >>> output = model(input_tensor)
@@ -420,7 +420,9 @@ class FlowSegUNet(nn.Module):
 
     >>> # Skip full-resolution convolutions using 0
     >>> model = BasicUNet(
-    ...     ndim=2, in_channels=1, out_channels=1,
+    ...     ndim=2,
+    ...     in_channels=1,
+    ...     out_channels=1,
     ...     nb_features=[0, 32, 64],  # Pass-through at full resolution
     ... )
     """
@@ -480,21 +482,21 @@ class FlowSegUNet(nn.Module):
         Examples
         --------
         >>> # Symmetric UNet (default behavior)
-        >>> model = BasicUNet(
-        ...     ndim=2, in_channels=1, out_channels=1,
-        ...     nb_features=[16, 32, 64],
-        ...     activations=nn.ReLU
-        ... )
+        >>> model = BasicUNet(ndim=2, in_channels=1, out_channels=1, nb_features=[16, 32, 64], activations=nn.ReLU)
         >>> # Asymmetric UNet with different downsampling/upsampling features
         >>> model = BasicUNet(
-        ...     ndim=2, in_channels=1, out_channels=1,
+        ...     ndim=2,
+        ...     in_channels=1,
+        ...     out_channels=1,
         ...     nb_features=[[16, 32, 64], [128, 64, 32]],  # Lowest resolution: 64 -> 128
         ...     skip_connections=True,  # Fully supports asymmetric architectures!
-        ...     activations=nn.ReLU
+        ...     activations=nn.ReLU,
         ... )
         >>> # Skip full-resolution convolutions
         >>> model = BasicUNet(
-        ...     ndim=2, in_channels=1, out_channels=1,
+        ...     ndim=2,
+        ...     in_channels=1,
+        ...     out_channels=1,
         ...     nb_features=[0, 32, 64],  # First level: pool only, no conv
         ... )
         """
@@ -592,9 +594,7 @@ class FlowSegUNet(nn.Module):
 
         # -------------------------- Upsampling path FWD ----------------------------------------
         feature_tensor_fwd = feature_tensor
-        for block, skip in zip(
-            self.upsampling_conv_blocks_fwd, reversed(skip_connections)
-        ):
+        for block, skip in zip(self.upsampling_conv_blocks_fwd, reversed(skip_connections)):
             feature_tensor_fwd = self.upsample(feature_tensor_fwd)
             feature_tensor_fwd = torch.cat([feature_tensor_fwd, skip], dim=1)
             feature_tensor_fwd = block(feature_tensor_fwd)
@@ -602,9 +602,7 @@ class FlowSegUNet(nn.Module):
 
         # -------------------------- Upsampling path segmentation ----------------------------------------
         feature_tensor_seg = feature_tensor
-        for block, skip in zip(
-            self.upsampling_conv_blocks_seg, reversed(skip_connections)
-        ):
+        for block, skip in zip(self.upsampling_conv_blocks_seg, reversed(skip_connections)):
             feature_tensor_seg = self.upsample(feature_tensor_seg)
             feature_tensor_seg = torch.cat([feature_tensor_seg, skip], dim=1)
             feature_tensor_seg = block(feature_tensor_seg)
@@ -739,9 +737,7 @@ class WarperVxm(nn.Module):
         self._init_flow_layer(ndim, self.flow_initializer)
 
         # Initialize the spatial transformer
-        self.spatial_transformer = spatial_transform.SpatialTransformer().to(
-            self.device
-        )
+        self.spatial_transformer = spatial_transform.SpatialTransformer().to(self.device)
 
     def forward(
         self,
@@ -859,9 +855,7 @@ class WarperVxm(nn.Module):
             )  # reproduit VxmPairWise mais est ce que utile?
             # Initialize weights from Normal(mean=0, std=flow_initializer)
             with torch.no_grad():
-                torch.nn.init.normal_(
-                    flow_layer.conv0.weight, mean=0.0, std=flow_initializer
-                )
+                torch.nn.init.normal_(flow_layer.conv0.weight, mean=0.0, std=flow_initializer)
                 # Set the bias term(s) to zero for the first (and only) conv
                 if flow_layer.conv0.bias is not None:
                     flow_layer.conv0.bias.zero_()

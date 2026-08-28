@@ -27,10 +27,9 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 # Local imports
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-from dataset import VxmMultipleVideoDataset, VxmVideoDataset
-from model import WarperVxm
-from my_utils import configs, image_utils, spatial_transform
+from deepfluxoptique.dataset import VxmMultipleVideoDataset, VxmVideoDataset
+from deepfluxoptique.model import WarperVxm
+from deepfluxoptique.my_utils import configs, image_utils, spatial_transform
 
 # for reproductability
 torch.manual_seed(configs.SEED)
