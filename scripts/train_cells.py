@@ -1,6 +1,5 @@
-#!/usr/bin/env python
-"""
-Script to train different model.
+"""Script to train different model.
+
 Adapted from :
 VoxelMorph: A Learning Framework for Deformable Medical Image Registration G. Balakrishnan, A.
 Zhao, M. R. Sabuncu, J. Guttag, A.V. Dalca. IEEE TMI: Transactions on Medical Imaging. 38(8).
@@ -85,9 +84,7 @@ class LossComputer(nn.Module):
     def compute_background_loss(self, source_seg, target_seg, displacement):
         union_seg = torch.clamp(target_seg + source_seg, 0.0, 1.0)
         background_mask = 1.0 - union_seg
-        return torch.mean(
-            torch.abs(displacement) * background_mask
-        )  # L1 loss on the displacement in the background
+        return torch.mean(torch.abs(displacement) * background_mask)  # L1 loss on the displacement in the background
 
     def compute_seg_loss(self, seg_pred, seg_gt):
         return self.seg_loss_fn(seg_pred, seg_gt)
@@ -138,9 +135,7 @@ def train_epoch(
         optimizer.zero_grad()
 
         # Define warper for later use #TODO : mettre or de cette fonoction ou créer classe
-        spatial_transformer = spatial_transform.SpatialTransformer(
-            interpolation_mode="linear"
-        ).to(configs.device)
+        spatial_transformer = spatial_transform.SpatialTransformer(interpolation_mode="linear").to(configs.device)
 
         source = batch["source"]
         target = batch["target"]
@@ -182,16 +177,10 @@ def train_epoch(
 
             # Cycle loss
             cycle_loss = 0.0
-            warped_displacement_bwd = spatial_transformer(
-                displacement_bwd, displacement
-            )
-            cycle_loss += loss_computer.compute_cycle_loss(
-                displacement, warped_displacement_bwd
-            )
+            warped_displacement_bwd = spatial_transformer(displacement_bwd, displacement)
+            cycle_loss += loss_computer.compute_cycle_loss(displacement, warped_displacement_bwd)
             # Add a progressiv weight to loss (start at 0, max at loss_weights[4])
-            cycle_weight = image_utils.linear_augment(
-                start=5, end=15, max_weight=loss_weights[4], epoch=epoch
-            )
+            cycle_weight = image_utils.linear_augment(start=5, end=15, max_weight=loss_weights[4], epoch=epoch)
             loss += cycle_weight * cycle_loss
             epoch_cycle_loss += cycle_loss.item()
         # ---------------------------------------------------------------------------------------------------------
@@ -201,30 +190,20 @@ def train_epoch(
 
         # If segmentations are available, compute segmentation loss
         if "source_seg" in batch and "target_seg" in batch:
-            source_seg = (
-                batch["source_seg"].to(configs.device).unsqueeze(1)
-            )  # add channel dim
-            target_seg = (
-                batch["target_seg"].to(configs.device).unsqueeze(1)
-            )  # add channel dim
+            source_seg = batch["source_seg"].to(configs.device).unsqueeze(1)  # add channel dim
+            target_seg = batch["target_seg"].to(configs.device).unsqueeze(1)  # add channel dim
             flow_with_seg_loss = 0.0
             warped_source_seg = spatial_transformer(source_seg, displacement)
             warped_source_seg = torch.clamp(warped_source_seg, 0, 1)
-            flow_with_seg_loss += loss_computer.compute_flow_with_seg_loss(
-                target_seg, warped_source_seg
-            ).squeeze()
+            flow_with_seg_loss += loss_computer.compute_flow_with_seg_loss(target_seg, warped_source_seg).squeeze()
             # ------------------------------------------- TWO FLOWS / CYCLE CONSISTENCY ---------------------------------------------------
             if "displacement_bwd" in res:
                 warped_target_seg = spatial_transformer(target_seg, displacement_bwd)
                 warped_target_seg = torch.clamp(warped_target_seg, 0, 1)
-                flow_with_seg_loss += loss_computer.compute_flow_with_seg_loss(
-                    source_seg, warped_target_seg
-                ).squeeze()
+                flow_with_seg_loss += loss_computer.compute_flow_with_seg_loss(source_seg, warped_target_seg).squeeze()
                 if background:
                     # Add loss to avoid displacement in the background
-                    background_loss += loss_computer.compute_background_loss(
-                        source_seg, target_seg, displacement_bwd
-                    )
+                    background_loss += loss_computer.compute_background_loss(source_seg, target_seg, displacement_bwd)
                     loss += loss_weights[3] * background_loss
                     epoch_background_loss += background_loss.item()
             # ------------------------------------------- FLOW SEG ---------------------------------------------------
@@ -233,23 +212,17 @@ def train_epoch(
             if "source_segmentation" in res:
                 seg_loss = 0.0
                 source_seg_pred = res["source_segmentation"]
-                warped_source_seg_pred = spatial_transformer(
-                    source_seg_pred, displacement
-                )
+                warped_source_seg_pred = spatial_transformer(source_seg_pred, displacement)
 
                 seg_loss += loss_computer.compute_seg_loss(source_seg_pred, source_seg)
-                seg_loss += loss_computer.compute_seg_loss(
-                    warped_source_seg_pred, target_seg
-                )
+                seg_loss += loss_computer.compute_seg_loss(warped_source_seg_pred, target_seg)
 
                 loss += loss_weights[5] * seg_loss
                 epoch_seg_loss += seg_loss.item()
             # ---------------------------------------------------------------------------------------------------------
             if background:
                 # Add loss to avoid displacement in the background
-                background_loss += loss_computer.compute_background_loss(
-                    source_seg, target_seg, displacement
-                )
+                background_loss += loss_computer.compute_background_loss(source_seg, target_seg, displacement)
                 loss += loss_weights[3] * background_loss
                 epoch_background_loss += background_loss.item()
             if seg_type is not None:
@@ -266,15 +239,9 @@ def train_epoch(
         "img_loss": epoch_img_loss / len(dataloader),
         "grad_loss": epoch_grad_loss / len(dataloader),
         "seg_loss": epoch_seg_loss / len(dataloader) if epoch_seg_loss > 0 else None,
-        "flow_with_seg_loss": epoch_flow_with_seg_loss / len(dataloader)
-        if epoch_flow_with_seg_loss > 0
-        else None,
-        "background_loss": epoch_background_loss / len(dataloader)
-        if epoch_background_loss > 0
-        else None,
-        "cycle_loss": epoch_cycle_loss / len(dataloader)
-        if epoch_cycle_loss > 0
-        else None,
+        "flow_with_seg_loss": epoch_flow_with_seg_loss / len(dataloader) if epoch_flow_with_seg_loss > 0 else None,
+        "background_loss": epoch_background_loss / len(dataloader) if epoch_background_loss > 0 else None,
+        "cycle_loss": epoch_cycle_loss / len(dataloader) if epoch_cycle_loss > 0 else None,
     }
 
 
@@ -336,14 +303,10 @@ def train(args):
     elif args.image_loss == "cc":
         image_loss_fn = ne.nn.modules.NCC(window_size=4)
     else:
-        raise ValueError(
-            f"Unsupported image loss: {args.image_loss} use 'mse' or 'cc'."
-        )
+        raise ValueError(f"Unsupported image loss: {args.image_loss} use 'mse' or 'cc'.")
     grad_loss_fn = ne.nn.modules.SpatialGradient(args.grad_loss)
     if args.seg_type == "heatmaps":
-        flow_with_seg_loss_fn = (
-            image_loss_fn  # use the same loss as for the image (MSE or CC) for heatmaps
-        )
+        flow_with_seg_loss_fn = image_loss_fn  # use the same loss as for the image (MSE or CC) for heatmaps
     else:
         flow_with_seg_loss_fn = ne.nn.modules.Dice()
     seg_loss_fn = nn.BCEWithLogitsLoss()
@@ -357,9 +320,7 @@ def train(args):
         args.cycle_param,
         args.seg_param,
     ]
-    loss_computer = LossComputer(
-        image_loss_fn, grad_loss_fn, flow_with_seg_loss_fn, seg_loss_fn
-    )
+    loss_computer = LossComputer(image_loss_fn, grad_loss_fn, flow_with_seg_loss_fn, seg_loss_fn)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # Create dataloader
@@ -523,9 +484,7 @@ def train(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train VoxelMorph")
-    parser.add_argument(
-        "--mlflow", action="store_true", help="Enable mlflow tracking during training"
-    )
+    parser.add_argument("--mlflow", action="store_true", help="Enable mlflow tracking during training")
     parser.add_argument("--workers", type=int, default=4, help="Number of workers")
     # Directory and paths
     parser.add_argument(
@@ -545,9 +504,7 @@ if __name__ == "__main__":
         help="Path to the segmentation of the training video, if not available set to None",
     )
     # Dataset parameters
-    parser.add_argument(
-        "--max_gap", type=int, default=1, help="Maximum temporal gap between 2 frames"
-    )
+    parser.add_argument("--max_gap", type=int, default=1, help="Maximum temporal gap between 2 frames")
     parser.add_argument(
         "--multiplier",
         type=int,
@@ -571,9 +528,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--epochs", type=int, default=30, help="Number of epochs")
     parser.add_argument("--batch-size", type=int, default=4, help="Batch size")
-    parser.add_argument(
-        "--save-every", type=int, default=10, help="Checkpoint every N epochs"
-    )
+    parser.add_argument("--save-every", type=int, default=10, help="Checkpoint every N epochs")
     parser.add_argument(
         "--cycle_consistency",
         action="store_true",
@@ -586,12 +541,8 @@ if __name__ == "__main__":
         default=0.005,
         help="Regularisation parameter for cycle loss",
     )
-    parser.add_argument(
-        "--image-loss", type=str, default="mse", help="Image loss to use: 'mse' or 'cc'"
-    )
-    parser.add_argument(
-        "--grad_loss", type=str, default="l2", help="Gradient loss to use: 'l1' or 'l2'"
-    )
+    parser.add_argument("--image-loss", type=str, default="mse", help="Image loss to use: 'mse' or 'cc'")
+    parser.add_argument("--grad_loss", type=str, default="l2", help="Gradient loss to use: 'l1' or 'l2'")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument(
         "--lambda",
