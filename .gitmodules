@@ -1,3 +1,0 @@
-[submodule "raft"]
-	path = raft
-	url = https://github.com/princeton-vl/RAFT.git
