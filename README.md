@@ -92,23 +92,13 @@ You can specify the model that you want to train using the --model_type argument
 python scripts/train_cells.py --model_type flowseg
 ```
 
-The training will create a folder containing the weights of the model. This directory 
-
 ### Inference
 
-To test a model use : 
+To test a model use the command below, output_dir being the folder created when training a model.
 
 ``` bash
-python scripts/tests.py --video-path root_data_folder/data1/test_data --seg-path root_data_folder/data1/seg_test_data --output
+python scripts/tests.py --video-path root_data_folder/data1/test_data --seg-path root_data_folder/data1/seg_test_data --output_dir outputs/transflowseg/output_20260728_084107 --model_type transflowseg
 ```
-
-For example : 
-
-``` bash
-python scripts/tests.py --model_type flowseg
-```
-
-The model that will be tested will be the best.pt in the output directory given. The model type given must correspond to the output directory given.
 
 
 

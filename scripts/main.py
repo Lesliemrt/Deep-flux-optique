@@ -6,7 +6,6 @@ on multiple dataset.
 import argparse
 import json
 import os
-import sys
 from pathlib import Path
 
 os.environ["NEURITE_BACKEND"] = "pytorch"
@@ -22,7 +21,6 @@ from cellpose import models
 from cellpose.io import imread
 
 # Local imports
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from tests import register_video
 from train_cells import train
 
