@@ -31,9 +31,7 @@ def relabel_cells(array, with_labels):
 
 def relabel_video(seg_video_path, tra_video_path, output_path):
     """Relabel a segmentation video with labels from a tra video."""
-    err_seg_path_list = sorted(
-        f for f in seg_video_path.iterdir() if f.suffix == ".tif"
-    )
+    err_seg_path_list = sorted(f for f in seg_video_path.iterdir() if f.suffix == ".tif")
     tra_path_list = sorted(f for f in tra_video_path.iterdir() if f.suffix == ".tif")
     for idx in tqdm(range(len(err_seg_path_list)), desc="Relabeling video..."):
         err_seg = tiff.imread(err_seg_path_list[idx])
@@ -55,12 +53,8 @@ def mask_to_gaussian(segmentation, sigma_scale=0.25):
             continue
         y, x = region.centroid
         cell_sigma = (region.equivalent_diameter_area / 2) * sigma_scale
-        cell_sigma = max(
-            cell_sigma, 1
-        )  # Ensure sigma is at least 1 to avoid very sharp peaks
-        heatmap += np.exp(
-            -((x_grid - x) ** 2 + (y_grid - y) ** 2) / (2 * cell_sigma**2)
-        ).astype(np.float32)
+        cell_sigma = max(cell_sigma, 1)  # Ensure sigma is at least 1 to avoid very sharp peaks
+        heatmap += np.exp(-((x_grid - x) ** 2 + (y_grid - y) ** 2) / (2 * cell_sigma**2)).astype(np.float32)
     return heatmap
 
 
@@ -88,39 +82,39 @@ def cellpose(video_path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train VoxelMorph")
     parser.add_argument(
-        "--path",
+        "--dataset",
         default="BF-C2DL-MuSC",
         help="Path to the dataset to process",
+    )
+    parser.add_argument(
+        "--cellpose",
+        action="store_true",
+        help="Use Cellpose to create segmentations",
+    )
+    parser.add_argument(
+        "--relabel",
+        action="store_true",
+        help="Relabel the segmentation videos with the labels from the tracking videos",
     )
     args = parser.parse_args()
 
     # Create segmentations
-    _ = cellpose("data/data/BF-C2DL-MuSC/01")
+    if args.cellpose:
+        _ = cellpose("data/data/BF-C2DL-MuSC/01")
 
-    # # Relabel the segmentation videos with the labels from the tracking videos
-    # output_path = Path(f"data/data/{args.path}/01_ERR_SEG_TRA")
-    # output_path.mkdir(exist_ok=True)
-    # relabel_video(
-    #     seg_video_path=Path(f"data/data/{args.path}/01_ERR_SEG"),
-    #     tra_video_path=Path(f"data/data/{args.path}/01_GT/TRA"),
-    #     output_path=output_path,
-    # )
-    # output_path = Path(f"data/data/{args.path}/02_ERR_SEG_TRA")
-    # output_path.mkdir(exist_ok=True)
-    # relabel_video(
-    #     seg_video_path=Path(f"data/data/{args.path}/02_ERR_SEG"),
-    #     tra_video_path=Path(f"data/data/{args.path}/02_GT/TRA"),
-    #     output_path=output_path,
-    # )
-
-    # # Create Gaussian heatmaps from the relabeled segmentation videos
-    # path = Path(f"data/data/{args.path}/01_ERR_SEG_TRA")
-    # video = sorted(path.iterdir())
-    # out_path = path.parent / "SEG_HEATMAP"
-    # out_path.mkdir(exist_ok=True)
-    # idx = 0
-    # for img_path in tqdm(video, desc="Creating heatmaps..."):
-    #     idx += 1
-    #     img = tiff.imread(img_path)
-    #     hm = mask_to_gaussian(img)
-    #     tiff.imwrite(f"{str(out_path)}/heatmap_{idx:02d}.tif", hm)
+    # Relabel the segmentation videos with the labels from the tracking videos
+    if args.relabel:
+        output_path = Path(f"data/data/{args.dataset}/01_ERR_SEG_TRA")
+        output_path.mkdir(exist_ok=True)
+        relabel_video(
+            seg_video_path=Path(f"data/data/{args.dataset}/01_ERR_SEG"),
+            tra_video_path=Path(f"data/data/{args.dataset}/01_GT/TRA"),
+            output_path=output_path,
+        )
+        output_path = Path(f"data/data/{args.dataset}/02_ERR_SEG_TRA")
+        output_path.mkdir(exist_ok=True)
+        relabel_video(
+            seg_video_path=Path(f"data/data/{args.dataset}/02_ERR_SEG"),
+            tra_video_path=Path(f"data/data/{args.dataset}/02_GT/TRA"),
+            output_path=output_path,
+        )

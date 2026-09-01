@@ -11,7 +11,6 @@ import argparse
 import datetime
 import json
 import os
-import sys
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -43,7 +42,7 @@ torch.backends.cudnn.benchmark = False
 class LossComputer(nn.Module):
     """Compute different type of loss.
 
-    Attributes
+    Attributes:
     -----------
     image_loss_fn : nn.Modules
         Function to compute differences in appearance between 2 images.

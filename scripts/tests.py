@@ -256,7 +256,7 @@ def register_video(args):
     results = []
     flow_maps = {}
     video = []  # list of frames to visualize the flow maps on (only for gap=1 and if args.visualize is True)
-    for idx in range(min((len(frames_path_list) - args.gap), 5)):
+    for idx in range(min((len(frames_path_list) - args.gap), 100)):  # Limit to 100 pairs for testing
         result = {}
         # Load moving and fixed images
         idx2 = idx + args.gap

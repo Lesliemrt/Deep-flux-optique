@@ -23,9 +23,10 @@ from cellpose.io import imread
 
 # Local imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-from my_utils import configs
 from tests import register_video
 from train_cells import train
+
+from deepfluxoptique.my_utils import configs
 
 if __name__ == "__main__":
     seeds = [42, 123, 456, 54321, 98765]
