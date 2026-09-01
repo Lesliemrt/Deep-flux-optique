@@ -47,7 +47,7 @@ if __name__ == "__main__":
         "grad_loss": "l2",
         "lr": 1e-3,
         "lambda_param": 0.01,
-        "gamma_param": 0.001,
+        "gamma_param": 0.01,
         "seg_param": 0.01,
         "background": False,
         "background_param": 0.01,
@@ -166,7 +166,7 @@ if __name__ == "__main__":
         inf_time_df = pd.concat([inf_time_df, df], axis=0)
 
 timestamp = datetime.datetime.now(tz=datetime.UTC)
-res_path = Path(f"RESULTS_CP_less_seg_{timestamp.strftime('%Y%m%d_%H%M%S')}")
+res_path = Path(f"RESULTS_transfertGOWT_{timestamp.strftime('%Y%m%d_%H%M%S')}")
 res_path.mkdir(parents=True, exist_ok=True)
 with Path.open(res_path / f"training_args.json_{timestamp.strftime('%Y%m%d_%H%M%S')}", "w") as f:
     json.dump(base_train_args, f, indent=4)
