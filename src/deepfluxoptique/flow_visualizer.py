@@ -15,12 +15,8 @@ from skimage.measure import find_contours
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-# import byotrack
-
 _hsv = mpl.colormaps["hsv"]
-_colors = [
-    tuple(int(c * 255) for c in x[:3]) for x in map(_hsv, [i / 200 for i in range(200)])
-]
+_colors = [tuple(int(c * 255) for c in x[:3]) for x in map(_hsv, [i / 200 for i in range(200)])]
 
 
 def _convert_to_uint8(frame: np.ndarray) -> np.ndarray:
@@ -129,9 +125,7 @@ def temporal_projection(
         offset = torch.zeros(2)
     else:
         offset = torch.min(tracks_tensor[is_defined], dim=0).values
-        shape = (
-            torch.max(tracks_tensor[is_defined], dim=0).values - offset
-        ).round().to(torch.int32) + 1
+        shape = (torch.max(tracks_tensor[is_defined], dim=0).values - offset).round().to(torch.int32) + 1
         image = np.zeros((*shape, 3), dtype=np.uint8)
 
     for track_i, points in enumerate(tracks_tensor.permute(1, 0, 2)):
@@ -176,9 +170,7 @@ def transform_points(flow_map: np.ndarray, points: np.ndarray) -> np.ndarray:
     flow = np.empty_like(points)
 
     for axis in range(flow_map.shape[0]):
-        flow[:, axis] = scipy.ndimage.map_coordinates(
-            flow_map[axis], points.T, mode="nearest"
-        )
+        flow[:, axis] = scipy.ndimage.map_coordinates(flow_map[axis], points.T, mode="nearest")
 
     return points + flow
 
@@ -252,16 +244,10 @@ class FlowVisualizer:
         self.scale = 1
         self._frame_id = 0
         if self.grid_type not in ("uniform", "personalized"):
-            raise ValueError(
-                f"grid_type should be either 'uniform' or 'personalized', got {self.grid_type}"
-            )
+            raise ValueError(f"grid_type should be either 'uniform' or 'personalized', got {self.grid_type}")
         elif self.grid_type == "uniform":
             self._grid = (
-                np.indices(self.frame_shape, dtype=np.float64)[
-                    :, ::grid_step, ::grid_step
-                ]
-                .reshape(2, -1)
-                .transpose()
+                np.indices(self.frame_shape, dtype=np.float64)[:, ::grid_step, ::grid_step].reshape(2, -1).transpose()
             )
         elif self.grid_type == "personalized":
             self._grid = self.personnalized_grid()
@@ -304,18 +290,14 @@ class FlowVisualizer:
                 if pair in self.flow_maps:
                     self.points = transform_points(self.flow_maps[pair], self.points)
                 else:
-                    raise ValueError(
-                        f"Flow map for frames {pair} not found in given flow_maps"
-                    )
+                    raise ValueError(f"Flow map for frames {pair} not found in given flow_maps")
 
                 src_frame_id = self._frame_id
 
             # Drawing
             draw = _convert_to_uint8(frame)
             if draw.shape[2] not in (1, 3):
-                raise ValueError(
-                    "We only support Grayscale images (C=1) or RGB images (C=3)"
-                )
+                raise ValueError("We only support Grayscale images (C=1) or RGB images (C=3)")
 
             if draw.shape[2] == 1:
                 draw = np.concatenate([draw] * 3, axis=2)
@@ -324,18 +306,12 @@ class FlowVisualizer:
                 draw = cv2.resize(draw, None, fx=self.scale, fy=self.scale)
 
             for k, (i, j) in enumerate(self.points * self.scale):
-                color = (
-                    self.colors[k % len(self.colors)]
-                    if self.grid_type == "uniform"
-                    else (255, 0, 0)
-                )
+                color = self.colors[k % len(self.colors)] if self.grid_type == "uniform" else (255, 0, 0)
                 cv2.circle(draw, (round(j), round(i)), 3, color)
 
             # Display the resulting frame
             cv2.imshow(self.window_name, np.flip(draw, 2))
-            cv2.setWindowTitle(
-                self.window_name, f"Frame {self._frame_id} / {self.n_frames}"
-            )
+            cv2.setWindowTitle(self.window_name, f"Frame {self._frame_id} / {self.n_frames}")
 
             # Handle user actions
             key = cv2.waitKey(1000 // fps) & 0xFF
@@ -377,9 +353,7 @@ class FlowVisualizer:
         """Set a personnalized grid with points only at the border of cells."""
         start_frame = self.video[self._frame_id]
         model = models.CellposeModel(gpu=True)
-        seg, _, _ = model.eval(
-            start_frame, flow_threshold=0.4, cellprob_threshold=0.0
-        )  # TODO pb segmentation
+        seg, _, _ = model.eval(start_frame, flow_threshold=0.4, cellprob_threshold=0.0)  # TODO pb segmentation
 
         labels = np.unique(seg)
         cells_points = []

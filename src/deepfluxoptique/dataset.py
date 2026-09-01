@@ -6,16 +6,16 @@ from pathlib import Path
 import numpy as np
 import tifffile as tiff
 import torch
-
-# Local imports
-from my_utils.configs import (
-    HEIGHT,
-    WIDTH,
-)
-from my_utils.image_utils import interpole_and_pad
 from torch import nn
 from torch.utils.data import Dataset
 from torchvision.transforms import v2
+
+# Local imports
+from deepfluxoptique.my_utils.configs import (
+    HEIGHT,
+    WIDTH,
+)
+from deepfluxoptique.my_utils.image_utils import interpole_and_pad
 
 
 class NormalizeMinMax(nn.Module):
@@ -67,9 +67,7 @@ class VxmVideoDataset(Dataset):
         self.len_video = len(self.frames_path_list)
         self.transform = self.get_transforms(n=self.len_video)
         if not gap < self.len_video // 2:
-            raise ValueError(
-                f"max_gap {gap} should be smaller than frames number // 2 {self.len_video // 2}."
-            )
+            raise ValueError(f"max_gap {gap} should be smaller than frames number // 2 {self.len_video // 2}.")
         self.gap = gap
         self.multiplier = multiplier
         if self.mode == "train":
@@ -91,14 +89,8 @@ class VxmVideoDataset(Dataset):
             gap = np.random.randint(-self.gap, self.gap + 1)
             if gap == 0:
                 gap = 1
-            idx1 = idx % (
-                self.len_video - 1
-            )  # to avoid out of index error when selecting pairs of frames
-            idx2 = (
-                idx1 - gap
-                if (idx1 + gap > (self.len_video - 1) or idx1 + gap < 0)
-                else idx1 + gap
-            )
+            idx1 = idx % (self.len_video - 1)  # to avoid out of index error when selecting pairs of frames
+            idx2 = idx1 - gap if (idx1 + gap > (self.len_video - 1) or idx1 + gap < 0) else idx1 + gap
         elif self.mode == "train_in_order":
             # Select 2 frames with a gap between 1 and self.gap (inclusive) in order
             current_gap = 1
@@ -180,9 +172,7 @@ class VxmVideoDataset(Dataset):
             global_min = min(global_min, current_min)
             global_max = max(global_max, current_max)
 
-        base_transforms = [
-            NormalizeMinMax(global_min=global_min, global_max=global_max)
-        ]
+        base_transforms = [NormalizeMinMax(global_min=global_min, global_max=global_max)]
 
         return v2.Compose(base_transforms)
 
@@ -344,9 +334,7 @@ class VxmMultipleVideoDataset(Dataset):
             global_min = min(global_min, current_min)
             global_max = max(global_max, current_max)
 
-        base_transforms = [
-            NormalizeMinMax(global_min=global_min, global_max=global_max)
-        ]
+        base_transforms = [NormalizeMinMax(global_min=global_min, global_max=global_max)]
 
         return v2.Compose(base_transforms)
 
@@ -378,15 +366,11 @@ class VxmMultipleVideoDataset(Dataset):
         """Create a list with all the frame's path and segmentation's path."""
         self.frames_path_list = []
         self.seg_path_list = []
-        self.limits = [
-            0
-        ]  # list to store the limits of each video in the frames_path_list
+        self.limits = [0]  # list to store the limits of each video in the frames_path_list
         for i, video_path in enumerate(self.video_paths):
             video_path = Path(video_path)
             self.frames_path_list += sorted(video_path.iterdir())
-            self.limits.append(
-                len(self.frames_path_list)
-            )  # store the limit of the current video
+            self.limits.append(len(self.frames_path_list))  # store the limit of the current video
             if self.seg_paths is not None:
                 # Get the corresponding segmentation path of the video i and create a list of all the segmentation frames
                 seg_path = Path(self.seg_paths[i])
@@ -395,6 +379,4 @@ class VxmMultipleVideoDataset(Dataset):
                 self.seg_path_list += sorted(seg_path.iterdir())
 
                 if len(self.frames_path_list) != len(self.seg_path_list):
-                    raise ValueError(
-                        "Synchronisation problem between video and segmentation"
-                    )
+                    raise ValueError("Synchronisation problem between video and segmentation")
