@@ -1,6 +1,6 @@
-"""Script to execute the complete pipeline : segmentation, training and testing different models with multiple seed and
-on multiple dataset.
-"""
+"""Script to execute the complete pipeline:
+Segmentation, training, and testing different models with multiple seeds on multiple datasets.
+"""  # noqa: D205
 
 # Core library imports
 import argparse

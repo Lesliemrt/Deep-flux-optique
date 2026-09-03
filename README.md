@@ -54,14 +54,17 @@ To evaluate the models, the segmentations given must have label consistent in ti
 
 ### Data preprocessing
 
-If you use the data from the CTC, you may not have access to segmentation annotations consistent in time. 
-You can create it by using :
-
 ``` bash
-python datapreprocessing.py --dataset data1
+# To create label consistent in time from CTC data
+# This will create a folder data/data1/02_ERR_SEG_TRA by combining the masks from data/data1/02_ERR_SEG and the labels from data/data1/02_GT/TRA.
+python scripts/datapreprocessing.py --relabel --dataset data1
+
+# To create segmentations with cellpose for training
+# This will create a folder data/data1/CELLPOSE_SEG by segmenting data/data1/01.
+python scripts/datapreprocessing.py --cellpose --dataset data1
 ```
 
-To use this command, your data must follow this structure : 
+To use these commands, your data must follow this structure : 
 
 ```
 data/
@@ -76,7 +79,6 @@ data/
 ...
 
 ```
-This command will create a folder data/data1/01_ERR_SEG_TRA by combining the masks from data/data1/01_ERR_SEG and the labels from data/data1/01_GT/TRA.
 
 ### Training 
 
@@ -94,7 +96,7 @@ python scripts/train_cells.py --model_type flowseg
 
 ### Inference
 
-To test a model use the command below, output_dir being the folder created when training a model.
+To test a model use the command below, *output_dir* being the folder created when training a model.
 
 ``` bash
 python scripts/tests.py --video-path root_data_folder/data1/test_data --seg-path root_data_folder/data1/seg_test_data --output_dir outputs/transflowseg/output_20260728_084107 --model_type transflowseg

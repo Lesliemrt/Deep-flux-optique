@@ -1,5 +1,4 @@
-# To run on gpu is available
-import os
+from pathlib import Path
 
 import torch
 
@@ -8,10 +7,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 NUM_WORKERS = 4
 
 # mlflow
-if os.path.exists("/pasteur/helix/projects/bia/lmurat/Deep-flux-optique"):
-    MLFLOW_TRACKING_URI = (
-        "file:///pasteur/helix/projects/bia/lmurat/Deep-flux-optique/mlruns"
-    )
+if Path.exists("/pasteur/helix/projects/bia/lmurat/Deep-flux-optique"):
+    MLFLOW_TRACKING_URI = "file:///pasteur/helix/projects/bia/lmurat/Deep-flux-optique/mlruns"
 else:
     MLFLOW_TRACKING_URI = "http://127.0.0.1:5000"
 

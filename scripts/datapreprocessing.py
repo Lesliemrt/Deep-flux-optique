@@ -100,21 +100,21 @@ if __name__ == "__main__":
 
     # Create segmentations
     if args.cellpose:
-        _ = cellpose("data/data/BF-C2DL-MuSC/01")
+        _ = cellpose(f"data/{args.dataset}/01")
 
     # Relabel the segmentation videos with the labels from the tracking videos
     if args.relabel:
-        output_path = Path(f"data/data/{args.dataset}/01_ERR_SEG_TRA")
+        output_path = Path(f"data/{args.dataset}/01_ERR_SEG_TRA")
         output_path.mkdir(exist_ok=True)
         relabel_video(
-            seg_video_path=Path(f"data/data/{args.dataset}/01_ERR_SEG"),
-            tra_video_path=Path(f"data/data/{args.dataset}/01_GT/TRA"),
+            seg_video_path=Path(f"data/{args.dataset}/01_ERR_SEG"),
+            tra_video_path=Path(f"data/{args.dataset}/01_GT/TRA"),
             output_path=output_path,
         )
-        output_path = Path(f"data/data/{args.dataset}/02_ERR_SEG_TRA")
+        output_path = Path(f"data/{args.dataset}/02_ERR_SEG_TRA")
         output_path.mkdir(exist_ok=True)
         relabel_video(
-            seg_video_path=Path(f"data/data/{args.dataset}/02_ERR_SEG"),
-            tra_video_path=Path(f"data/data/{args.dataset}/02_GT/TRA"),
+            seg_video_path=Path(f"data/{args.dataset}/02_ERR_SEG"),
+            tra_video_path=Path(f"data/{args.dataset}/02_GT/TRA"),
             output_path=output_path,
         )

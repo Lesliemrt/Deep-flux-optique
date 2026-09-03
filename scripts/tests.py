@@ -3,13 +3,13 @@
 Adapted from :
 VoxelMorph: A Learning Framework for Deformable Medical Image Registration G. Balakrishnan, A.
 Zhao, M. R. Sabuncu, J. Guttag, A.V. Dalca. IEEE TMI: Transactions on Medical Imaging. 38(8).
-pp 1788-1800. 2019."""
+pp 1788-1800. 2019.
+"""
 
 # Core library imports
 import argparse
 import datetime
 import json
-import sys
 from pathlib import Path
 
 import cv2
@@ -76,28 +76,18 @@ def evaluate_registration_with_seg(segmentation_moving, segmentation_fixed, disp
         score["ref_iou"] = np.mean(ref_iou_score)
 
     # To visualise seg evaluation
-    # seg_moving = np.where(seg_moving > 0, 1, 0)
-    # seg_fixed = np.where(seg_fixed > 0, 1, 0)
-    # warped_seg_moving_np = np.where(warped_seg_moving_np > 0, 1, 0)
     fig, ax = plt.subplots(2, 2, figsize=(12, 12))
     plt.subplot(2, 2, 1)
     ax[0, 0].set_title("Fixed image with moving (red) and fixed (green) segmentation contours")
     ax[0, 0].imshow(fixed, cmap="gray")
-    # ax[0, 0].contour(seg_moving, levels=[0.5], colors="red", alpha=0.7, linewidths=1)
-    # ax[0, 0].contour(seg_fixed, levels=[0.5], colors="chartreuse", linewidths=1)
     image_utils.plot_contours(seg_moving, color="red", ax=ax[0, 0])
     image_utils.plot_contours(seg_fixed, color="chartreuse", ax=ax[0, 0])
     ax[0, 1].set_title("Warped moving segmentation")
     ax[0, 1].imshow(warped_seg_moving_np, cmap="gray")
     plt.subplot(2, 2, 3)
     ax[1, 0].set_title("Fixed segmentation - Warped segmentation")
-    # ax[1, 0].imshow(
-    #     np.abs(seg_fixed - warped_seg_moving_np), cmap="gray"
-    # )
     ax[1, 0].imshow(np.abs(seg_fixed - warped_seg_moving_np), cmap="gray")
     plt.subplot(2, 2, 4)
-    # ax[1, 1].set_title("Flow")
-    # viz(flo=displacement, ax=ax[1, 1])
     ax[1, 1].set_title("Green : Fixed segmentation, Magenta : Warped moving segmentation")
     black_background = np.zeros(fixed.shape)
     ax[1, 1].imshow(black_background, cmap="gray")
@@ -107,7 +97,7 @@ def evaluate_registration_with_seg(segmentation_moving, segmentation_fixed, disp
 
 
 def evaluate_registration(moving, fixed, displacement):
-    """Evaluate the registration results with MSE : not relevant (ideally find another method to evaluate the visual aspect)."""
+    """Evaluate the registration results with MSE (ideally find another method to evaluate the visual aspect)."""
     score = {}
     # Load segmentation masks
     moving = image_utils.interpole_and_pad(moving, [configs.HEIGHT, configs.WIDTH])
@@ -149,23 +139,7 @@ def evaluate_segmentation(segmentation_pred, segmentation_gt, img_moving):
 def create_model(args):
     """Create the model for registration."""
     nb_features = [16, 32, 64, 128, 256]
-    if args.model_type == "voxelmorph" or args.model_type == "twoflows":
-        # model = vxm.nn.models.VxmPairwise(
-        #     ndim=2,
-        #     source_channels=1,
-        #     target_channels=1,
-        #     nb_features=[16, 16, 16, 16, 16],
-        #     integration_steps=0,
-        #     device=device,
-        # ).to(device) #TODO mettre option pour utiliser ce model vxm ?
-        nb_features = [16, 16, 16, 16, 16]
-    if (
-        args.model_type == "voxelmorph"
-        or args.model_type == "flowseg"
-        or args.model_type == "twoflows"
-        or args.model_type == "transflowseg"
-        or args.model_type == "transmorph2d"
-    ):
+    if args.model_type in {"voxelmorph", "flowseg", "twoflows", "transflowseg", "transmorph2d"}:
         model = WarperVxm(
             ndim=2,
             source_channels=1,
@@ -176,27 +150,12 @@ def create_model(args):
         ).to(configs.device)
         model_path = f"{args.output_dir}/best.pt"
         model.load_state_dict(torch.load(model_path, map_location=configs.device))
-        print(f"Load model : {model_path}")
+        print(f"Load model : {model_path}")  # noqa: T201
         model.eval()
         if mlflow.active_run():
             mlflow.log_param("model_path", model_path)
     elif args.model_type == "tvl1":
         model = None
-    # elif args.model_type == "raft":
-    #     raft_args = Namespace(
-    #         model="raft-things.pth",
-    #         path=args.video_path,
-    #         small=False,
-    #         mixed_precision=False,
-    #         alternate_corr=False,
-    #     )
-    #     model = torch.nn.DataParallel(RAFT(raft_args))
-    #     model_path = "raft_models/raft-things.pth"
-    #     model.load_state_dict(torch.load(model_path, map_location=device))
-
-    #     model = model.module
-    #     model.to(device)
-    #     model.eval()
     elif args.model_type == "farnback":
         model = cv2.FarnebackOpticalFlow.create()
     else:
@@ -212,7 +171,7 @@ def register_video(args):
     args : argparse.Namespace
         Commandline arguments.
     """
-    print(f"Using device: {configs.device}")
+    print(f"Using device: {configs.device}")  # noqa: T201
     timestamp = datetime.datetime.now(tz=datetime.UTC)
 
     # Load video and segmentations frames
@@ -221,13 +180,7 @@ def register_video(args):
     global_min, global_max = image_utils.normalisation_params(frames_path_list)
 
     # MLFLOW
-    if (
-        args.model_type == "voxelmorph"
-        or args.model_type == "twoflows"
-        or args.model_type == "flowseg"
-        or args.model_type == "transflowseg"
-        or args.model_type == "transmorph2d"
-    ):
+    if args.model_type in {"voxelmorph", "twoflows", "flowseg", "transflowseg", "transmorph2d"}:
         with Path(f"{args.output_dir}/config.json").open() as j:
             config = json.load(j)  # To get informations from vxm training
     else:
@@ -236,13 +189,13 @@ def register_video(args):
 
     if args.mlflow:
         mlflow.set_tracking_uri(configs.MLFLOW_TRACKING_URI)
-        parent_run_id = config.get("mlflow_run_id", None)
+        parent_run_id = config.get("mlflow_run_id")
         mlflow.start_run(
             run_name=f"Test gap {args.gap} model type {args.model_type} on {args.video_path}",
             nested=True,
-            parent_run_id=parent_run_id,  # To link the test run to the training run (if not specified, the test run will be a independant run)
+            parent_run_id=parent_run_id,  # To link the test run to the training run
         )
-        print("MLflow tracking enabled.")
+        print("MLflow tracking enabled.")  # noqa: T201
         mlflow.log_params(vars(args))
 
     # Create model
@@ -260,7 +213,7 @@ def register_video(args):
         result = {}
         # Load moving and fixed images
         idx2 = idx + args.gap
-        print(f"Registering pair : {idx} and {idx2}")
+        print(f"Registering pair : {idx} and {idx2}")  # noqa: T201
         # Read images
         moving = tiff.imread(frames_path_list[idx])
         fixed = tiff.imread(frames_path_list[idx2])
@@ -271,13 +224,7 @@ def register_video(args):
         moving = image_utils.normalise(moving, global_min, global_max)
         fixed = image_utils.normalise(fixed, global_min, global_max)
         # 3. Compute registration
-        if (
-            args.model_type == "voxelmorph"
-            or args.model_type == "twoflows"
-            or args.model_type == "flowseg"
-            or args.model_type == "transflowseg"
-            or args.model_type == "transmorph2d"
-        ):
+        if args.model_type in {"voxelmorph", "flowseg", "twoflows", "transflowseg", "transmorph2d"}:
             res = register_pair(moving, fixed, model, global_min, global_max)
             displacement, fig, input_moving, input_fixed = (
                 res["displacement"],
@@ -323,12 +270,7 @@ def register_video(args):
             if idx == 0:
                 video.append(np.expand_dims(input_moving, axis=-1))  # channel dimension needed for visualization
             video.append(np.expand_dims(input_fixed, axis=-1))  # channel dimension neededfor visualization
-            if (
-                args.model_type == "voxelmorph"
-                or args.model_type == "flowseg"
-                or args.model_type == "transflowseg"
-                or args.model_type == "transmorph2d"
-            ):
+            if args.model_type in {"voxelmorph", "flowseg", "transflowseg", "transmorph2d"}:
                 res = register_pair(fixed, moving, model, global_min, global_max)
                 displacement_bwd = res["displacement"]
             elif args.model_type == "tvl1":
@@ -354,7 +296,7 @@ def register_video(args):
         eval_res = evaluate_registration(moving, fixed, displacement)
         score_pair = eval_res
         result.update(score_pair)
-        # If segmentations available, load them and warp the moving segmentation with the predicted displacement for evaluation
+        # If segmentations available, load them and warp the moving seg with the predicted displacement for evaluation
         if args.seg_path is not None:
             # Load segmentation masks
             seg_moving = tiff.imread(seg_path_list[idx])
@@ -379,8 +321,6 @@ def register_video(args):
                 if mlflow.active_run():
                     mlflow.log_figure(fig, artifact_file=f"segmentation_result_for_{idx}.png")
                 plt.close("all")
-        else:
-            print("Segmentation files not found, skipping segmentation evaluation.")
         results.append(result)
 
     metrics = {
@@ -458,11 +398,11 @@ def register_video(args):
     exec_time = (end_timestamp - timestamp).seconds
 
     # Relativ Error reduction
-    RER_dice = (global_dice - global_ref_dice) / (1 - global_ref_dice) if (global_ref_dice != 1) else 0
+    rer_dice = (global_dice - global_ref_dice) / (1 - global_ref_dice) if (global_ref_dice != 1) else 0
 
-    RER_rmse = (global_ref_rmse - global_rmse) / (global_ref_rmse) if (global_ref_rmse != 0) else 0
+    rer_rmse = (global_ref_rmse - global_rmse) / (global_ref_rmse) if (global_ref_rmse != 0) else 0
 
-    return RER_dice, RER_rmse, exec_time
+    return rer_dice, rer_rmse, exec_time
 
 
 if __name__ == "__main__":

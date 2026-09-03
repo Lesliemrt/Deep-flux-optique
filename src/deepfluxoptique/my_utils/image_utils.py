@@ -1,4 +1,3 @@
-# utils.py
 from collections import Counter
 
 import matplotlib.pyplot as plt
@@ -38,15 +37,13 @@ def interpole_and_pad(image, target_shape=(1024, 1024)):
 
 
 def pad(array, shape):
-    """
-    Zero-pads an array to a given shape. Returns the padded array and crop slices.
-    """
+    """Zero-pads an array to a given shape. Returns the padded array and crop slices."""
     if array.shape == tuple(shape):
         return array, ...
 
     padded = np.zeros(shape, dtype=array.dtype)
-    offsets = [int((p - v) / 2) for p, v in zip(shape, array.shape)]
-    slices = tuple([slice(offset, l + offset) for offset, l in zip(offsets, array.shape)])
+    offsets = [int((p - v) / 2) for p, v in zip(shape, array.shape, strict=False)]
+    slices = tuple([slice(offset, l + offset) for offset, l in zip(offsets, array.shape, strict=False)])
     padded[slices] = array
 
     return padded, slices
@@ -84,8 +81,7 @@ def iou(array1, array2, labels=None, include_zero=False):
 
 
 def dice(array1, array2, labels=None, include_zero=False):
-    """
-    Computes the dice overlap between two arrays for a given set of integer labels.
+    """Computes the dice overlap between two arrays for a given set of integer labels.
 
     Parameters:
         array1: Input array 1.
@@ -166,11 +162,7 @@ def normalise(image, global_min, global_max):
 
 
 def mask_to_gaussian(segmentation, sigma_scale=0.5):
-    """Convert a segmentation mask to a Gaussian heatmap.
-
-    Parameters:
-        segmentation: 2D array of shape (H, W) with integer labels for each cell.
-        sigma_scale: Sigma for the Gaussian = radius * sigma_scale."""
+    """Convert a segmentation mask to a Gaussian heatmap."""
     heatmap = np.zeros_like(segmentation, dtype=np.float32)
     y_grid, x_grid = np.indices(segmentation.shape)
     for region in regionprops(segmentation):
@@ -184,12 +176,12 @@ def mask_to_gaussian(segmentation, sigma_scale=0.5):
 
 
 def linear_augment(start, end, max_weight, epoch):
-    if epoch < 5:
+    """Linearly increase the weight from 0 to max_weight between start and end epochs."""
+    if epoch < start:
         return 0.0
-    elif epoch >= 15:
+    if epoch >= end:
         return max_weight
-    else:
-        return max_weight * ((epoch - start) / (end - start))
+    return max_weight * ((epoch - start) / (end - start))
 
 
 class NormalizeMinMax(nn.Module):
@@ -207,6 +199,7 @@ class NormalizeMinMax(nn.Module):
 
 
 def plot_contours(seg, color, ax=None):
+    """Plot contours of a segmentation mask on a given axis."""
     if ax is None:
         ax = plt.gca()
 
@@ -218,7 +211,6 @@ def plot_contours(seg, color, ax=None):
         mask = seg == label
         contours = find_contours(mask, level=0.5)
         for contour in contours:
-            # contour[:, 1] = X, contour[:, 0] = Y
             ax.plot(contour[:, 1], contour[:, 0], color=color, linewidth=1)
 
 

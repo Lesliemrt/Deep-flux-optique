@@ -1,20 +1,24 @@
-"""Script to train different model.
+#!/usr/bin/env python
+"""Script to train TransFlowSeg and other models.
 
 Adapted from :
 VoxelMorph: A Learning Framework for Deformable Medical Image Registration G. Balakrishnan, A.
 Zhao, M. R. Sabuncu, J. Guttag, A.V. Dalca. IEEE TMI: Transactions on Medical Imaging. 38(8).
 pp 1788-1800. 2019.
-"""
+"""  # noqa: CPY001
 
 # Core library imports
+from __future__ import annotations
+
 import argparse
 import datetime
 import json
 import os
-from collections.abc import Sequence
 from pathlib import Path
 
 os.environ["NEURITE_BACKEND"] = "pytorch"
+
+from typing import TYPE_CHECKING
 
 import matplotlib.pyplot as plt
 import mlflow
@@ -30,9 +34,12 @@ from deepfluxoptique.dataset import VxmMultipleVideoDataset, VxmVideoDataset
 from deepfluxoptique.model import WarperVxm
 from deepfluxoptique.my_utils import configs, image_utils, spatial_transform
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
 # for reproductability
 torch.manual_seed(configs.SEED)
-np.random.seed(configs.SEED)
+np.random.seed(configs.SEED)  # noqa: NPY002
 torch.cuda.manual_seed(configs.SEED)
 torch.cuda.manual_seed_all(configs.SEED)
 torch.backends.cudnn.deterministic = True
@@ -40,19 +47,7 @@ torch.backends.cudnn.benchmark = False
 
 
 class LossComputer(nn.Module):
-    """Compute different type of loss.
-
-    Attributes:
-    -----------
-    image_loss_fn : nn.Modules
-        Function to compute differences in appearance between 2 images.
-    grad_loss_fn : nn.Module
-        Function that penalizes local spatial variations.
-    flow_with_seg_loss_fn : nn.Module
-        Function to compare alignments of binary segmentations between 2 images.
-    seg_loss_fn : nn.Module
-        Function to compare predicted segmentations and ground truth.
-    """
+    """Compute different type of loss."""
 
     def __init__(self, image_loss_fn, grad_loss_fn, flow_with_seg_loss_fn, seg_loss_fn):
         super().__init__()
@@ -62,33 +57,37 @@ class LossComputer(nn.Module):
         self.seg_loss_fn = seg_loss_fn
 
     def compute_image_loss(self, img1, img2):
+        """Compute the image loss to compare intensity between two images."""
         if isinstance(self.image_loss_fn, ne.nn.modules.NCC):
             return (1 - self.image_loss_fn(img1, img2)).mean()  # to minimize ncc loss
-        else:
-            return self.image_loss_fn(img1, img2)
+        return self.image_loss_fn(img1, img2)
 
     def compute_flow_with_seg_loss(self, img1, img2):
+        """Compute the loss to compare alignments of segmentations between two images."""
         if isinstance(self.flow_with_seg_loss_fn, ne.nn.modules.Dice):
             return 1 - self.flow_with_seg_loss_fn(img1, img2)  # to minimize dice loss
-        else:
-            return self.flow_with_seg_loss_fn(img1, img2)
+        return self.flow_with_seg_loss_fn(img1, img2)
 
     def compute_grad_loss(self, displacement):
+        """Compute the loss to penalize local spatial variations in the displacement field."""
         return self.grad_loss_fn(displacement)
 
     def compute_cycle_loss(self, displacement, warped_displacement_bwd):
+        """Compute the cycle loss to enforce cycle consistency between forward and backward displacement fields."""
         return torch.norm(displacement + warped_displacement_bwd, p=2, dim=1).mean()
 
     def compute_background_loss(self, source_seg, target_seg, displacement):
+        """Compute the loss to avoid displacement in the background."""
         union_seg = torch.clamp(target_seg + source_seg, 0.0, 1.0)
         background_mask = 1.0 - union_seg
         return torch.mean(torch.abs(displacement) * background_mask)  # L1 loss on the displacement in the background
 
     def compute_seg_loss(self, seg_pred, seg_gt):
+        """Compute the loss to compare predicted segmentations and ground truth."""
         return self.seg_loss_fn(seg_pred, seg_gt)
 
 
-def train_epoch(
+def train_epoch(  # noqa: PLR0913, PLR0917
     epoch: int,
     model: nn.Module,
     dataloader: torch.utils.data.DataLoader,
@@ -159,7 +158,7 @@ def train_epoch(
         img_loss += loss_computer.compute_image_loss(target, warped_source)
         grad_loss += loss_computer.compute_grad_loss(displacement)  # Smoothness
 
-        # ------------------------------------------- TWO FLOWS / CYCLE CONSISTENCY ---------------------------------------------------
+        # ------------------------------------------- TWO FLOWS / CYCLE CONSISTENCY -----------------------------------
         # If model_type = twoflows, the backward displacement (displacement_bwd) is computed as well
         # if cycle_consistency is True, the backward displacement is computed by inversing source and target
         # Add the corresponding loss (image loss and grad loss for bwd displacement + cycle loss)
@@ -194,7 +193,7 @@ def train_epoch(
             warped_source_seg = spatial_transformer(source_seg, displacement)
             warped_source_seg = torch.clamp(warped_source_seg, 0, 1)
             flow_with_seg_loss += loss_computer.compute_flow_with_seg_loss(target_seg, warped_source_seg).squeeze()
-            # ------------------------------------------- TWO FLOWS / CYCLE CONSISTENCY ---------------------------------------------------
+            # ------------------------------------------- TWO FLOWS / CYCLE CONSISTENCY -------------------------------
             if "displacement_bwd" in res:
                 warped_target_seg = spatial_transformer(target_seg, displacement_bwd)
                 warped_target_seg = torch.clamp(warped_target_seg, 0, 1)
@@ -243,10 +242,10 @@ def train_epoch(
     }
 
 
-def train(args):
+def train(args):  # noqa: C901, PLR0912, PLR0915
     """Create the dataloader, create the model, train and save.
 
-    Returns
+    Returns:
     -----------
     output_dir :
         Relative path where checkpoints, config, best and final model are saved.
@@ -254,7 +253,7 @@ def train(args):
         Training time.
     """
     # Set device
-    print(f"Using device: {configs.device}")
+    print(f"Using device: {configs.device}")  # noqa: T201
     timestamp = datetime.datetime.now(tz=datetime.UTC)
     if args.seg_path is None:
         args.seg_type = None
@@ -265,27 +264,14 @@ def train(args):
         mlflow.start_run(
             run_name=f"train_cells_{args.model_type}_{timestamp.strftime('%Y%m%d_%H%M%S')}_{args.video_path}"
         )
-        print("MLflow tracking enabled.")
+        print("MLflow tracking enabled.")  # noqa: T201
         mlflow.log_params(vars(args))
 
     # Create model
-    # model = vxm.nn.models.VxmPairwise(
-    #     ndim=2,
-    #     source_channels=1,
-    #     target_channels=1,
-    #     nb_features=[16, 16, 16, 16, 16],
-    #     integration_steps=0,
-    #     device=device,
-    # ).to(device)
-    print(f"Load model type: {args.model_type}")
-    print(f"Using segmentation type: {args.seg_type}")
+    print(f"Load model type: {args.model_type}")  # noqa: T201
+    print(f"Using segmentation type: {args.seg_type}")  # noqa: T201
 
-    nb_features = [16, 32, 64, 128, 256]  # For better performances
-    if args.model_type == "voxelmorph":
-        # To match model from : VoxelMorph: A Learning Framework for Deformable Medical Image Registration G. Balakrishnan, A.
-        # Zhao, M. R. Sabuncu, J. Guttag, A.V. Dalca. IEEE TMI: Transactions on Medical Imaging. 38(8).
-        # pp 1788-1800. 2019.
-        nb_features = [16, 16, 16, 16, 16]
+    nb_features = [16, 32, 64, 128, 256]
     model = WarperVxm(
         ndim=2,
         source_channels=1,
@@ -303,10 +289,8 @@ def train(args):
     else:
         raise ValueError(f"Unsupported image loss: {args.image_loss} use 'mse' or 'cc'.")
     grad_loss_fn = ne.nn.modules.SpatialGradient(args.grad_loss)
-    if args.seg_type == "heatmaps":
-        flow_with_seg_loss_fn = image_loss_fn  # use the same loss as for the image (MSE or CC) for heatmaps
-    else:
-        flow_with_seg_loss_fn = ne.nn.modules.Dice()
+    # use the same loss as for the image (MSE or CC) for heatmaps
+    flow_with_seg_loss_fn = image_loss_fn if args.seg_type == "heatmaps" else ne.nn.modules.Dice()
     seg_loss_fn = nn.BCEWithLogitsLoss()
 
     # Reguralisation parameters for each loss
@@ -330,8 +314,7 @@ def train(args):
         gap=args.max_gap,
         multiplier=args.multiplier,
     )
-    if args.multiple_videos:
-        print("Using multiple videos for training")
+    if args.multiple_videos:  # TODO : add args to choose videos
         train_dataset = VxmMultipleVideoDataset(
             video_paths=[
                 configs.TRAIN_DATA_MUSC,
@@ -365,7 +348,7 @@ def train(args):
     (output_dir / "checkpoints").mkdir(parents=True, exist_ok=True)
 
     # Training loop
-    print(f"Training for {args.epochs} epochs...")
+    print(f"Training for {args.epochs} epochs...")  # noqa: T201
     best_loss = float("inf")
     train_loss = []
     for epoch in tqdm(range(args.epochs), desc="Epochs"):
@@ -416,13 +399,12 @@ def train(args):
                 )
         # Print progress
         # if (epoch + 1) % 10 == 0:
-        print(f"Epoch {epoch + 1}/{args.epochs}, Loss: {avg_loss['loss']:.6f}")
+        print(f"Epoch {epoch + 1}/{args.epochs}, Loss: {avg_loss['loss']:.6f}")  # noqa: T201
 
         # Save periodic checkpoints
         if (epoch + 1) % args.save_every == 0:
             checkpoint_path = output_dir / f"checkpoints/checkpoint_epoch{epoch + 1}.pt"
             torch.save(model.state_dict(), checkpoint_path)
-            print(f"Checkpoint saved to {checkpoint_path}")
 
         # Save best model
         if avg_loss["loss"] < best_loss:
@@ -468,7 +450,7 @@ def train(args):
     with Path.open(output_dir / "config.json", "w") as f:
         json.dump(config, f, indent=4)
 
-    print(f"Final model saved to {final_path}")
+    print(f"Final model saved to {final_path}")  # noqa: T201
 
     # End MLflow run
     if mlflow.active_run():
@@ -554,7 +536,7 @@ if __name__ == "__main__":
         type=float,
         dest="gamma_param",
         default=0.01,
-        help="Regularisation parameter for dice loss between source and warped target, not used if seg_path is set to None",
+        help="Regularisation parameter for loss between source and warped target, not used if seg_path is set to None",
     )
     parser.add_argument(
         "--seg_param",
