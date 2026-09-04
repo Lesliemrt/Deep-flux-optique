@@ -416,13 +416,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--video_path",
-        default=configs.TEST_DATA_MUSC,
+        default=configs.TEST_DATA_U373,
         help="Moving image (source) filename",
     )
     parser.add_argument("--gap", default=1, help="Temporal gap between 2 frames")
     parser.add_argument(
         "--seg_path",
-        default=configs.TEST_SEG_DATA_MUSC,
+        default=configs.TEST_SEG_DATA_U373,
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
