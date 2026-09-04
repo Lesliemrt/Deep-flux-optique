@@ -29,7 +29,7 @@ from deepfluxoptique.my_utils import configs
 if __name__ == "__main__":
     seeds = [42, 123, 456, 54321, 98765]
     model = ["flowseg", "voxelmorph", "transflowseg", "transmorph2d"]
-    datasets = ["hsc"]
+    datasets = ["HSC"]
 
     base_train_args = {
         "mlflow": False,
