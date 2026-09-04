@@ -319,13 +319,13 @@ def train(args):  # noqa: C901, PLR0912, PLR0915
             video_paths=[
                 configs.TRAIN_DATA_MUSC,
                 configs.TRAIN_DATA_HELA,
-                configs.TRAIN_DATA_HSC,
+                configs.TRAIN_DATA_GOWT,
                 configs.TRAIN_DATA_U373,
             ],
             seg_paths=[
                 configs.TRAIN_SEG_DATA_MUSC,
                 configs.TRAIN_SEG_DATA_HELA,
-                configs.TRAIN_SEG_DATA_HSC,
+                configs.TRAIN_SEG_DATA_GOWT,
                 configs.TRAIN_SEG_DATA_U373,
             ],
             seg_type=args.seg_type,

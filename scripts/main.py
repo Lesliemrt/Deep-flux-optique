@@ -29,7 +29,7 @@ from deepfluxoptique.my_utils import configs
 if __name__ == "__main__":
     seeds = [42, 123, 456, 54321, 98765]
     model = ["flowseg", "voxelmorph", "transflowseg", "transmorph2d"]
-    datasets = ["U373"]
+    datasets = ["hsc"]
 
     base_train_args = {
         "mlflow": False,
@@ -89,21 +89,21 @@ if __name__ == "__main__":
                 # ----------------------------------- SEGMENTATION ------------------------------------------
                 # Create segmentation with Cellpose
 
-                # output_path = Path(video_path).parent / "CELLPOSE_SEG"
+                output_path = Path(video_path).parent / "CELLPOSE_SEG"
 
-                # if not output_path.exists():
-                #     # use Cellpose to create segmentations
-                #     output_path.mkdir(parents=True, exist_ok=True)
-                #     frames_path_list = sorted(Path(video_path).iterdir())
-                #     imgs = [imread(f) for f in frames_path_list]
+                if not output_path.exists():
+                    # use Cellpose to create segmentations
+                    output_path.mkdir(parents=True, exist_ok=True)
+                    frames_path_list = sorted(Path(video_path).iterdir())
+                    imgs = [imread(f) for f in frames_path_list]
 
-                #     model = models.CellposeModel(gpu=True)
+                    model = models.CellposeModel(gpu=True)
 
-                #     masks, _, _ = model.eval(imgs, flow_threshold=0.4, cellprob_threshold=0.0)
-                #     for idx, mask in enumerate(masks):
-                #         mask_binary = (mask > 0).astype(np.float32)
-                #         tiff.imwrite(output_path / f"cellpose_{idx:04d}.tif", mask_binary)
-                # seg_path = output_path
+                    masks, _, _ = model.eval(imgs, flow_threshold=0.4, cellprob_threshold=0.0)
+                    for idx, mask in enumerate(masks):
+                        mask_binary = (mask > 0).astype(np.float32)
+                        tiff.imwrite(output_path / f"cellpose_{idx:04d}.tif", mask_binary)
+                seg_path = output_path
 
                 # ----------------------------------- TRAINING ------------------------------------------
                 if dataset in {"GOWT", "HELA"}:
@@ -118,7 +118,7 @@ if __name__ == "__main__":
                     "model_type": model_name,
                     "max_gap": max_gap,
                     "multiplier": multiplier,
-                    "multiple_videos": False,
+                    "multiple_videos": True,
                 }
 
                 train_args = argparse.Namespace(**base_train_args, **additionnal_train_args)
@@ -163,7 +163,7 @@ if __name__ == "__main__":
         inf_time_df = pd.concat([inf_time_df, df], axis=0)
 
 timestamp = datetime.datetime.now(tz=datetime.UTC)
-res_path = Path(f"RESULTS_u373_{timestamp.strftime('%Y%m%d_%H%M%S')}")
+res_path = Path(f"RESULTS_transfert_hsc_{timestamp.strftime('%Y%m%d_%H%M%S')}")
 res_path.mkdir(parents=True, exist_ok=True)
 with Path.open(res_path / f"training_args.json_{timestamp.strftime('%Y%m%d_%H%M%S')}", "w") as f:
     json.dump(base_train_args, f, indent=4)
