@@ -12,10 +12,9 @@ from torchvision.transforms import v2
 
 # Local imports
 from deepfluxoptique.my_utils.configs import (
-    HEIGHT,
-    WIDTH,
+    SHAPE,
 )
-from deepfluxoptique.my_utils.image_utils import interpole_and_pad
+from deepfluxoptique.my_utils.image_utils import interpole_and_pad, interpole_and_pad_mask
 
 
 class NormalizeMinMax(nn.Module):
@@ -110,8 +109,8 @@ class VxmVideoDataset(Dataset):
         target_img = tiff.imread(self.frames_path_list[idx2])
 
         # Interpole and pad images to HEIGHT, WIDTH if needed
-        moving_resized = interpole_and_pad(source_img, [HEIGHT, WIDTH])
-        fixed_resized = interpole_and_pad(target_img, [HEIGHT, WIDTH])
+        moving_resized = interpole_and_pad(source_img, SHAPE)
+        fixed_resized = interpole_and_pad(target_img, SHAPE)
 
         # To tensor
         source = torch.from_numpy(moving_resized).float()
@@ -124,8 +123,8 @@ class VxmVideoDataset(Dataset):
         if self.seg_path is not None:
             source_seg = tiff.imread(self.seg_path_list[idx1])
             target_seg = tiff.imread(self.seg_path_list[idx2])
-            source_seg = interpole_and_pad(source_seg, [HEIGHT, WIDTH])
-            target_seg = interpole_and_pad(target_seg, [HEIGHT, WIDTH])
+            source_seg = interpole_and_pad_mask(source_seg, SHAPE)
+            target_seg = interpole_and_pad_mask(target_seg, SHAPE)
             # For testing, we don't need further processing
             if self.mode == "train" or self.mode == "train_in_order":
                 if self.seg_type == "binary" or self.seg_type is None:
@@ -269,8 +268,8 @@ class VxmMultipleVideoDataset(Dataset):
         target_img = tiff.imread(self.frames_path_list[idx2])
 
         # Interpole and pad images to HEIGHT, WIDTH if needed
-        moving_resized = interpole_and_pad(source_img, [HEIGHT, WIDTH])
-        fixed_resized = interpole_and_pad(target_img, [HEIGHT, WIDTH])
+        moving_resized = interpole_and_pad(source_img, SHAPE)
+        fixed_resized = interpole_and_pad(target_img, SHAPE)
 
         # To tensor
         source = torch.from_numpy(moving_resized).float()
@@ -286,8 +285,8 @@ class VxmMultipleVideoDataset(Dataset):
         if self.seg_paths is not None:
             source_seg = tiff.imread(self.seg_path_list[idx1])
             target_seg = tiff.imread(self.seg_path_list[idx2])
-            source_seg = interpole_and_pad(source_seg, [HEIGHT, WIDTH])
-            target_seg = interpole_and_pad(target_seg, [HEIGHT, WIDTH])
+            source_seg = interpole_and_pad_mask(source_seg, SHAPE)
+            target_seg = interpole_and_pad_mask(target_seg, SHAPE)
             # For testing, we don't need further processing
             if self.mode == "train" or self.mode == "train_in_order":
                 if self.seg_type == "binary" or self.seg_type is None:

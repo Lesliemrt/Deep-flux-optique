@@ -44,8 +44,8 @@ def evaluate_registration_with_seg(segmentation_moving, segmentation_fixed, disp
     """Evaluate the registration results."""
     score = {}
     # Load segmentation masks
-    seg_moving = image_utils.interpole_and_pad(segmentation_moving, [configs.HEIGHT, configs.WIDTH])
-    seg_fixed = image_utils.interpole_and_pad(segmentation_fixed, [configs.HEIGHT, configs.WIDTH])
+    seg_moving = image_utils.interpole_and_pad_mask(segmentation_moving, configs.SHAPE)
+    seg_fixed = image_utils.interpole_and_pad_mask(segmentation_fixed, configs.SHAPE)
 
     # Warp moving segmentation with the predicted displacement
     tensor_seg_moving = torch.from_numpy(seg_moving).to(configs.device).float().unsqueeze(0).unsqueeze(0)
@@ -99,9 +99,8 @@ def evaluate_registration_with_seg(segmentation_moving, segmentation_fixed, disp
 def evaluate_registration(moving, fixed, displacement):
     """Evaluate the registration results with MSE (ideally find another method to evaluate the visual aspect)."""
     score = {}
-    # Load segmentation masks
-    moving = image_utils.interpole_and_pad(moving, [configs.HEIGHT, configs.WIDTH])
-    fixed = image_utils.interpole_and_pad(fixed, [configs.HEIGHT, configs.WIDTH])
+    moving = image_utils.interpole_and_pad(moving, configs.SHAPE)
+    fixed = image_utils.interpole_and_pad(fixed, configs.SHAPE)
     # Warp moving with the predicted displacement
     tensor_moving = torch.from_numpy(moving).to(configs.device).float().unsqueeze(0).unsqueeze(0)
     spatial_transformer = SpatialTransformer(interpolation_mode="linear").to(configs.device)
@@ -118,8 +117,8 @@ def evaluate_segmentation(segmentation_pred, segmentation_gt, img_moving):
     """Evaluate the segmentation results."""
     score = {}
     # Load segmentation masks
-    seg_pred = image_utils.interpole_and_pad(segmentation_pred, [configs.HEIGHT, configs.WIDTH])
-    seg_gt = image_utils.interpole_and_pad(segmentation_gt, [configs.HEIGHT, configs.WIDTH])
+    seg_pred = image_utils.interpole_and_pad_mask(segmentation_pred, configs.SHAPE)
+    seg_gt = image_utils.interpole_and_pad_mask(segmentation_gt, configs.SHAPE)
     # Binarise
     seg_gt = seg_gt > 0
     seg_pred = (seg_pred > 0.5).astype(int)
@@ -218,8 +217,8 @@ def register_video(args):
         moving = tiff.imread(frames_path_list[idx])
         fixed = tiff.imread(frames_path_list[idx2])
         # Interpole/Pad images to HEIGHT, WIDTH if needed
-        moving = image_utils.interpole_and_pad(moving, [configs.HEIGHT, configs.WIDTH])
-        fixed = image_utils.interpole_and_pad(fixed, [configs.HEIGHT, configs.WIDTH])
+        moving = image_utils.interpole_and_pad(moving, configs.SHAPE)
+        fixed = image_utils.interpole_and_pad(fixed, configs.SHAPE)
         # Normalise
         moving = image_utils.normalise(moving, global_min, global_max)
         fixed = image_utils.normalise(fixed, global_min, global_max)
@@ -426,6 +425,11 @@ if __name__ == "__main__":
         help="Segmentations for evaluation (if segmentations not available, set to None)",
     )
     parser.add_argument(
+        "--ndim",
+        default=2,
+        help="Number of dimensions of the images (2D or 3D)",
+    )
+    parser.add_argument(
         "--model_type",
         default="voxelmorph",
         choices=[
@@ -442,7 +446,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_dir",
-        default="outputs/transflowseg/output_20260728_084107",  # "outputs/flowseg/output_20260720_140401"
+        default="outputs/flowseg/output_20260904_142224",  # "outputs/flowseg/output_20260720_140401"
         help="Directory to find model and to save results",
     )
     parser.add_argument(
