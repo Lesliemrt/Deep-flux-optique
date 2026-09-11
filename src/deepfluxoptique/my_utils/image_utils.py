@@ -25,8 +25,8 @@ def normalisation_params(frames_path_list):
     return global_min, global_max
 
 
-def interpole_and_pad(image, target_shape=(1024, 1024)):
-    """Interpolate and pad image to target shape."""
+def interpole_and_pad_(image, target_shape=(1024, 1024)):
+    """Interpolate and pad image to given shape."""
     if image.shape[0] > target_shape[0] or image.shape[1] > target_shape[1]:
         dim_factors = [
             target_shape[0] / image.shape[0],
@@ -34,6 +34,46 @@ def interpole_and_pad(image, target_shape=(1024, 1024)):
         ]
         image = scipy.ndimage.interpolation.zoom(image, dim_factors, order=0)
     return pad(image, target_shape)[0]
+
+
+def interpole_and_pad(image, multiple=32):
+    """Interpolate and pad image to shape multiple of given number."""
+    target_shape = (
+        multiple * ((image.shape[0] + multiple - 1) // multiple),
+        multiple * ((image.shape[1] + multiple - 1) // multiple),
+    )
+    if image.shape[0] > target_shape[0] or image.shape[1] > target_shape[1]:
+        dim_factors = [
+            target_shape[0] / image.shape[0],
+            target_shape[1] / image.shape[1],
+        ]
+        image = scipy.ndimage.interpolation.zoom(image, dim_factors, order=0)
+    return pad(image, target_shape)[0]
+
+
+def pad_to_multiple(array, multiple=32):
+    """Pad image with zeros to shape multiple of given number.
+
+    Args:
+        array (np.ndarray): The image as a NumPy array (shape: (H, W) or (H, W, C)).
+        multiple (int): The target multiple (32 by default).
+
+    Returns:
+        padded_array: The padded array.
+    """
+    axis_h, axis_w = (0, 1)  # Default spatial axes
+    h = array.shape[axis_h]
+    w = array.shape[axis_w]
+
+    pad_h = (multiple - (h % multiple)) % multiple
+    pad_w = (multiple - (w % multiple)) % multiple
+
+    pad_widths = [(0, 0)] * array.ndim
+
+    pad_widths[axis_h] = (0, pad_h)
+    pad_widths[axis_w] = (0, pad_w)
+
+    return np.pad(array, pad_widths, mode="constant", constant_values=0)
 
 
 def pad(array, shape):

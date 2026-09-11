@@ -1,8 +1,7 @@
-"""
-Class definitions for models with transformers.
-"""
+"""Class definitions for models with transformers."""
 
 from collections.abc import Sequence
+from typing import Any
 
 import timm
 import torch
@@ -10,6 +9,8 @@ from torch import nn
 
 
 class ConvBlock(nn.Module):
+    """A convolutional block witha convolutional layer, optional activation, and optional batch normalization."""
+
     def __init__(
         self,
         in_channels,
@@ -20,16 +21,29 @@ class ConvBlock(nn.Module):
         activation=True,
         batchnorm=True,
     ):
+        """Initialize `ConvBlock`.
+
+        Parameters
+        ----------
+        ndim : int
+            Dimensionality of the convolution (2 for Conv2d, 3 for Conv3d).
+        in_channels : int
+            Number of input channels.
+        out_channels : int
+            Number of output channels.
+        kernel_size : int or tuple, default=3
+            Size of the convolving kernel.
+        """
         super().__init__()
-        modules = [
-            nn.Conv2d(
-                in_channels, out_channels, kernel_size=kernel_size, padding=padding
-            )
-        ]
+        conv_cls_name = f"Conv{ndim}d"
+        conv_cls = getattr(nn, conv_cls_name)
+        modules = [conv_cls(in_channels, out_channels, kernel_size=kernel_size, padding=padding)]
         if activation:
             modules.append(nn.ReLU())  # the one used by default in vxm
         if batchnorm:
-            modules.append(nn.BatchNorm2d(out_channels))  # None by default in vxm
+            batchnorm_cls_name = f"BatchNorm{ndim}d"
+            batchnorm_cls = getattr(nn, batchnorm_cls_name)
+            modules.append(batchnorm_cls(out_channels))  # None by default in vxm
         self.conv = nn.Sequential(*modules)  # TODO append à sequential directement
 
     def forward(self, x):
@@ -43,11 +57,9 @@ def upsampling_2conv_blocks(
     skip_channels: Sequence[int] | None = None,
     in_channels: int | None = None,
 ) -> tuple[nn.ModuleList, list[int]]:
-    """
-    Create an `nn.ModuleList` of upsampling conv blocks based the number of features per layer/
-    level.
+    """Create an `nn.ModuleList` of upsampling conv blocks based the number of features per layer.
 
-    Parameters
+    Parameters:
     ----------
     ndim : int
         Dimensionality of the convolution (1 for Conv1d, 2 for Conv2d, 3 for Conv3d).
@@ -67,21 +79,20 @@ def upsampling_2conv_blocks(
         nb_features[0]. This is needed when nb_features[0] is 0 (pass-through) but the actual
         input comes from a bottleneck layer with non-zero channels.
 
-    Returns
+    Returns:
     -------
     nn.ModuleList
         blocks: ModuleList of upsampling blocks (UpsampleConvBlock or UpsamplePassthrough)
     """
-
     # Init upsampling conv blocks container and track actual channels
     blocks = nn.ModuleList()
 
     in_ch = in_channels
 
     # Make upsampling conv block and append to list of them
-    for out_ch, skip_ch in zip(nb_features, skip_channels):
-        block1 = ConvBlock(in_ch + skip_ch, out_ch, batchnorm=False)
-        block2 = ConvBlock(out_ch, out_ch, batchnorm=False)
+    for out_ch, skip_ch in zip(nb_features, skip_channels, strict=False):
+        block1 = ConvBlock(in_ch + skip_ch, out_ch, ndim, batchnorm=False)
+        block2 = ConvBlock(out_ch, out_ch, ndim, batchnorm=False)
         blocks.append(nn.Sequential(block1, block2))
 
         in_ch = out_ch
@@ -90,27 +101,12 @@ def upsampling_2conv_blocks(
 
 
 class TransFlowSegUNet(nn.Module):
-    """
-    UNet for 2D images with 2 decoders, one for the source segmentation and one for the flow, and with a SwinTransformer encoder.
+    """UNet with SwinTransformer encoder and 2 decoders, one for the source segmentation and one for the flow.
 
     Widely inspired by :
     Chen, Junyu, Eric C. Frey, Yufan He, William P. Segars, Ye Li, and Yong Du.
     “TransMorph: Transformer for Unsupervised Medical Image Registration.”
     Medical Image Analysis 82 (November 2022): 102615. https://doi.org/10.1016/j.media.2022.102615.
-
-
-    Attributes
-    ----------
-    downsampling_conv_blocks : nn.ModuleList
-        Downsampling convolutional blocks.
-    lowest_resolution_conv_block : nn.Module
-        Central convolutional block at the lowest spatial resolution.
-    upsampling_conv_blocks : nn.ModuleList
-        Upsampling convolutional blocks.
-    out_layer : nn.Module
-        Final output layer.
-    down_actual_channels : list[int]
-        Actual output channel counts for each downsampling block (accounts for pass-through levels).
     """
 
     def __init__(
@@ -122,8 +118,7 @@ class TransFlowSegUNet(nn.Module):
         embed_dim: int = 96,
         reg_head_channels: int = 16,
     ):
-        """
-        Initialize `BasicUNet`
+        """Initialize `TransFlowSegUNet`.
 
         Parameters
         ----------
@@ -134,16 +129,9 @@ class TransFlowSegUNet(nn.Module):
         out_channels : int
             Number of output channels.
         embed_dim : int
+            Dimensionality of the embedding space.
         reg_head_channels : int
-
-        Examples
-        --------
-        >>> # Symmetric UNet (default behavior)
-        >>> model = BasicUNet(
-        ...     ndim=2, in_channels=1, out_channels=1,
-        ...     nb_features=[16, 32, 64],
-        ...     activations=nn.ReLU
-        ... )
+            Number of channels in the registration head.
         """
         super().__init__()
 
@@ -160,18 +148,14 @@ class TransFlowSegUNet(nn.Module):
             embed_dim,
             embed_dim * 2,
             embed_dim * 4,
-        ]  # TODO pb il faut 5 car 5 skip connections mettre 16?
+        ]
         nb_upsampling_features = tuple(reversed(nb_features))
         nb_skip_channels = tuple(reversed(nb_features))
 
         # -------- Encoder ---------
         self.avg_pool = nn.AvgPool2d(kernel_size=3, stride=2, padding=1)
-        self.convrelu1 = ConvBlock(
-            ndim=ndim, in_channels=2, out_channels=embed_dim // 2
-        )
-        self.convrelu2 = ConvBlock(
-            ndim=ndim, in_channels=2, out_channels=self.reg_head_channels
-        )
+        self.convrelu1 = ConvBlock(ndim=ndim, in_channels=2, out_channels=embed_dim // 2)
+        self.convrelu2 = ConvBlock(ndim=ndim, in_channels=2, out_channels=self.reg_head_channels)
 
         self.transformer = timm.create_model(
             "swinv2_tiny_window8_256",
@@ -184,15 +168,9 @@ class TransFlowSegUNet(nn.Module):
 
         # -------- Bottleneck---------
         bottleneck_channels = embed_dim * 8
-        # self.lowest_resolution_conv_block = ConvBlock(
-        #     ndim=ndim,
-        #     in_channels=bottleneck_channels,
-        #     out_channels=bottleneck_channels,
-        # )
 
         # Upsampling
         self.upsample = nn.Upsample(scale_factor=2, mode="bilinear")
-        # final_channels = nb_upsampling_features[-1]
 
         # -------- Decoder Flow FWD ---------
         self.upsampling_conv_blocks_fwd = upsampling_2conv_blocks(
@@ -202,19 +180,7 @@ class TransFlowSegUNet(nn.Module):
             skip_channels=nb_skip_channels,
         )
 
-        # self.out_layer_fwd = ConvBlock(
-        #     ndim=ndim,
-        #     in_channels=final_channels,
-        #     out_channels=out_channels,
-        #     kernel_size=1,
-        #     padding=0,
-        #     activation=False,
-        #     batchnorm=False,
-        # )
-
-        self.reg_head = nn.Conv2d(
-            self.reg_head_channels, out_channels, kernel_size=1, padding=0
-        )
+        self.reg_head = nn.Conv2d(self.reg_head_channels, out_channels, kernel_size=1, padding=0)
 
         # -------- Decoder Segmentation ---------
         self.upsampling_conv_blocks_seg = upsampling_2conv_blocks(
@@ -223,41 +189,11 @@ class TransFlowSegUNet(nn.Module):
             in_channels=bottleneck_channels,
             skip_channels=nb_skip_channels,
         )
+        self.seg_head = nn.Conv2d(self.reg_head_channels, self.nb_class_segmentation, kernel_size=1, padding=0)
 
-        # self.out_layer_seg = ConvBlock(
-        #     ndim=ndim,
-        #     in_channels=final_channels,
-        #     out_channels=self.nb_class_segmentation,
-        #     kernel_size=1,
-        #     padding=0,
-        #     activation=False,
-        #     batchnorm=False,
-        # )
-
-        self.seg_head = nn.Conv2d(
-            self.reg_head_channels, self.nb_class_segmentation, kernel_size=1, padding=0
-        )
-
-    def forward(self, feature_tensor: torch.Tensor):
-        """
-        Forward pass through the `BasicUNet` model.
-
-        Parameters
-        ----------
-        feature_tensor : torch.Tensor
-            Tensor to be passed through the model. Assumed to have batch and channel dimensions.
-
-        Returns
-        -------
-        torch.Tensor
-            Result of forward pass of the model.
-        """
-
+    def forward(self, feature_tensor: torch.Tensor) -> tuple[Any, Any]:
+        """Forward pass through the `TransFlowSegUNet` model."""
         # -------------------------- Downsampling path ----------------------------------------
-        # for block in self.downsampling_conv_blocks:
-        #     feature_tensor = block(feature_tensor)
-        #     skip_connections.append(feature_tensor)
-        #     feature_tensor = F.max_pool2d(feature_tensor, 2)
 
         f4 = self.convrelu1(self.avg_pool(feature_tensor))
         f5 = self.convrelu2(feature_tensor.clone())
@@ -275,36 +211,33 @@ class TransFlowSegUNet(nn.Module):
 
         # -------------------------- Upsampling path FWD ----------------------------------------
         feature_tensor_fwd = feature_tensor
-        for block, skip in zip(self.upsampling_conv_blocks_fwd, skip_connections):
+        for block, skip in zip(self.upsampling_conv_blocks_fwd, skip_connections, strict=False):
             feature_tensor_fwd = self.upsample(feature_tensor_fwd)
             feature_tensor_fwd = torch.cat([feature_tensor_fwd, skip], dim=1)
             feature_tensor_fwd = block(feature_tensor_fwd)
-        # feature_tensor_fwd = self.out_layer_fwd(feature_tensor_fwd)
 
         feature_tensor_fwd = self.reg_head(feature_tensor_fwd)
 
         # -------------------------- Upsampling path segmentation ----------------------------------------
         feature_tensor_seg = feature_tensor
-        for block, skip in zip(self.upsampling_conv_blocks_seg, skip_connections):
+        for block, skip in zip(self.upsampling_conv_blocks_seg, skip_connections, strict=False):
             feature_tensor_seg = self.upsample(feature_tensor_seg)
             feature_tensor_seg = torch.cat([feature_tensor_seg, skip], dim=1)
             feature_tensor_seg = block(feature_tensor_seg)
-        # feature_tensor_seg = self.out_layer_seg(feature_tensor_seg)
         feature_tensor_seg = self.seg_head(feature_tensor_seg)
 
         return feature_tensor_fwd, feature_tensor_seg
 
 
 class TransMorph2D(nn.Module):
-    """
-    UNet with a SwinTransformer encoder for 2D images.
+    """UNet with a SwinTransformer encoder for 2D images.
 
-    Widely inspired by :
+    From the paper:
     Chen, Junyu, Eric C. Frey, Yufan He, William P. Segars, Ye Li, and Yong Du.
     “TransMorph: Transformer for Unsupervised Medical Image Registration.”
     Medical Image Analysis 82 (November 2022): 102615. https://doi.org/10.1016/j.media.2022.102615.
 
-    Attributes
+    Attributes:
     ----------
     downsampling_conv_blocks : nn.ModuleList
         Downsampling convolutional blocks.
@@ -327,8 +260,7 @@ class TransMorph2D(nn.Module):
         embed_dim: int = 96,
         reg_head_channels: int = 16,
     ):
-        """
-        Initialize `TransMorph2D`
+        """Initialize `TransMorph2D`.
 
         Parameters
         ----------
@@ -364,12 +296,8 @@ class TransMorph2D(nn.Module):
 
         # -------- Encoder ---------
         self.avg_pool = nn.AvgPool2d(kernel_size=3, stride=2, padding=1)
-        self.convrelu1 = ConvBlock(
-            ndim=ndim, in_channels=2, out_channels=embed_dim // 2
-        )
-        self.convrelu2 = ConvBlock(
-            ndim=ndim, in_channels=2, out_channels=self.reg_head_channels
-        )
+        self.convrelu1 = ConvBlock(ndim=ndim, in_channels=2, out_channels=embed_dim // 2)
+        self.convrelu2 = ConvBlock(ndim=ndim, in_channels=2, out_channels=self.reg_head_channels)
 
         self.transformer = timm.create_model(
             "swinv2_tiny_window8_256",
@@ -382,15 +310,9 @@ class TransMorph2D(nn.Module):
 
         # -------- Bottleneck---------
         bottleneck_channels = embed_dim * 8
-        # self.lowest_resolution_conv_block = ConvBlock(
-        #     ndim=ndim,
-        #     in_channels=bottleneck_channels,
-        #     out_channels=bottleneck_channels,
-        # )
 
         # Upsampling
         self.upsample = nn.Upsample(scale_factor=2, mode="bilinear")
-        # final_channels = nb_upsampling_features[-1]
 
         # -------- Decoder Flow FWD ---------
         self.upsampling_conv_blocks_fwd = upsampling_2conv_blocks(
@@ -400,25 +322,10 @@ class TransMorph2D(nn.Module):
             skip_channels=nb_skip_channels,
         )
 
-        self.reg_head = nn.Conv2d(
-            self.reg_head_channels, out_channels, kernel_size=1, padding=0
-        )
+        self.reg_head = nn.Conv2d(self.reg_head_channels, out_channels, kernel_size=1, padding=0)
 
     def forward(self, feature_tensor: torch.Tensor):
-        """
-        Forward pass through the `TransMorph2D` model.
-
-        Parameters
-        ----------
-        feature_tensor : torch.Tensor
-            Tensor to be passed through the model. Assumed to have batch and channel dimensions.
-
-        Returns
-        -------
-        torch.Tensor
-            Result of forward pass of the model.
-        """
-
+        """Forward pass through the `TransMorph2D` model."""
         # -------------------------- Downsampling path ----------------------------------------
         f4 = self.convrelu1(self.avg_pool(feature_tensor))
         f5 = self.convrelu2(feature_tensor.clone())
@@ -436,12 +343,9 @@ class TransMorph2D(nn.Module):
 
         # -------------------------- Upsampling path FWD ----------------------------------------
         feature_tensor_fwd = feature_tensor
-        for block, skip in zip(self.upsampling_conv_blocks_fwd, skip_connections):
+        for block, skip in zip(self.upsampling_conv_blocks_fwd, skip_connections, strict=False):
             feature_tensor_fwd = self.upsample(feature_tensor_fwd)
             feature_tensor_fwd = torch.cat([feature_tensor_fwd, skip], dim=1)
             feature_tensor_fwd = block(feature_tensor_fwd)
-        # feature_tensor_fwd = self.out_layer_fwd(feature_tensor_fwd)
 
-        feature_tensor_fwd = self.reg_head(feature_tensor_fwd)
-
-        return feature_tensor_fwd
+        return self.reg_head(feature_tensor_fwd)

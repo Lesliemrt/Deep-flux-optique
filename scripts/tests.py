@@ -225,7 +225,7 @@ def register_video(args):
         fixed = image_utils.normalise(fixed, global_min, global_max)
         # 3. Compute registration
         if args.model_type in {"voxelmorph", "flowseg", "twoflows", "transflowseg", "transmorph2d"}:
-            res = register_pair(moving, fixed, model, global_min, global_max)
+            res = register_pair(moving, fixed, model)
             displacement, fig, input_moving, input_fixed = (
                 res["displacement"],
                 res["fig"],
@@ -271,7 +271,7 @@ def register_video(args):
                 video.append(np.expand_dims(input_moving, axis=-1))  # channel dimension needed for visualization
             video.append(np.expand_dims(input_fixed, axis=-1))  # channel dimension neededfor visualization
             if args.model_type in {"voxelmorph", "flowseg", "transflowseg", "transmorph2d"}:
-                res = register_pair(fixed, moving, model, global_min, global_max)
+                res = register_pair(fixed, moving, model)
                 displacement_bwd = res["displacement"]
             elif args.model_type == "tvl1":
                 res = register_pair_tvl1(fixed, moving, global_min, global_max)

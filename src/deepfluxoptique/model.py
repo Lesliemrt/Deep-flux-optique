@@ -1,8 +1,7 @@
-"""
-Class definitions for different model + a warper class.
-"""
+"""Class definitions for different model + a warper class."""
 
 from collections.abc import Sequence
+from typing import Any
 
 import neurite as ne
 import torch
@@ -14,6 +13,8 @@ from deepfluxoptique.my_utils import spatial_transform
 
 
 class ConvBlock(nn.Module):
+    """A convolutional block witha convolutional layer, optional activation, and optional batch normalization."""
+
     def __init__(
         self,
         in_channels,
@@ -24,12 +25,29 @@ class ConvBlock(nn.Module):
         activation=True,
         batchnorm=True,
     ):
+        """Initialize `ConvBlock`.
+
+        Parameters
+        ----------
+        ndim : int
+            Dimensionality of the convolution (2 for Conv2d, 3 for Conv3d).
+        in_channels : int
+            Number of input channels.
+        out_channels : int
+            Number of output channels.
+        kernel_size : int or tuple, default=3
+            Size of the convolving kernel.
+        """
         super().__init__()
-        modules = [nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, padding=padding)]
+        conv_cls_name = f"Conv{ndim}d"
+        conv_cls = getattr(nn, conv_cls_name)
+        modules = [conv_cls(in_channels, out_channels, kernel_size=kernel_size, padding=padding)]
         if activation:
             modules.append(nn.ReLU())  # the one used by default in vxm
         if batchnorm:
-            modules.append(nn.BatchNorm2d(out_channels))  # None by default in vxm
+            batchnorm_cls_name = f"BatchNorm{ndim}d"
+            batchnorm_cls = getattr(nn, batchnorm_cls_name)
+            modules.append(batchnorm_cls(out_channels))  # None by default in vxm
         self.conv = nn.Sequential(*modules)  # TODO append à sequential directement
 
     def forward(self, x):
@@ -42,42 +60,25 @@ def downsampling_conv_blocks(
     nb_features: Sequence[int],
     kernel_size: int = 3,
 ) -> tuple[nn.ModuleList, list[int]]:
-    """
-    Create an `nn.ModuleList` of downsampling conv blocks based the number of features per layer.
+    """Create an `nn.ModuleList` of downsampling conv blocks based the number of features per layer.
 
     Parameters
     ----------
     ndim : int
-        Dimensionality of the convolution (1 for Conv1d, 2 for Conv2d, 3 for Conv3d).
+        Dimensionality of the convolution (2 for Conv2d, 3 for Conv3d).
     nb_features : Sequence[int]
-        Number of features at each level of the downsampling convs. Use `0` to indicate a
-        pass-through level (pool only, no convolution). When `0` is used, the actual output
-        channels equal the input channels (channels are preserved).
+        Number of features at each level of the downsampling convs.
     kernel_size : int, default=3
         Size of the convolving kernel at each level.
 
-    Returns
+    Returns:
     -------
     tuple[nn.ModuleList, list[int]]
         A tuple of (blocks, actual_channels) where:
         - blocks: ModuleList of downsampling blocks (DownsampleConvBlock or DownsamplePassthrough)
         - actual_channels: List of actual output channel counts for each block, accounting for
           pass-through levels where channels are preserved
-
-    Examples
-    --------
-    >>> # Standard usage
-    >>> blocks, actual_ch = downsampling_conv_blocks(
-    ...     ndim=2,
-    ...     nb_features=[3, 16, 32],
-    ...     kernel_size=3,
-    ...     normalizations=["batch", "instance", "batch"],
-    ...     activations="relu",
-    ... )
-    >>> actual_ch
-    [16, 32]
     """
-
     # Init container for downsampling convs and track actual channels
     blocks = nn.ModuleList()
 
@@ -85,7 +86,7 @@ def downsampling_conv_blocks(
 
     # Make downsampling conv block and append to list of them
     for out_ch in nb_features:
-        block = ConvBlock(in_ch, out_ch, kernel_size)
+        block = ConvBlock(in_ch, out_ch, ndim, kernel_size)
         blocks.append(block)
 
         in_ch = out_ch
@@ -100,44 +101,34 @@ def upsampling_conv_blocks(
     skip_channels: Sequence[int] | None = None,
     in_channels: int | None = None,
 ) -> tuple[nn.ModuleList, list[int]]:
-    """
-    Create an `nn.ModuleList` of upsampling conv blocks based the number of features per layer/
-    level.
+    """Create an `nn.ModuleList` of upsampling conv blocks based the number of features per layer.
 
     Parameters
     ----------
     ndim : int
-        Dimensionality of the convolution (1 for Conv1d, 2 for Conv2d, 3 for Conv3d).
+        Dimensionality of the convolution (2 for Conv2d, 3 for Conv3d).
     nb_features : Sequence[int]
-        Number of features at each upsampling conv block. Use `0` to indicate a pass-through
-        level (upsample + skip concat only, no convolution). When `0` is used, the actual
-        output channels equal the upsampled channels plus skip channels (if accepts_skip=True).
+        Number of features at each level of the upsampling convs.
     kernel_size : int, default=3
         Size of the convolving kernel at each level.
-    skip_channels : Sequence[int] or None, default=None
-        List of channel counts for skip connections, one per upsampling block. If provided and
-        accepts_skip=True, enables asymmetric downsampling/upsampling architectures. If None and
-        accepts_skip=True, assumes symmetric architecture (skip channels equal upsampleda_bl
-        channels).
     in_channels : int or None, default=None
         Actual input channels to the first upsampling block (from bottleneck). If None, uses
         nb_features[0]. This is needed when nb_features[0] is 0 (pass-through) but the actual
         input comes from a bottleneck layer with non-zero channels.
 
-    Returns
+    Returns:
     -------
     nn.ModuleList
-        blocks: ModuleList of upsampling blocks (UpsampleConvBlock or UpsamplePassthrough)
+        blocks: ModuleList of upsampling blocks (UpsampleConvBlock)
     """
-
     # Init upsampling conv blocks container and track actual channels
     blocks = nn.ModuleList()
 
     in_ch = in_channels
 
     # Make upsampling conv block and append to list of them
-    for out_ch, skip_ch in zip(nb_features, skip_channels):
-        block = ConvBlock(in_ch + skip_ch, out_ch)
+    for out_ch, skip_ch in zip(nb_features, skip_channels, strict=False):
+        block = ConvBlock(in_ch + skip_ch, out_ch, ndim, kernel_size)
         blocks.append(block)
 
         in_ch = out_ch
@@ -146,54 +137,7 @@ def upsampling_conv_blocks(
 
 
 class TwoFlowsUNet(nn.Module):
-    """
-    Flexible UNet with many configuration options.
-
-    Attributes
-    ----------
-    downsampling_conv_blocks : nn.ModuleList
-        Downsampling convolutional blocks.
-    lowest_resolution_conv_block : nn.Module
-        Central convolutional block at the lowest spatial resolution.
-    upsampling_conv_blocks : nn.ModuleList
-        Upsampling convolutional blocks.
-    out_layer : nn.Module
-        Final output layer.
-    down_actual_channels : list[int]
-        Actual output channel counts for each downsampling block (accounts for pass-through levels).
-
-    Notes
-    -----
-    `BasicUNet` is derived from the architecture of the UNet described in
-    [Olaf Ronneberger](https://arxiv.org/pdf/1505.04597)
-
-    Use `0` in `nb_features` to indicate pass-through levels that skip convolutions:
-    - Downsampling `0`: Pool only, no convolution. Channels preserved from input.
-    - Upsampling `0`: Upsample + concat skip only, no conv. Output = upsampled + skip channels.
-
-    Examples
-    --------
-    >>> model = BasicUNet(
-    ...     ndim=2,
-    ...     in_channels=1,
-    ...     out_channels=1,
-    ...     nb_features=[16, 32, 64],
-    ...     normalizations="instance",
-    ...     activations=nn.ReLU,
-    ... )
-    >>> input_tensor = torch.randn(1, 1, 128, 128)
-    >>> output = model(input_tensor)
-    >>> output.shape
-    torch.Size([1, 1, 128, 128])
-
-    >>> # Skip full-resolution convolutions using 0
-    >>> model = BasicUNet(
-    ...     ndim=2,
-    ...     in_channels=1,
-    ...     out_channels=1,
-    ...     nb_features=[0, 32, 64],  # Pass-through at full resolution
-    ... )
-    """
+    """Two-Flows UNet with two decoders."""
 
     def __init__(
         self,
@@ -208,8 +152,7 @@ class TwoFlowsUNet(nn.Module):
             16,
         ),
     ):
-        """
-        Initialize `BasicUNet`
+        """Initialize `TwoFlowsUNet`.
 
         Parameters
         ----------
@@ -221,51 +164,6 @@ class TwoFlowsUNet(nn.Module):
             Number of output channels.
         nb_features : Union[Sequence[int], Sequence[Sequence[int]]], default=(16, 16, 16, 16, 16)
             Number of features at each level of the unet. Can be:
-            - Single sequence: [16, 32, 64] (symmetric - downsampling uses [16, 32, 64],
-              upsampling uses [64, 32, 16])
-            - Sequence of sequences: [[downsampling_features], [upsampling_features]] for complete
-              asymmetry
-            Use `0` to indicate pass-through levels (no convolution):
-            - Downsampling: [0, 32, 64] skips conv at first level (pool only, channels preserved)
-            - Upsampling: [64, 32, 0] skips conv at last level (upsample + skip concat only)
-        padding_mode : {'zeros', 'replicate', 'reflect'}, default='zeros'
-            Padding mode for convolutional layers.
-        upsample_mode : {'linear', 'transposed', 'nearest'}, default='linear'
-            Upsampling mode for upsampling path.
-        normalizations : Sequence[Union[Callable, str]], Callable, str, or None, default=None
-            Normalization layers to use in each block. Can be a string or a sequence
-            of strings specifying normalizations for each layer, or `None` for no normalization.
-        activations : Sequence[Union[Callable, str]], Callable, str, or None, default=nn.ReLU
-            Activation functions to use in each block. Can be a callable,
-            a string, or a sequence of strings/callables.
-        order : str, default='ca'
-            Order of operations in each convolutional block (e.g., 'ncaca').
-        final_activation : Union[str, nn.Module, None], default=None
-            Activation function applied after the final output layer.
-        skip_connections : bool, default=True
-            Enable skip connections to concatenate features from downsampling path with upsampling
-            path at matching resolutions.
-
-        Examples
-        --------
-        >>> # Symmetric UNet (default behavior)
-        >>> model = BasicUNet(ndim=2, in_channels=1, out_channels=1, nb_features=[16, 32, 64], activations=nn.ReLU)
-        >>> # Asymmetric UNet with different downsampling/upsampling features
-        >>> model = BasicUNet(
-        ...     ndim=2,
-        ...     in_channels=1,
-        ...     out_channels=1,
-        ...     nb_features=[[16, 32, 64], [128, 64, 32]],  # Lowest resolution: 64 -> 128
-        ...     skip_connections=True,  # Fully supports asymmetric architectures!
-        ...     activations=nn.ReLU,
-        ... )
-        >>> # Skip full-resolution convolutions
-        >>> model = BasicUNet(
-        ...     ndim=2,
-        ...     in_channels=1,
-        ...     out_channels=1,
-        ...     nb_features=[0, 32, 64],  # First level: pool only, no conv
-        ... )
         """
         super().__init__()
 
@@ -333,34 +231,24 @@ class TwoFlowsUNet(nn.Module):
             batchnorm=False,
         )
 
-    def forward(self, feature_tensor: torch.Tensor):
-        """
-        Forward pass through the `BasicUNet` model.
-
-        Parameters
-        ----------
-        feature_tensor : torch.Tensor
-            Tensor to be passed through the model. Assumed to have batch and channel dimensions.
-
-        Returns
-        -------
-        torch.Tensor
-            Result of forward pass of the model.
-        """
+    def forward(self, feature_tensor: torch.Tensor) -> tuple[Any, Any]:
+        """Forward pass through the `TwoFlowsUNet` model."""
         skip_connections = []
 
         # -------------------------- Downsampling path ----------------------------------------
         for block in self.downsampling_conv_blocks:
             feature_tensor = block(feature_tensor)
             skip_connections.append(feature_tensor)
-            feature_tensor = F.max_pool2d(feature_tensor, 2)
+            maxpool_cls_name = f"max_pool{self.ndim}d"
+            maxpool_cls = getattr(F, maxpool_cls_name)
+            feature_tensor = maxpool_cls(feature_tensor, 2)
 
         # -------------------------- Bottleneck ----------------------------------------
         feature_tensor = self.lowest_resolution_conv_block(feature_tensor)
 
         # -------------------------- Upsampling path FWD ----------------------------------------
         feature_tensor_fwd = feature_tensor
-        for block, skip in zip(self.upsampling_conv_blocks_fwd, reversed(skip_connections)):
+        for block, skip in zip(self.upsampling_conv_blocks_fwd, reversed(skip_connections), strict=False):
             feature_tensor_fwd = self.upsample(feature_tensor_fwd)
             feature_tensor_fwd = torch.cat([feature_tensor_fwd, skip], dim=1)
             feature_tensor_fwd = block(feature_tensor_fwd)
@@ -368,7 +256,7 @@ class TwoFlowsUNet(nn.Module):
 
         # -------------------------- Upsampling path BWD ----------------------------------------
         feature_tensor_bwd = feature_tensor
-        for block, skip in zip(self.upsampling_conv_blocks_bwd, reversed(skip_connections)):
+        for block, skip in zip(self.upsampling_conv_blocks_bwd, reversed(skip_connections), strict=False):
             feature_tensor_bwd = self.upsample(feature_tensor_bwd)
             feature_tensor_bwd = torch.cat([feature_tensor_bwd, skip], dim=1)
             feature_tensor_bwd = block(feature_tensor_bwd)
@@ -378,54 +266,7 @@ class TwoFlowsUNet(nn.Module):
 
 
 class FlowSegUNet(nn.Module):
-    """
-    Flexible UNet with many configuration options.
-
-    Attributes
-    ----------
-    downsampling_conv_blocks : nn.ModuleList
-        Downsampling convolutional blocks.
-    lowest_resolution_conv_block : nn.Module
-        Central convolutional block at the lowest spatial resolution.
-    upsampling_conv_blocks : nn.ModuleList
-        Upsampling convolutional blocks.
-    out_layer : nn.Module
-        Final output layer.
-    down_actual_channels : list[int]
-        Actual output channel counts for each downsampling block (accounts for pass-through levels).
-
-    Notes
-    -----
-    `BasicUNet` is derived from the architecture of the UNet described in
-    [Olaf Ronneberger](https://arxiv.org/pdf/1505.04597)
-
-    Use `0` in `nb_features` to indicate pass-through levels that skip convolutions:
-    - Downsampling `0`: Pool only, no convolution. Channels preserved from input.
-    - Upsampling `0`: Upsample + concat skip only, no conv. Output = upsampled + skip channels.
-
-    Examples
-    --------
-    >>> model = BasicUNet(
-    ...     ndim=2,
-    ...     in_channels=1,
-    ...     out_channels=1,
-    ...     nb_features=[16, 32, 64],
-    ...     normalizations="instance",
-    ...     activations=nn.ReLU,
-    ... )
-    >>> input_tensor = torch.randn(1, 1, 128, 128)
-    >>> output = model(input_tensor)
-    >>> output.shape
-    torch.Size([1, 1, 128, 128])
-
-    >>> # Skip full-resolution convolutions using 0
-    >>> model = BasicUNet(
-    ...     ndim=2,
-    ...     in_channels=1,
-    ...     out_channels=1,
-    ...     nb_features=[0, 32, 64],  # Pass-through at full resolution
-    ... )
-    """
+    """FlowSegUNet with two decoders one for flow and one for segmentation."""
 
     def __init__(
         self,
@@ -441,8 +282,7 @@ class FlowSegUNet(nn.Module):
             256,
         ),
     ):
-        """
-        Initialize `BasicUNet`
+        """Initialize `FlowSegUNet`.
 
         Parameters
         ----------
@@ -453,52 +293,9 @@ class FlowSegUNet(nn.Module):
         out_channels : int
             Number of output channels.
         nb_features : Union[Sequence[int], Sequence[Sequence[int]]], default=(16, 16, 16, 16, 16)
-            Number of features at each level of the unet. Can be:
-            - Single sequence: [16, 32, 64] (symmetric - downsampling uses [16, 32, 64],
-              upsampling uses [64, 32, 16])
-            - Sequence of sequences: [[downsampling_features], [upsampling_features]] for complete
-              asymmetry
-            Use `0` to indicate pass-through levels (no convolution):
-            - Downsampling: [0, 32, 64] skips conv at first level (pool only, channels preserved)
-            - Upsampling: [64, 32, 0] skips conv at last level (upsample + skip concat only)
-        padding_mode : {'zeros', 'replicate', 'reflect'}, default='zeros'
-            Padding mode for convolutional layers.
-        upsample_mode : {'linear', 'transposed', 'nearest'}, default='linear'
-            Upsampling mode for upsampling path.
-        normalizations : Sequence[Union[Callable, str]], Callable, str, or None, default=None
-            Normalization layers to use in each block. Can be a string or a sequence
-            of strings specifying normalizations for each layer, or `None` for no normalization.
-        activations : Sequence[Union[Callable, str]], Callable, str, or None, default=nn.ReLU
-            Activation functions to use in each block. Can be a callable,
-            a string, or a sequence of strings/callables.
-        order : str, default='ca'
-            Order of operations in each convolutional block (e.g., 'ncaca').
-        final_activation : Union[str, nn.Module, None], default=None
-            Activation function applied after the final output layer.
-        skip_connections : bool, default=True
-            Enable skip connections to concatenate features from downsampling path with upsampling
-            path at matching resolutions.
-
-        Examples
-        --------
-        >>> # Symmetric UNet (default behavior)
-        >>> model = BasicUNet(ndim=2, in_channels=1, out_channels=1, nb_features=[16, 32, 64], activations=nn.ReLU)
-        >>> # Asymmetric UNet with different downsampling/upsampling features
-        >>> model = BasicUNet(
-        ...     ndim=2,
-        ...     in_channels=1,
-        ...     out_channels=1,
-        ...     nb_features=[[16, 32, 64], [128, 64, 32]],  # Lowest resolution: 64 -> 128
-        ...     skip_connections=True,  # Fully supports asymmetric architectures!
-        ...     activations=nn.ReLU,
-        ... )
-        >>> # Skip full-resolution convolutions
-        >>> model = BasicUNet(
-        ...     ndim=2,
-        ...     in_channels=1,
-        ...     out_channels=1,
-        ...     nb_features=[0, 32, 64],  # First level: pool only, no conv
-        ... )
+            Number of features at each level of the unet
+        nb_class_segmentation : int, default=1
+            Number of classes for segmentation output. Default is 1 (binary segmentation).
         """
         super().__init__()
 
@@ -567,34 +364,24 @@ class FlowSegUNet(nn.Module):
             batchnorm=False,
         )
 
-    def forward(self, feature_tensor: torch.Tensor):
-        """
-        Forward pass through the `BasicUNet` model.
-
-        Parameters
-        ----------
-        feature_tensor : torch.Tensor
-            Tensor to be passed through the model. Assumed to have batch and channel dimensions.
-
-        Returns
-        -------
-        torch.Tensor
-            Result of forward pass of the model.
-        """
+    def forward(self, feature_tensor: torch.Tensor) -> tuple[Any, Any]:
+        """Forward pass through the `FlowSegUNet` model."""
         skip_connections = []
 
         # -------------------------- Downsampling path ----------------------------------------
         for block in self.downsampling_conv_blocks:
             feature_tensor = block(feature_tensor)
             skip_connections.append(feature_tensor)
-            feature_tensor = F.max_pool2d(feature_tensor, 2)
+            maxpool_cls_name = f"max_pool{self.ndim}d"
+            maxpool_cls = getattr(F, maxpool_cls_name)
+            feature_tensor = maxpool_cls(feature_tensor, 2)
 
         # -------------------------- Bottleneck ----------------------------------------
         feature_tensor = self.lowest_resolution_conv_block(feature_tensor)
 
         # -------------------------- Upsampling path FWD ----------------------------------------
         feature_tensor_fwd = feature_tensor
-        for block, skip in zip(self.upsampling_conv_blocks_fwd, reversed(skip_connections)):
+        for block, skip in zip(self.upsampling_conv_blocks_fwd, reversed(skip_connections), strict=False):
             feature_tensor_fwd = self.upsample(feature_tensor_fwd)
             feature_tensor_fwd = torch.cat([feature_tensor_fwd, skip], dim=1)
             feature_tensor_fwd = block(feature_tensor_fwd)
@@ -602,7 +389,7 @@ class FlowSegUNet(nn.Module):
 
         # -------------------------- Upsampling path segmentation ----------------------------------------
         feature_tensor_seg = feature_tensor
-        for block, skip in zip(self.upsampling_conv_blocks_seg, reversed(skip_connections)):
+        for block, skip in zip(self.upsampling_conv_blocks_seg, reversed(skip_connections), strict=False):
             feature_tensor_seg = self.upsample(feature_tensor_seg)
             feature_tensor_seg = torch.cat([feature_tensor_seg, skip], dim=1)
             feature_tensor_seg = block(feature_tensor_seg)
@@ -612,7 +399,7 @@ class FlowSegUNet(nn.Module):
 
 
 class WarperVxm(nn.Module):
-    """A warper architecture to perform 2D image registration using a flow field.
+    """A warper architecture to perform 2D or 3D image registration using a flow field.
 
     Inspired by 'VxmPairWise' from :
     VoxelMorph: A Learning Framework for Deformable Medical Image Registration G. Balakrishnan, A.
@@ -622,7 +409,7 @@ class WarperVxm(nn.Module):
     Parameters
     ----------
     ndim : int
-        Number of spatial dimensions (2).
+        Number of spatial dimensions (2 or 3).
     source_channels : int
         Number of channels in the source image.
     target_channels : int
@@ -646,7 +433,7 @@ class WarperVxm(nn.Module):
 
     Methods:
     -------
-    forward(source, target, return_warped_source, return_warped_target, return_field_type)
+    forward(source, target, return_warped_source, return_field_type)
         Combines source and target images, processes them through the UNet and the flow layer,
         and returns the displacement field. Optionally returns warped source and/or
         target images.
@@ -659,15 +446,10 @@ class WarperVxm(nn.Module):
         target_channels: int,
         nb_features: Sequence[int] = (16, 16, 16, 16, 16),
         model_type: str = "voxelmorph",
-        # activations: list[Callable | str] | Callable | str | None = nn.ReLU,
-        # final_activation: str | nn.Module | None = None,
         flow_initializer: float = 1e-5,
-        # integration_steps: int = 5,
-        # resize_integrated_fields: bool = False,
         device: str = "cpu",
-        # unet_kwargs: dict | None = None,
     ):
-        """Initialize the `VxmPairwise`.
+        """Initialize the `WarperVxm`.
 
         Parameters
         ----------
@@ -680,16 +462,13 @@ class WarperVxm(nn.Module):
         nb_features : List[int]
             Number of features at each level of the unet. Must be a list of
             positive integers.
-        activations : Union[List[str], str, Callable], optional
-            Activation functions to use in each block. Can be a callable,
-            a string, or a list of strings/callables.
-        integration_steps : int, optional
-            Number of scaling and squaring steps for integrating the flow field.
-            Default is 5.
+        model_type : str
+            Model to use, choices are "voxelmorph", "flowseg", "transflowseg", "transmorph2d".
+        flow_initializer : float, optional
+            Standard deviation for initializing the flow layer weights with a
+            normal distribution (mean=0). Default is `1e-5`.
         device : str, optional
             Device identifier (e.g., 'cpu' or 'cuda') to place/run the model on.
-        unet_kwargs : dict or None, optional
-            Additional keyword arguments passed to `neurite.nn.models.BasicUNet`.
         """
         super().__init__()
 
@@ -744,7 +523,6 @@ class WarperVxm(nn.Module):
         source: torch.Tensor,
         target: torch.Tensor,
         return_warped_source: bool = False,
-        return_warped_target: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, ...]:
         """Forward pass of `WarperVxm`.
 
@@ -760,30 +538,13 @@ class WarperVxm(nn.Module):
             Must have the same spatial dimensions as `source`.
         return_warped_source : bool, optional
             If `True`, include the warped source image in the return tuple. Default is `False`.
-        return_warped_target : bool, optional
-            If `True`, include the warped target image in the return tuple. Default is `False`.
-            Requires `integration_steps > 0` to ensure proper inverse transformation via
-            stationary velocity field integration.
-        return_field_type : str, optional
-            Type of field to return. Options are:
-            - 'displacement': Return the integrated displacement field.
-            - 'velocity' or 'svf': Return the velocity (stationary velocity field).
-            Default is 'displacement'.
 
         Returns:
         -------
-        Union[torch.Tensor, Tuple[torch.Tensor, ...]]
-            Return values depend on the flags that are set:
-            - No flags (default): field (velocity or displacement based on return_field_type)
-            - `return_warped_source=True` only: (field, warped_source)
-            - `return_warped_target=True` only: (field, warped_target)
-            - Both flags: (field, warped_source, warped_target) #TODO
-
-            Where:
-            - field shape (B, ndim, *spatial_dims) - velocity or displacement based on
-              return_field_type
-            - warped_source shape (B, C_source, *spatial_dims)
-            - warped_target shape (B, C_target, *spatial_dims)
+        Dict[str, torch.Tensor]
+            A dictionary containing:
+            - "displacement" : shape (B, ndim, *spatial_dims)
+            - "warped_source" : shape (B, C_source, *spatial_dims) if `return_warped_source=True`
         """
         res = {}
 
@@ -795,7 +556,7 @@ class WarperVxm(nn.Module):
         elif self.model_type == "voxelmorph":
             unet_out = self.model(combined_features)
             displacement = self.flow_layer(unet_out)
-        elif self.model_type == "flowseg" or self.model_type == "transflowseg":
+        elif self.model_type in {"flowseg", "transflowseg"}:
             displacement, segmentation = self.model(combined_features)
             res["source_segmentation"] = segmentation
         elif self.model_type == "transmorph2d":
@@ -804,9 +565,6 @@ class WarperVxm(nn.Module):
         if return_warped_source:
             warped_source = self.spatial_transformer(source, displacement)
             res["warped_source"] = warped_source
-        # if return_warped_target:
-        #     warped_target = self.spatial_transformer(target, neg_displacement)
-        #     outputs.append(warped_target)
         res["displacement"] = displacement
         return res
 
@@ -850,9 +608,7 @@ class WarperVxm(nn.Module):
                 if self.model.out_layer_bwd.conv[0].bias is not None:
                     self.model.out_layer_bwd.conv[0].bias.zero_()
         elif self.model_type == "voxelmorph":
-            flow_layer = ne.nn.modules.ConvBlock(ndim, 2, 2).to(
-                self.device
-            )  # reproduit VxmPairWise mais est ce que utile?
+            flow_layer = ne.nn.modules.ConvBlock(ndim, 2, 2).to(self.device)
             # Initialize weights from Normal(mean=0, std=flow_initializer)
             with torch.no_grad():
                 torch.nn.init.normal_(flow_layer.conv0.weight, mean=0.0, std=flow_initializer)
@@ -872,7 +628,7 @@ class WarperVxm(nn.Module):
                 if self.model.out_layer_fwd.conv[0].bias is not None:
                     self.model.out_layer_fwd.conv[0].bias.zero_()
 
-        elif self.model_type == "transflowseg" or self.model_type == "transmorph2d":
+        elif self.model_type in {"transflowseg", "transmorph2d"}:
             with torch.no_grad():
                 torch.nn.init.normal_(
                     self.model.reg_head.weight,

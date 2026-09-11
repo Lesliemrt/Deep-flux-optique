@@ -19,7 +19,7 @@ from deepfluxoptique.my_utils.image_utils import viz
 from deepfluxoptique.my_utils.spatial_transform import SpatialTransformer
 
 
-def register_pair(moving, fixed, model, global_min, global_max):
+def register_pair(moving, fixed, model):
     """Register a pair of frames using Voxelmorph model.
 
     Parameters
@@ -35,7 +35,7 @@ def register_pair(moving, fixed, model, global_min, global_max):
     global_max : float
         Global maximum for normalization.
 
-    Returns
+    Returns:
     -------
     displacement : torch.Tensor
         Predicted deformation field.
@@ -50,21 +50,14 @@ def register_pair(moving, fixed, model, global_min, global_max):
     input_moving = torch.from_numpy(moving).float().to(device).unsqueeze(0).unsqueeze(0)
     input_fixed = torch.from_numpy(fixed).float().to(device).unsqueeze(0).unsqueeze(0)
 
-    # # Normalisation
-    # normalise = NormalizeMinMax(global_min=global_min, global_max=global_max)
-    # input_moving = normalise(input_moving)
-    # input_fixed = normalise(input_fixed)
-
     # Predict
     with torch.no_grad():
         res = model(
             source=input_moving,
             target=input_fixed,
             return_warped_source=True,
-            # return_displacement_type="displacement",
         )
         displacement, moved = res["displacement"], res["warped_source"]
-        # displacement = pyramidal_flow(input_moving, input_fixed, model, level=2)
 
     fig, ax = plt.subplots(2, 2, figsize=(12, 12))
     plt.subplot(2, 2, 1)
@@ -75,7 +68,6 @@ def register_pair(moving, fixed, model, global_min, global_max):
     ax[0, 1].imshow(moved.squeeze().cpu().numpy(), cmap="gray")
     plt.subplot(2, 2, 3)
     ax[1, 0].set_title("Fixed - Moved")
-    # ax[1, 0].imshow(input_moving.squeeze().cpu().numpy(), cmap="gray")
     ax[1, 0].imshow(
         np.abs(input_fixed.squeeze().cpu().numpy() - moved.squeeze().cpu().numpy()),
         cmap="gray",
